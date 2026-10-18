@@ -62,3 +62,25 @@ describe("policy", () => {
     expect(selectMoments(cand, dismissed(4), "execution-coach", "relentless", NOW).selected.some((x) => x.key === m.key)).toBe(true);
   });
 });
+
+import { allowedForCapacity, styleForCapacity } from "@/lib/companion/policy";
+import type { Moment } from "@/lib/companion/moments";
+describe("capacity-aware Co-founder", () => {
+  const mk = (kind: Moment["kind"], severity = 80): Moment => ({ key: kind, kind, severity, subject: "x", facts: ["f"] });
+  const cand = [mk("pushback_avoidance"), mk("pushback_planned_vs_done"), mk("restart"), mk("reflection_gap", 60), mk("milestone_overdue", 70)];
+  it("does not push a low founder: no pushback or restart, one nudge, coach voice", () => {
+    const r = selectMoments(cand, [], "direct-challenger", "relentless", NOW, { level: "low" });
+    expect(r.selected.length).toBeLessThanOrEqual(1);
+    expect(r.selected.every((m) => !["pushback_avoidance", "pushback_planned_vs_done", "restart"].includes(m.kind))).toBe(true);
+    expect(styleForCapacity("devil-advocate", { level: "low" })).toBe("execution-coach");
+  });
+  it("a depleted founder only gets loop-closing or celebratory moments", () => {
+    expect(allowedForCapacity("milestone_overdue", { level: "depleted" })).toBe(false);
+    expect(allowedForCapacity("reflection_gap", { level: "depleted" })).toBe(true);
+  });
+  it("fresh or unknown capacity changes nothing", () => {
+    const a = selectMoments(cand, [], "execution-coach", "balanced", NOW).selected.map((m) => m.key);
+    expect(selectMoments(cand, [], "execution-coach", "balanced", NOW, { level: "fresh" }).selected.map((m) => m.key)).toEqual(a);
+    expect(styleForCapacity("devil-advocate", null)).toBe("devil-advocate");
+  });
+});

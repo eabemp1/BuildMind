@@ -9,7 +9,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { buildMoments, shape } from "@/lib/companion/moments";
-import { selectMoments, STYLE_POLICY } from "@/lib/companion/policy";
+import { selectMoments, styleForCapacity, STYLE_POLICY, type Capacity } from "@/lib/companion/policy";
 import { gatherInput, loadHistory, loadPrefs } from "@/lib/companion/gather";
 
 export const runtime = "nodejs";
@@ -23,11 +23,15 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
   const projectId = new URL(request.url).searchParams.get("projectId")?.trim() || undefined;
-  const [prefs, history, input] = await Promise.all([
+  const [prefs, history, input, founderContext] = await Promise.all([
     loadPrefs(admin, user.userId), loadHistory(admin, user.userId), gatherInput(admin, user.userId, projectId),
+    admin.from("founder_context").select("cognitive_load").eq("user_id", user.userId).maybeSingle(),
   ]);
+  const cognitiveLoad = founderContext.data?.cognitive_load;
+  const state: Capacity = { level: cognitiveLoad === "autopilot" ? "depleted" : cognitiveLoad === "drained" ? "low" : "fresh" };
 
-  const { selected, newKeys, cap } = selectMoments(buildMoments(input), history, prefs.style, prefs.intensity, input.now);
+  const { selected, newKeys, cap } = selectMoments(buildMoments(input), history, prefs.style, prefs.intensity, input.now, state);
+  const voice = styleForCapacity(prefs.style, state);
 
   if (newKeys.length) {
     try {
@@ -42,6 +46,6 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true, style: prefs.style, intensity: prefs.intensity, cap,
     styles: Object.entries(STYLE_POLICY).map(([key, v]) => ({ key, label: v.label, tagline: v.tagline, color: v.color })),
-    moments: selected.map((m) => shape(m, prefs.style)),
+    moments: selected.map((m) => shape(m, voice)),
   });
 }

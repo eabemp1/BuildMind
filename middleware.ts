@@ -188,9 +188,14 @@ export async function middleware(request: NextRequest) {
       )
     : null;
 
+  const authStart = Date.now();
   const { user, error: authError } = supabase
     ? await getUserWithTimeout(supabase)
     : { user: null, error: null };
+  // Visible in browser DevTools > Network > Timing > Server Timing. Shows how
+  // much of a slow page is the auth check (a slow Supabase round trip) rather
+  // than rendering or the network.
+  response.headers.set("Server-Timing", `mw-auth;dur=${Date.now() - authStart}`);
 
   if (authError) {
     for (const cookie of request.cookies.getAll()) {
@@ -388,6 +393,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.json|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|webp|ico|mp4|webm|mov|m4v)$).*)",
+    "/((?!_next/static|_next/image|monitoring|favicon.ico|sw.js|manifest.json|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|webp|ico|mp4|webm|mov|m4v)$).*)",
   ],
 };

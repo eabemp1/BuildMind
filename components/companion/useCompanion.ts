@@ -21,7 +21,7 @@ export function useCompanion(projectId?: string | null) {
 
   const load = useCallback(async (force = false) => {
     try {
-      const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+      const qs = `?clientHour=${new Date().getHours()}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`;
       if (force) invalidateRead("companion:");
       const j = await cachedRead(`companion:${qs}`, 90_000, async () => {
         const r = await fetch(`/api/companion/brief${qs}`, { cache: "no-store" });

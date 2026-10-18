@@ -24,6 +24,25 @@ export function limitsFor(style: Style, intensity: Intensity): { cap: number; fl
   return { cap: p.cap, floor: p.floor };
 }
 
+/** What the Co-founder needs to know about the founder's capacity right now. */
+export type Capacity = { level: "fresh" | "steady" | "low" | "depleted" } | null | undefined;
+
+/**
+ * A tired founder should not be pushed. When capacity is low the Co-founder
+ * drops confrontational kinds and speaks less; when depleted it only says
+ * something that closes a loop or celebrates. Facts are unchanged.
+ */
+export function allowedForCapacity(kind: Moment["kind"], capacity: Capacity): boolean {
+  if (!capacity || capacity.level === "fresh" || capacity.level === "steady") return true;
+  if (capacity.level === "low") return kind !== "pushback_planned_vs_done" && kind !== "pushback_avoidance" && kind !== "restart";
+  return kind === "win" || kind === "reflection_gap";
+}
+
+/** Voice to use: confrontational styles soften to the coach voice when the founder is low. */
+export function styleForCapacity(style: Style, capacity: Capacity): Style {
+  return capacity && (capacity.level === "low" || capacity.level === "depleted") ? "execution-coach" : style;
+}
+
 export interface EventRow { key: string; status: "shown" | "dismissed" | "acted"; day: string; created_at: string /* when the row was last updated */ }
 
 const DAY = 86_400_000;
@@ -40,8 +59,12 @@ export function selectMoments(
   style: Style,
   intensity: Intensity,
   now = Date.now(),
+  capacity?: Capacity,
 ): { selected: Moment[]; newKeys: string[]; cap: number } {
-  const { cap, floor } = limitsFor(style, intensity);
+  const lim = limitsFor(style, intensity);
+  const tired = capacity?.level === "low" || capacity?.level === "depleted";
+  const cap = tired ? Math.min(lim.cap, 1) : lim.cap;
+  const floor = tired ? lim.floor + 10 : lim.floor;
   const today = new Date(now).toISOString().slice(0, 10);
   const wins = STYLE_POLICY[style].wins;
 
@@ -57,6 +80,7 @@ export function selectMoments(
 
   const eligible = candidates.filter((m) => {
     if (m.kind === "win" && !wins) return false;
+    if (!allowedForCapacity(m.kind, capacity)) return false;
     const last = lastStatus.get(m.key);
     if (last?.status === "dismissed" && now - Date.parse(last.created_at) < DISMISS_COOLDOWN_DAYS * DAY) return false;
     if (last?.status === "acted" && now - Date.parse(last.created_at) < ACTED_COOLDOWN_DAYS * DAY) return false;
