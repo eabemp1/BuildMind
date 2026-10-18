@@ -294,4 +294,4 @@ export default function BreakPublicPage() {
       </div>
     </div>
   );
-                                               }
+                          }
