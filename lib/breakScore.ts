@@ -98,4 +98,4 @@ function words(s: string): number { return s.split(/\s+/).filter(Boolean).length
 
 export function previewScore(idea: string, users = "", problem = ""): number {
   return computeSurvival(previewSignals(idea, users, problem), `${idea} ${users} ${problem}`);
-  }
+}
