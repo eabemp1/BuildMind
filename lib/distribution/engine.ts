@@ -16,6 +16,7 @@
 import { callModelJSON } from "@/lib/ai-providers";
 import { analyseText, type Platform } from "@/lib/distribution/textSignals";
 import { runDiagnosis, type Diagnosis } from "@/lib/distribution/diagnose";
+import { learningPromptBlock } from "@/lib/prep/learning";
 import { normalizePrepared, hasContent, type PrepFact, type PrepKind, type Prepared, type PrepVariant } from "@/lib/prep/kinds";
 
 export interface ProjectCtx { name: string; description: string; problem: string; targetUsers: string; stage: string }
@@ -31,6 +32,8 @@ export interface ContentCtx {
   facts?: PrepFact[];
   /** Real work from the founder's connected GitHub repo (merged pull request titles). */
   shipped?: string[];
+  /** From lib/prep/context.ts: the founder's own recent record. */
+  inferred?: string;
   serp?: SerpHit[];
 }
 
@@ -45,7 +48,7 @@ export function cleanText(text: string, keepEmoji = false): string {
   return keepEmoji ? t : t.replace(EMOJI, "").replace(/ {2,}/g, " ").trim();
 }
 
-const MAX_WORDS: Partial<Record<PrepKind, number>> = { outreach: 110, post: 320, video_script: 260, investor_update: 260 };
+const MAX_WORDS: Partial<Record<PrepKind, number>> = { outreach: 110, post: 320, video_script: 260, investor_update: 260, launch_plan: 16 };
 
 /** Why a draft should not be shown. Empty means it passes. */
 export function variantProblems(kind: PrepKind, text: string, platform: Platform = "other"): string[] {
@@ -54,6 +57,10 @@ export function variantProblems(kind: PrepKind, text: string, platform: Platform
   if (!words) return ["empty"];
   const max = MAX_WORDS[kind];
   if (max && words > max) p.push(`over ${max} words`);
+  if (kind === "launch_plan") {
+    if (text.length > 100) p.push("title too long");
+    if (/!|\b(revolutionary|game[- ]?chang\w*|best ever|ultimate)\b/i.test(text)) p.push("hype");
+  }
   if (kind === "outreach" || kind === "post") {
     if (CLICHES.some((r) => r.test(text))) p.push("stock phrase");
     if (analyseText(text, platform).platitudes.length) p.push("platitude");
@@ -108,12 +115,6 @@ Stage: ${p.stage || "not stated"}`;
 
 const SHAPE = `Return JSON: {"title":"","summary":"one sentence on what this is","variants":[{"label":"","text":"","why":"one sentence"}],"sections":[{"heading":"","body":"","bullets":[""]}]}`;
 
-function learningPromptBlock(lessons: string[]): string {
-  return lessons.length
-    ? `WHAT HAS WORKED OR FAILED BEFORE (use as guidance, do not repeat claims as facts):\n${lessons.slice(0, 8).map((lesson) => `- ${lesson}`).join("\n")}\n`
-    : "";
-}
-
 function kindInstructions(ctx: ContentCtx): string {
   switch (ctx.kind) {
     case "outreach":
@@ -130,6 +131,10 @@ function kindInstructions(ctx: ContentCtx): string {
       const facts = (ctx.facts ?? []).map((f) => `- ${f.label}: ${f.value}`).join("\n");
       return `Write a short investor update using ONLY these real facts from the founder's own BuildMind record:\n${facts || "- (none available)"}\nVariants: "Short email" (under 160 words) and "Five lines" (five short lines). Where a useful number is missing, write [add: what] instead of inventing it. Sections: "What we did" (bullets from the facts), "What we learned" (2 bullets, only from facts), "The ask" (body: one specific ask, or [add: your ask]).`;
     }
+    case "build_plan":
+      return `Cut today's build task down to the smallest version that still teaches the founder something. No variants (return an empty "variants" array). Sections: "Smallest version" (body: what to build and what to leave out, in two sentences), "Steps" (3 to 5 bullets, each doable in under an hour), "Done when" (bullets: 2 checks the founder can verify without asking anyone), "Skip for now" (2 bullets of tempting extras), "Biggest risk" (body: the one thing most likely to waste the day, and how to notice early). Base everything on the task and the project. Mention no tools or frameworks the founder did not name.`;
+    case "launch_plan":
+      return `Prepare a launch for ${ctx.platform === "other" ? "the channel the task names (Show HN, Product Hunt or Reddit)" : ctx.platform}. Variants: THREE title options, each ONE line of 80 characters or fewer, labelled "Plain", "Problem" and "Curious". No exclamation marks, no superlatives, no "revolutionary". Sections: "First comment" (body: 90 words or fewer, written by the founder, saying who built it, why, and one thing they want feedback on), "Timeline" (bullets: before, the first hour, the first day), "Rules to respect" (bullets: what that community dislikes, such as asking for upvotes), "After you post" (bullets on replying). Invent no numbers, users or testimonials.`;
     case "video_script":
       return `Write a script for a 20-30 second vertical video that shows the product to ${ctx.project.targetUsers || "founders"}. One variant "Script" with timestamps like "0-3s: ..." on separate lines, opening on the viewer's problem, not the logo. Sections: "Shot list" (bullets, what is on screen at each moment), "Captions" (bullets, on-screen text, 8 words or fewer each), "End card" (body: one line and the link to show).`;
     default:
@@ -145,7 +150,7 @@ ${projectBlock(ctx.project)}
 TASK TODAY: ${ctx.task}
 ${ctx.firstStep ? `First step: ${ctx.firstStep}\n` : ""}
 ${learningPromptBlock(ctx.lessons)}
-${ctx.shipped?.length ? `WHAT THE FOUNDER ACTUALLY SHIPPED RECENTLY (real, from their repository). Build on these. Do not claim anything beyond them:\n${ctx.shipped.map((x) => `- ${x}`).join("\n")}\n` : ""}
+${ctx.inferred ? `${ctx.inferred}\n` : ""}${ctx.shipped?.length ? `WHAT THE FOUNDER ACTUALLY SHIPPED RECENTLY (real, from their repository). Build on these. Do not claim anything beyond them:\n${ctx.shipped.map((x) => `- ${x}`).join("\n")}\n` : ""}
 ${kindInstructions(ctx)}
 
 ${SHAPE}`;
@@ -180,7 +185,7 @@ export async function draftContent(ctx: ContentCtx): Promise<Prepared | null> {
   if (ctx.kind === "seo") variants = variants.filter((v) => { const t = /title:\s*(.+)/i.exec(v.text)?.[1] ?? ""; const m = /meta:\s*(.+)/i.exec(v.text)?.[1] ?? ""; return t.length > 0 && t.length <= 60 && m.length > 0 && m.length <= 155; }).map((v, i) => ({ ...v, id: `v${i + 1}` }));
   const out: Prepared = { ...base, variants, facts: ctx.facts ?? [] };
   if (ctx.kind === "investor_update" && !variants.length && ctx.facts?.length) return { ...investorFallback(ctx.facts, ctx.project, ctx.shipped), learned: ctx.lessons };
-  const needsVariants = ctx.kind === "outreach" || ctx.kind === "post" || ctx.kind === "video_script";
+  const needsVariants = ctx.kind === "outreach" || ctx.kind === "post" || ctx.kind === "video_script" || ctx.kind === "launch_plan";
   if (needsVariants && !variants.length) return null;
   return hasContent(out) ? out : null;
 }

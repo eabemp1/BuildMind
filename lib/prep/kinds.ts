@@ -18,7 +18,11 @@ export type PrepKind =
   | "investor_update"
   | "competitor_brief"
   | "validation_kit"
-  | "video_script";
+  | "video_script"
+  | "build_plan"
+  | "launch_plan"
+  | "pricing_test"
+  | "prospects";
 
 /** content: drafted by the Distribution engine and improved from edits and results.
  *  research: grounded in live search or the founder's own record. */
@@ -61,6 +65,16 @@ export const PREP_META: Record<PrepKind, PrepMeta> = {
   competitor_brief: { label: "Competitor brief", headline: "A competitor brief, with sources", engine: "research", doneVerb: null, outcomes: null, learns: false },
   validation_kit: { label: "Interview kit", headline: "Your interview kit", engine: "research", doneVerb: null, outcomes: null, learns: false },
   video_script: { label: "Video script", headline: "A script and shot list", engine: "content", doneVerb: "Mark recorded", outcomes: null, learns: true },
+  build_plan: { label: "Build plan", headline: "Today's build, cut down to the smallest useful version", engine: "content", doneVerb: null, outcomes: null, learns: false },
+  launch_plan: {
+    label: "Launch plan", headline: "A launch plan with titles and a first comment", engine: "content", doneVerb: "Mark launched", learns: true,
+    outcomes: [
+      { id: "got_comments", label: "Got comments", positive: true },
+      { id: "no_response", label: "No response", positive: false },
+    ],
+  },
+  pricing_test: { label: "Pricing test", headline: "A pricing test you can run this week", engine: "research", doneVerb: null, outcomes: null, learns: false },
+  prospects: { label: "Prospect map", headline: "Where your first ten conversations are", engine: "research", doneVerb: null, outcomes: null, learns: false },
 };
 
 export const PREP_KINDS = Object.keys(PREP_META) as PrepKind[];
@@ -70,6 +84,10 @@ const RX = {
   seo: /\b(seo|keywords?|search (?:ranking|traffic|intent)|blog post|meta (?:title|description)|backlinks?|rank (?:for|on))\b/i,
   investor: /\b(investors?|fundrais\w*|pitch deck|traction update|metrics update|investor update|mrr|arr|kpis?)\b/i,
   video: /\b(video|reels?|tiktok|loom|screen ?record\w*|demo (?:clip|video|reel)|record (?:a|your))\b/i,
+  pricing: /\b(pric(?:e|es|ing)|paywall|willingness to pay|subscription tiers?|charge (?:for|users|customers)|monetiz\w*|free (?:plan|tier)|packag(?:e|ing) (?:the )?plans?)\b/i,
+  launch: /\b(launch|show hn|product hunt|go live|announce(?:ment)?|public release|beta release)\b/i,
+  prospects: /\b(?:(?:find|identify|source|list|build a list of|make a list of)\s+(?:\d+|ten|five|some|the|more)?\s*(?:[\w-]+\s+){0,2}(?:people|users|customers|founders|communities|subreddits|groups|candidates|prospects|leads)|where (?:to find|do .{1,40} hang out)|who to (?:contact|reach|talk to))\b/i,
+  build: /\b(build|implement|ship|code|refactor|fix|integrate|prioriti[sz]e|roadmap|decide (?:what|which)|feature|scope|mvp)\b/i,
   competitor: /\b(competitors?|competitive|alternatives|market research|landscape|benchmark\w*)\b/i,
   validation: /\b(interviews?|survey|validate|validation|customer discovery|talk to (?:users|founders|customers))\b/i,
   post: /\b(post|tweet|thread|publish|write (?:a|an) (?:post|article)|linkedin post)\b/i,
@@ -89,13 +107,18 @@ export function prepKindFor(task: string, missionKind?: string | null): PrepKind
   if (RX.investor.test(t)) return "investor_update";
   if (RX.video.test(t)) return "video_script";
   if (RX.competitor.test(t)) return "competitor_brief";
-  if (missionKind === "outreach" || missionKind === "follow_up" || missionKind === "pricing") return "outreach";
+  if (RX.launch.test(t) && !/\b(follow|reply|dm|email)\b/i.test(t)) return "launch_plan";
+  if (missionKind === "pricing" || RX.pricing.test(t)) return "pricing_test";
+  if (RX.prospects.test(t)) return "prospects";
+  if (missionKind === "outreach" || missionKind === "follow_up") return "outreach";
   if (missionKind === "interview") return "validation_kit";
   if (missionKind === "publish") return "post";
-  if (missionKind === "build" || missionKind === "unblock" || missionKind === "reset") return null;
+  if (missionKind === "reset") return null;
+  if (missionKind === "build" || missionKind === "unblock") return "build_plan";
   if (RX.validation.test(t)) return "validation_kit";
   if (RX.outreach.test(t)) return "outreach";
   if (RX.post.test(t)) return "post";
+  if (RX.build.test(t)) return "build_plan";
   return null;
 }
 

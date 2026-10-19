@@ -6,6 +6,7 @@ import type { Diagnosis } from "@/lib/distribution/diagnose";
 import { analyseText, observe, type Platform } from "@/lib/distribution/textSignals";
 import ConnectCard, { type KeyApp } from "@/components/integrations/ConnectCard";
 import type { ReplyAssist } from "@/lib/prep/reply";
+import type { NotesRead } from "@/lib/prep/notes";
 
 /**
  * Today's task, already started. BuildMind detects what kind of work the task
@@ -74,6 +75,9 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   const [assistMode, setAssistMode] = React.useState<"" | "reply" | "followup">("");
   const [assistBusy, setAssistBusy] = React.useState(false);
   const [assistText, setAssistText] = React.useState("");
+  const [notes, setNotes] = React.useState("");
+  const [notesRead, setNotesRead] = React.useState<NotesRead | null>(null);
+  const [notesBusy, setNotesBusy] = React.useState(false);
 
   const load = React.useCallback(async (regenerate = false) => {
     if (!kind) return;
@@ -147,6 +151,13 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     if (!r.ok || !r.data) return setNote(r.error ?? "Could not draft that just now.");
     setAssist(r.data.assist); setAssistText(r.data.assist.reply); setAssistMode(mode);
     if (r.data.outcome) setPrep((p) => (p ? { ...p, outcome: r.data!.outcome } : p));
+  }
+  async function readNotes() {
+    setNotesBusy(true); setNote("");
+    const r = await post<{ read: NotesRead }>("/api/ai/prep/notes", { id: prep!.id, notes });
+    setNotesBusy(false);
+    if (!r.ok || !r.data) return setNote(r.error ?? "Could not read those notes.");
+    setNotesRead(r.data.read);
   }
   const platform = (["linkedin", "x", "reddit", "hn"].includes(prep.prepared.platform ?? "") ? prep.prepared.platform : "other") as Platform;
   const checks = (kind === "outreach" || kind === "post") && text.trim()
@@ -243,6 +254,28 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
                 </>
               )}
               {assist.nextStep && <p style={muted}>Next: {assist.nextStep}</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {kind === "validation_kit" && (
+        <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
+          <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>After the interview</div>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Paste your notes. BuildMind pulls out themes with their exact words and separates what they did from what they said they would do." aria-label="Interview notes"
+            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
+          <div><button type="button" style={btn(true)} disabled={notesBusy || notes.trim().length < 40} onClick={readNotes}>{notesBusy ? "Reading…" : "Read my notes"}</button></div>
+          {notesRead && (
+            <div style={{ display: "grid", gap: 6 }}>
+              <p style={{ ...muted, color: "var(--bm-text2)" }}>{notesRead.behaviourCount} of {notesRead.themes.length} quotes describe something they actually did{notesRead.opinionCount ? `; ${notesRead.opinionCount} are opinions or things they would do` : ""}.</p>
+              {notesRead.themes.map((t) => (
+                <div key={t.quote} style={{ fontSize: "var(--text-sm)", color: "var(--bm-text2)", lineHeight: "var(--leading-normal)" }}>
+                  {t.theme} <span style={{ ...muted, display: "inline" }}>({t.behaviour ? "did" : "said"})</span>
+                  <div style={{ ...muted, borderLeft: "2px solid var(--bm-border2)", paddingLeft: 8, marginTop: 3 }}>&ldquo;{t.quote}&rdquo;</div>
+                </div>
+              ))}
+              {notesRead.surprise && <p style={muted}>Possibly unexpected: {notesRead.surprise}</p>}
+              {notesRead.nextQuestion && <p style={muted}>Ask next: {notesRead.nextQuestion}</p>}
             </div>
           )}
         </div>

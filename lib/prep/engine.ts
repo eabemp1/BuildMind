@@ -13,7 +13,9 @@ import { loadConnectedFacts, type ConnectedFacts } from "@/lib/integrations/fact
 import { webSearch } from "@/lib/search";
 import { getFounderSnapshot } from "@/lib/server/founderSnapshot";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
-import { draftContent, keepPastBehaviourQuestions, type ProjectCtx } from "@/lib/distribution/engine";
+import { draftContent, keepPastBehaviourQuestions, unsupportedNumbers, type ProjectCtx } from "@/lib/distribution/engine";
+import { loadInferredContext } from "@/lib/prep/context";
+import { learnedLessons, type LearnRow } from "@/lib/prep/learning";
 import { PREP_META, hasContent, inferPlatform, normalizePrepared, prepKindFor, type PrepFact, type PrepKind, type Prepared } from "@/lib/prep/kinds";
 
 const DAY = 86_400_000;
@@ -30,20 +32,7 @@ export async function loadProject(admin: SupabaseClient, userId: string, project
   } catch { return empty; }
 }
 
-type LearnRow = { kind: PrepKind; original: string; final: string | null; outcome: string | null; status: string };
 type PreparedRow = { kind: PrepKind; payload: Prepared | null; chosen_variant: string | null; final_text: string | null; outcome: string | null; status: string };
-
-function learnedLessons(rows: LearnRow[], kind: PrepKind): string[] {
-  const relevant = rows.filter((row) => row.kind === kind).slice(0, 20);
-  const edited = relevant.filter((row) => row.final?.trim() && row.final.trim() !== row.original.trim()).length;
-  const positive = relevant.filter((row) => ["replied", "call_booked", "got_comments"].includes(row.outcome ?? "")).length;
-  const negative = relevant.filter((row) => ["no_reply", "no_response"].includes(row.outcome ?? "")).length;
-  const lessons: string[] = [];
-  if (edited) lessons.push(`The founder edited ${edited} of ${relevant.length} recent ${kind.replaceAll("_", " ")} drafts; keep language easy to personalize.`);
-  if (positive) lessons.push(`${positive} recent ${kind.replaceAll("_", " ")} item(s) had a positive recorded outcome; preserve the concrete approach that the founder chose.`);
-  if (negative) lessons.push(`${negative} recent ${kind.replaceAll("_", " ")} item(s) had no response; vary the opening and make the ask specific.`);
-  return lessons;
-}
 
 /** Recent prepared work, as rows the learning module understands. */
 export async function loadLearnRows(admin: SupabaseClient, userId: string): Promise<LearnRow[]> {
@@ -160,7 +149,7 @@ export function validationFallback(project: ProjectCtx): Prepared {
   }, "validation_kit");
 }
 
-export async function validationKit(project: ProjectCtx, task: string): Promise<Prepared> {
+export async function validationKit(project: ProjectCtx, task: string, inferred = ""): Promise<Prepared> {
   try {
     const raw = await callModelJSON<Record<string, unknown>>([{ role: "user", content: `You are preparing an interview kit for a solo founder doing customer discovery. Ask about past behaviour, never about hypothetical future use of the product. No flattery.
 
@@ -168,6 +157,7 @@ PROJECT: ${project.name}: ${project.description}
 Problem: ${project.problem || "not stated"}
 Who it is for: ${project.targetUsers || "not stated"}
 Task today: ${task}
+${inferred}
 
 Return JSON: {"summary":"","sections":[{"heading":"Who to talk to","bullets":["where to find 5 to 10 of them, specific places"]},{"heading":"Screener","bullets":["2 yes/no questions to confirm they fit"]},{"heading":"Interview questions","bullets":["6 questions about what they did last time"]},{"heading":"What counts as evidence","bullets":["3 signals"]},{"heading":"Stop signals","bullets":["2 signals"]}]}` }], { maxTokens: 1400 });
     const p = normalizePrepared(raw, "validation_kit");
@@ -176,6 +166,119 @@ Return JSON: {"summary":"","sections":[{"heading":"Who to talk to","bullets":["w
     if (!qs?.bullets || qs.bullets.length < 4) return validationFallback(project);
     return p;
   } catch { return validationFallback(project); }
+}
+
+// ── Pricing and prospects (grounded in live search) ─────────────────────────
+
+type Hit = { title: string; url: string; snippet: string };
+const hitText = (h: Hit) => `${h.title} ${h.snippet} ${h.url}`;
+const strs = (v: unknown, n: number, len = 220): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.trim().slice(0, len)).filter(Boolean).slice(0, n) : []);
+
+async function search(q: string, n: number): Promise<Hit[]> {
+  try { const r = await webSearch(q.slice(0, 140), n); return r.scraped ? r.results.filter((x) => /^https?:\/\//.test(x.url)).slice(0, n).map((x) => ({ title: x.title, url: x.url, snippet: x.snippet })) : []; } catch { return []; }
+}
+
+/** A price shown to the founder must appear in the source it cites. */
+export function groundedPrices(raw: unknown, hits: Hit[]): Array<{ name: string; price: string; source: number }> {
+  const list = Array.isArray((raw as { others?: unknown })?.others) ? (raw as { others: unknown[] }).others : [];
+  const out: Array<{ name: string; price: string; source: number }> = [];
+  for (const c of list.slice(0, 6)) {
+    const o = (c ?? {}) as Record<string, unknown>;
+    const name = typeof o.name === "string" ? o.name.trim().slice(0, 60) : "";
+    const price = typeof o.price === "string" ? o.price.trim().slice(0, 80) : "";
+    const hit = Number.isInteger(Number(o.source)) ? hits[Number(o.source) - 1] : undefined;
+    if (!name || !price || !hit) continue;
+    const first = norm(name).split(" ")[0];
+    const text = norm(hitText(hit));
+    if (!first || !text.includes(first) || !text.includes(norm(price))) continue;
+    out.push({ name, price, source: Number(o.source) });
+  }
+  return out;
+}
+
+export async function pricingTest(project: ProjectCtx, task: string, inferred: string): Promise<Prepared | null> {
+  const hits = await search(`${project.name} ${project.description.slice(0, 80)} alternatives pricing plans`, 6);
+  const src = hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url}): ${h.snippet.slice(0, 240)}`).join("\n");
+  let raw: unknown;
+  try {
+    raw = await callModelJSON<unknown>([{ role: "user", content: `You are preparing a pricing test for a solo founder. Never state a price unless it appears in the search results below. Suggest tests as relative positions (for example "a little under [name]'s paid plan") or as [add: your price]. Ask about past behaviour (what they pay now, what they tried), never about hypothetical future purchases. No flattery.
+
+PROJECT: ${project.name}: ${project.description}
+Who it is for: ${project.targetUsers || "not stated"}
+Task today: ${task}
+${inferred}
+
+SEARCH RESULTS:
+${src || "(none available)"}
+
+Return JSON: {"summary":"one sentence","others":[{"name":"product as written in the result","price":"the price exactly as written in the result","source":1}],"tests":["3 ways to test price this week, each one sentence"],"questions":["5 questions about what they pay for today and what they tried"],"signals":["3 things that would count as real willingness to pay"]}` }], { maxTokens: 1300 });
+  } catch { return null; }
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const others = groundedPrices(raw, hits);
+  const allowed = `${hits.map(hitText).join(" ")} ${task}`;
+  const tests = strs(o.tests, 3).filter((t) => !unsupportedNumbers(t, allowed).length);
+  const qs = keepPastBehaviourQuestions(strs(o.questions, 6));
+  const signals = strs(o.signals, 3).filter((t) => !unsupportedNumbers(t, allowed).length);
+  if (!tests.length && !qs.length) return null;
+  const needs = hits.length ? [] : [{ label: "Live pricing data", why: "Search was unavailable, so no competitor prices are shown. Run it again later to see what others charge." }];
+  return normalizePrepared({
+    title: "Pricing test",
+    summary: typeof o.summary === "string" && o.summary.trim() ? o.summary : "A way to learn what people will pay before you set a price.",
+    sections: [
+      ...(others.length ? [{ heading: "What others charge", bullets: others.map((c) => `${c.name}: ${c.price}`), links: others.map((c) => ({ title: hits[c.source - 1].title, url: hits[c.source - 1].url })) }] : []),
+      ...(tests.length ? [{ heading: "Ways to test a price this week", bullets: tests }] : []),
+      ...(qs.length >= 3 ? [{ heading: "Ask these (about what they do today)", bullets: qs }] : []),
+      ...(signals.length ? [{ heading: "What counts as a real signal", bullets: signals }] : []),
+    ],
+  }, "pricing_test", { needs });
+}
+
+export async function prospectMap(project: ProjectCtx, task: string, inferred: string): Promise<Prepared | null> {
+  const who = project.targetUsers || project.name;
+  const [a, b] = await Promise.all([
+    search(`where do ${who} discuss ${project.problem || project.description.slice(0, 60)} community forum subreddit`, 6),
+    search(`${who} newsletter OR slack OR discord OR group`, 5),
+  ]);
+  const seen = new Set<string>();
+  const hits = [...a, ...b].filter((h) => { const k = h.url.replace(/^https?:\/\/(www\.)?/, "").split("?")[0]; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 8);
+  const src = hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url}): ${h.snippet.slice(0, 200)}`).join("\n");
+  let raw: unknown;
+  try {
+    raw = await callModelJSON<unknown>([{ role: "user", content: `You are helping a solo founder find the first ten people to talk to. Name a place only if it appears in the search results below, and cite its number. Never invent a community, a person or a link. No flattery.
+
+PROJECT: ${project.name}: ${project.description}
+Who it is for: ${who}
+Task today: ${task}
+${inferred}
+
+SEARCH RESULTS:
+${src || "(none available)"}
+
+Return JSON: {"summary":"one sentence","places":[{"name":"place as written in the result","why":"why these people are there, from the result","source":1}],"profile":["4 traits of someone worth messaging, specific to this project"],"queries":["4 searches the founder can run today to find individuals"],"start":"one sentence on how to open a first conversation there without pitching"}` }], { maxTokens: 1200 });
+  } catch { return null; }
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const placesRaw = Array.isArray(o.places) ? o.places : [];
+  const places: Array<{ name: string; why: string; source: number }> = [];
+  for (const x of placesRaw.slice(0, 6)) {
+    const q = (x ?? {}) as Record<string, unknown>;
+    const name = typeof q.name === "string" ? q.name.trim().slice(0, 70) : "";
+    const hit = Number.isInteger(Number(q.source)) ? hits[Number(q.source) - 1] : undefined;
+    const first = norm(name).split(" ")[0];
+    if (!name || !hit || !first || !norm(hitText(hit)).includes(first)) continue;
+    places.push({ name, why: typeof q.why === "string" ? q.why.trim().slice(0, 160) : "", source: Number(q.source) });
+  }
+  const profile = strs(o.profile, 4); const queries = strs(o.queries, 4, 140);
+  if (!places.length && !profile.length) return null;
+  return normalizePrepared({
+    title: "Prospect map",
+    summary: typeof o.summary === "string" && o.summary.trim() ? o.summary : "Where the people you want to talk to already are.",
+    sections: [
+      ...(places.length ? [{ heading: "Where they are", bullets: places.map((c) => `${c.name}${c.why ? `: ${c.why}` : ""}`), links: places.map((c) => ({ title: hits[c.source - 1].title, url: hits[c.source - 1].url })) }] : []),
+      ...(profile.length ? [{ heading: "Who is worth messaging", bullets: profile }] : []),
+      ...(queries.length ? [{ heading: "Searches to run today", bullets: queries }] : []),
+      ...(typeof o.start === "string" && o.start.trim() ? [{ heading: "How to start", body: o.start.trim().slice(0, 260) }] : []),
+    ],
+  }, "prospects", { needs: places.length ? [] : [{ label: "Live search results", why: "Search was unavailable, so no specific communities are named. Run it again later for places that exist right now." }] });
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -193,14 +296,17 @@ export async function generatePrep(
   const platform = inferPlatform(input.task);
   let prepared: Prepared | null = null;
   let connected: ConnectedFacts | null = null;
-  const connectedKinds = new Set<PrepKind>(["investor_update", "video_script", "post", "landing"]);
+  const connectedKinds = new Set<PrepKind>(["investor_update", "video_script", "post", "landing", "launch_plan"]);
 
+  const inferred = await loadInferredContext(admin, userId);
   if (kind === "competitor_brief") prepared = await competitorBrief(project);
-  else if (kind === "validation_kit") prepared = await validationKit(project, input.task);
+  else if (kind === "validation_kit") prepared = await validationKit(project, input.task, inferred);
+  else if (kind === "pricing_test") prepared = await pricingTest(project, input.task, inferred);
+  else if (kind === "prospects") prepared = await prospectMap(project, input.task, inferred);
   else {
     const rows = PREP_META[kind].learns ? await loadLearnRows(admin, userId) : [];
     const lessons = learnedLessons(rows, kind);
-    const ctx = { kind, task: input.task, firstStep: input.firstStep, platform, project, lessons } as Parameters<typeof draftContent>[0];
+    const ctx = { kind, task: input.task, firstStep: input.firstStep, platform, project, lessons, inferred } as Parameters<typeof draftContent>[0];
     if (kind === "investor_update") ctx.facts = await investorFacts(admin, userId, input.projectId, project);
     if (connectedKinds.has(kind)) {
       connected = await loadConnectedFacts(admin, userId);
@@ -221,12 +327,11 @@ export async function generatePrep(
   const needs = [...prepared.needs];
   const has = (p: "stripe" | "github") => Boolean(connected?.connected.includes(p));
   if (kind === "investor_update") {
-    if (!has("stripe")) needs.push({ label: "Connect Stripe for real revenue", why: "BuildMind reads your monthly recurring revenue, subscribers and last 30 days of payments, read-only, so the numbers are exact instead of placeholders.", connect: "stripe" });
-    if (!has("github")) needs.push({ label: "Connect GitHub for what you shipped", why: "Merged pull requests become the \"what we shipped\" lines, read-only, for one repository.", connect: "github" });
+    if (!has("stripe")) needs.push({ label: "Optional: connect Stripe for exact revenue", why: "BuildMind reads your monthly recurring revenue, subscribers and last 30 days of payments, read-only, so the numbers are exact instead of placeholders.", connect: "stripe" });
+    if (!has("github")) needs.push({ label: "Optional: connect GitHub for what you shipped", why: "Merged pull requests become the \"what we shipped\" lines, read-only, for one repository.", connect: "github" });
     if (!has("stripe")) needs.push({ label: "Users and signups", why: "BuildMind only knows what you do inside it. Add those numbers where the draft says [add: ...]." });
   }
-  if ((kind === "video_script" || kind === "post" || kind === "landing") && !has("github")) needs.push({ label: "Connect GitHub so this is about what you really shipped", why: "Read-only, one repository. Recent merged pull requests ground the script and the copy in real work.", connect: "github" });
-  if (connected?.stale.length) needs.push({ label: "A connected app needs attention", why: `Could not read ${connected.stale.join(" and ")} just now, so older or no numbers were used. Reconnect it in Settings if this keeps happening.` });
+    if (connected?.stale.length) needs.push({ label: "A connected app needs attention", why: `Could not read ${connected.stale.join(" and ")} just now, so older or no numbers were used. Reconnect it in Settings if this keeps happening.` });
   if (kind === "video_script") needs.push({ label: "Your screen recordings", why: "BuildMind writes the script and shot list. Record the clips on your phone or computer, then edit them with the captions below." });
   if (kind === "seo" && !prepared.sections.some((s) => s.links?.length)) needs.push({ label: "Live search results", why: "Search was unavailable, so this brief is general. Run it again later for one grounded in what ranks now." });
   return { kind, platform, prepared: { ...prepared, needs } };
