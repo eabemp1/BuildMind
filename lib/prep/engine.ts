@@ -14,6 +14,7 @@ import { webSearch } from "@/lib/search";
 import { getFounderSnapshot } from "@/lib/server/founderSnapshot";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
 import { draftContent, keepPastBehaviourQuestions, unsupportedNumbers, type ProjectCtx } from "@/lib/distribution/engine";
+import { searchPromptBlock, searchSections } from "@/lib/integrations/searchConsole";
 import { loadInferredContext } from "@/lib/prep/context";
 import { learnedLessons, type LearnRow } from "@/lib/prep/learning";
 import { PREP_META, hasContent, inferPlatform, normalizePrepared, prepKindFor, type PrepFact, type PrepKind, type Prepared } from "@/lib/prep/kinds";
@@ -296,7 +297,7 @@ export async function generatePrep(
   const platform = inferPlatform(input.task);
   let prepared: Prepared | null = null;
   let connected: ConnectedFacts | null = null;
-  const connectedKinds = new Set<PrepKind>(["investor_update", "video_script", "post", "landing", "launch_plan"]);
+  const connectedKinds = new Set<PrepKind>(["investor_update", "video_script", "post", "landing", "launch_plan", "seo"]);
 
   const inferred = await loadInferredContext(admin, userId);
   if (kind === "competitor_brief") prepared = await competitorBrief(project);
@@ -312,6 +313,7 @@ export async function generatePrep(
       connected = await loadConnectedFacts(admin, userId);
       if (kind === "investor_update") ctx.facts = [...connected.facts, ...(ctx.facts ?? [])];
       ctx.shipped = connected.shipped;
+      if (connected.search) ctx.searchData = searchPromptBlock(connected.search);
     }
     if (kind === "seo") {
       try { const r = await webSearch(`${project.name} ${project.problem || project.description}`.slice(0, 120), 6); ctx.serp = r.scraped ? r.results.filter((x) => /^https?:\/\//.test(x.url)).slice(0, 6).map((x) => ({ title: x.title, url: x.url, snippet: x.snippet })) : []; } catch { ctx.serp = []; }
@@ -323,15 +325,17 @@ export async function generatePrep(
     }
   }
   if (!prepared || !hasContent(prepared)) return null;
+  if (kind === "seo" && connected?.search) prepared = { ...prepared, sections: [...searchSections(connected.search), ...prepared.sections] };
 
   const needs = [...prepared.needs];
-  const has = (p: "stripe" | "github") => Boolean(connected?.connected.includes(p));
+  const has = (p: "stripe" | "github" | "search_console") => Boolean(connected?.connected.includes(p));
   if (kind === "investor_update") {
     if (!has("stripe")) needs.push({ label: "Optional: connect Stripe for exact revenue", why: "BuildMind reads your monthly recurring revenue, subscribers and last 30 days of payments, read-only, so the numbers are exact instead of placeholders.", connect: "stripe" });
     if (!has("github")) needs.push({ label: "Optional: connect GitHub for what you shipped", why: "Merged pull requests become the \"what we shipped\" lines, read-only, for one repository.", connect: "github" });
     if (!has("stripe")) needs.push({ label: "Users and signups", why: "BuildMind only knows what you do inside it. Add those numbers where the draft says [add: ...]." });
   }
-    if (connected?.stale.length) needs.push({ label: "A connected app needs attention", why: `Could not read ${connected.stale.join(" and ")} just now, so older or no numbers were used. Reconnect it in Settings if this keeps happening.` });
+    if (kind === "seo" && !has("search_console")) needs.push({ label: "Optional: connect Search Console", why: "Read-only. The brief then starts from queries your site already almost ranks for, using your own numbers instead of general advice.", connect: "search_console" });
+  if (connected?.stale.length) needs.push({ label: "A connected app needs attention", why: `Could not read ${connected.stale.join(" and ")} just now, so older or no numbers were used. Reconnect it in Settings if this keeps happening.` });
   if (kind === "video_script") needs.push({ label: "Your screen recordings", why: "BuildMind writes the script and shot list. Record the clips on your phone or computer, then edit them with the captions below." });
   if (kind === "seo" && !prepared.sections.some((s) => s.links?.length)) needs.push({ label: "Live search results", why: "Search was unavailable, so this brief is general. Run it again later for one grounded in what ranks now." });
   return { kind, platform, prepared: { ...prepared, needs } };

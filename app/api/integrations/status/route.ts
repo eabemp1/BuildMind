@@ -30,7 +30,7 @@ export async function GET() {
       .from("integrations")
       .select("provider, metadata, database_id")
       .eq("user_id", user.id)
-      .in("provider", ["notion", "linear", "stripe", "github"]);
+      .in("provider", ["notion", "linear", "stripe", "github", "search_console"]);
 
     const providers = new Set((integrations ?? []).map(i => i.provider));
 
@@ -44,8 +44,11 @@ export async function GET() {
       notion: providers.has("notion"),
       linear: providers.has("linear"),
       // A connected row whose token stopped working. Settings should ask to reconnect.
-      needsReconnect: { notion: needs.has("notion"), linear: needs.has("linear"), stripe: needs.has("stripe"), github: needs.has("github") },
+      needsReconnect: { search_console: needs.has("search_console"), notion: needs.has("notion"), linear: needs.has("linear"), stripe: needs.has("stripe"), github: needs.has("github") },
       stripe: providers.has("stripe"),
+      searchConsole: providers.has("search_console"),
+      searchConsoleSite: ((integrations ?? []) as Array<{ provider: string; database_id?: string | null }>).find((i) => i.provider === "search_console")?.database_id ?? null,
+      searchConsoleSites: (((integrations ?? []) as Array<{ provider: string; metadata?: { sites?: Array<{ url: string }> } | null }>).find((i) => i.provider === "search_console")?.metadata?.sites ?? []).map((x) => x.url),
       github: providers.has("github"),
       githubRepo: ((integrations ?? []) as Array<{ provider: string; database_id?: string | null }>).find((i) => i.provider === "github")?.database_id ?? null,
     });

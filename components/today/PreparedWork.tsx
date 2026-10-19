@@ -75,6 +75,8 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   const [assistMode, setAssistMode] = React.useState<"" | "reply" | "followup">("");
   const [assistBusy, setAssistBusy] = React.useState(false);
   const [assistText, setAssistText] = React.useState("");
+  const [videoUrl, setVideoUrl] = React.useState("");
+  const [videoBusy, setVideoBusy] = React.useState(false);
   const [notes, setNotes] = React.useState("");
   const [notesRead, setNotesRead] = React.useState<NotesRead | null>(null);
   const [notesBusy, setNotesBusy] = React.useState(false);
@@ -101,6 +103,15 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     setPrep(null);
     void load(false);
   }, [kind, task, missionKind, load]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !kind) return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("integration") === "search_console" && q.get("status") === "connected") {
+      window.history.replaceState({}, "", window.location.pathname);
+      void load(true);
+    }
+  }, [kind, load]);
 
   if (!kind) return null;
   const meta = PREP_META[kind];
@@ -151,6 +162,13 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     if (!r.ok || !r.data) return setNote(r.error ?? "Could not draft that just now.");
     setAssist(r.data.assist); setAssistText(r.data.assist.reply); setAssistMode(mode);
     if (r.data.outcome) setPrep((p) => (p ? { ...p, outcome: r.data!.outcome } : p));
+  }
+  async function saveVideo() {
+    setVideoBusy(true); setNote("");
+    const r = await post<{ recorded: NonNullable<Prep["prepared"]["recorded"]> }>("/api/ai/prep/link", { id: prep!.id, url: videoUrl });
+    setVideoBusy(false);
+    if (!r.ok || !r.data) return setNote(r.error ?? "Could not save that link.");
+    setPrep((p) => (p ? { ...p, status: "sent", prepared: { ...p.prepared, recorded: r.data!.recorded } } : p)); setVideoUrl("");
   }
   async function readNotes() {
     setNotesBusy(true); setNote("");
@@ -259,6 +277,21 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         </div>
       )}
 
+      {kind === "video_script" && (
+        <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
+          <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>Recorded it?</div>
+          {prep.prepared.recorded ? (
+            <p style={{ ...muted, color: "var(--bm-text2)" }}>Linked: <a href={prep.prepared.recorded.url} target="_blank" rel="noopener noreferrer nofollow" style={{ color: "var(--bm-text2)" }}>{prep.prepared.recorded.title} ↗</a>{prep.prepared.recorded.verified ? "" : " (could not be checked, it may be private)"}. Later posts and launch plans will know a demo exists.</p>
+          ) : (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="Paste your Loom or YouTube link" aria-label="Video link" autoComplete="off"
+                style={{ flex: "1 1 220px", boxSizing: "border-box", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 8, padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
+              <button type="button" style={btn(true)} disabled={videoBusy || videoUrl.trim().length < 10} onClick={saveVideo}>{videoBusy ? "Checking…" : "Save link"}</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {kind === "validation_kit" && (
         <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
           <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>After the interview</div>
@@ -312,8 +345,9 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         <div key={n.label} style={{ border: "1px solid var(--bm-border)", borderRadius: 8, padding: "8px 10px", display: "grid", gap: 6 }}>
           <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text2)" }}>{n.label}</div>
           <p style={muted}>{n.why}</p>
-          {n.connect && connectApp !== n.connect && <div><button type="button" style={btn()} onClick={() => setConnectApp(n.connect!)}>Connect {n.connect === "stripe" ? "Stripe" : "GitHub"}</button></div>}
-          {n.connect && connectApp === n.connect && <ConnectCard app={n.connect} onCancel={() => setConnectApp(null)} onConnected={async () => { setConnectApp(null); setBusy("redo"); await load(true); setBusy(""); }} />}
+          {n.connect === "search_console" && <div><a href="/api/integrations/search-console/connect?return=/today" style={{ ...btn(), textDecoration: "none", display: "inline-block" }}>Connect Search Console</a></div>}
+          {n.connect && n.connect !== "search_console" && connectApp !== n.connect && <div><button type="button" style={btn()} onClick={() => setConnectApp(n.connect as KeyApp)}>Connect {n.connect === "stripe" ? "Stripe" : "GitHub"}</button></div>}
+          {n.connect && n.connect !== "search_console" && connectApp === n.connect && <ConnectCard app={n.connect} onCancel={() => setConnectApp(null)} onConnected={async () => { setConnectApp(null); setBusy("redo"); await load(true); setBusy(""); }} />}
         </div>
       ))}
 

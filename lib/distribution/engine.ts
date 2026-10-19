@@ -34,6 +34,8 @@ export interface ContentCtx {
   shipped?: string[];
   /** From lib/prep/context.ts: the founder's own recent record. */
   inferred?: string;
+  /** Real Search Console block (lib/integrations/searchConsole.ts), SEO only. */
+  searchData?: string;
   serp?: SerpHit[];
 }
 
@@ -125,7 +127,7 @@ function kindInstructions(ctx: ContentCtx): string {
       return `Write landing page copy. Variants: THREE headline options, each as "Headline\\nSubheadline" labelled "Plain", "Outcome", "Contrast". Sections: "Three benefits" (bullets, each tied to the problem), "How it works" (3 bullets), "Call to action" (body, one line), "Questions to answer" (3 bullets: a real objection and a short answer). Add a section "Proof to add" listing what real evidence the page still needs (numbers, quotes). Invent none.`;
     case "seo": {
       const serp = (ctx.serp ?? []).map((s, i) => `[${i + 1}] ${s.title} — ${s.snippet.slice(0, 180)}`).join("\n");
-      return `Write an SEO brief grounded ONLY in these current search results:\n${serp || "(no results available; say so in the summary and keep claims general)"}\nVariants: TWO title/meta pairs, each as "Title: ...\\nMeta: ..." (title 60 characters or fewer, meta 155 or fewer), labelled "Plain" and "Question". Sections: "Target keyword" (body: one primary keyword and 3 related phrases implied by the results), "Outline" (bullets of H2 headings), "What ranks now" (bullets, each naming a result by number), "Gap you can own" (body).`;
+      return `Write an SEO brief grounded ONLY in these current search results${ctx.searchData ? " and the founder's own search data" : ""}:\n${ctx.searchData ? `${ctx.searchData}\n` : ""}${serp || "(no results available; say so in the summary and keep claims general)"}\nVariants: TWO title/meta pairs, each as "Title: ...\\nMeta: ..." (title 60 characters or fewer, meta 155 or fewer), labelled "Plain" and "Question". Sections: "Target keyword" (body: one primary keyword and 3 related phrases implied by the results), "Outline" (bullets of H2 headings), "What ranks now" (bullets, each naming a result by number), "Gap you can own" (body).`;
     }
     case "investor_update": {
       const facts = (ctx.facts ?? []).map((f) => `- ${f.label}: ${f.value}`).join("\n");

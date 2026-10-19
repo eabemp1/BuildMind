@@ -20,8 +20,9 @@ const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trim
 const OUTCOME: Record<string, string> = { replied: "got a reply", call_booked: "booked a call", no_reply: "no reply", got_comments: "got comments", no_response: "no response" };
 
 /** Pure: turns recent records into a short block for prompts. Empty when there is nothing to say. */
-export function inferredBlock(work: WorkRow[], reflections: ReflectionRow[], now = Date.now()): string {
+export function inferredBlock(work: WorkRow[], reflections: ReflectionRow[], now = Date.now(), demoTitle?: string | null): string {
   const lines: string[] = [];
+  if (demoTitle) lines.push(`- The founder has recorded a demo video ("${clip(demoTitle, 80)}"). Suggest embedding or linking it where it helps.`);
   for (const w of work.slice(0, 6)) {
     const meta = PREP_META[w.kind as PrepKind];
     if (!meta) continue;
@@ -42,10 +43,12 @@ export function inferredBlock(work: WorkRow[], reflections: ReflectionRow[], now
 
 export async function loadInferredContext(admin: SupabaseClient, userId: string): Promise<string> {
   try {
-    const [w, r] = await Promise.all([
+    const [w, r, v] = await Promise.all([
       admin.from("prepared_work").select("kind,task_text,status,outcome,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(8),
       admin.from("reflections").select("today_action,outcome,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(5),
+      admin.from("prepared_work").select("payload").eq("user_id", userId).eq("kind", "video_script").order("updated_at", { ascending: false }).limit(5),
     ]);
-    return inferredBlock((w.data ?? []) as WorkRow[], (r.data ?? []) as ReflectionRow[]);
+    const demo = ((v.data ?? []) as Array<{ payload: { recorded?: { title?: string } } | null }>).map((x) => x.payload?.recorded?.title).find(Boolean);
+    return inferredBlock((w.data ?? []) as WorkRow[], (r.data ?? []) as ReflectionRow[], Date.now(), demo);
   } catch { return ""; }
 }

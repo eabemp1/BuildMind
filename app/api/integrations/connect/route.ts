@@ -55,7 +55,7 @@ export async function DELETE(request: Request) {
   const user = await getRouteUser();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const provider = new URL(request.url).searchParams.get("provider");
-  if (provider !== "stripe" && provider !== "github") return NextResponse.json({ ok: false, error: "Unknown app." }, { status: 400 });
+  if (provider !== "stripe" && provider !== "github" && provider !== "search_console") return NextResponse.json({ ok: false, error: "Unknown app." }, { status: 400 });
   if (!hasAdminEnv()) return NextResponse.json({ ok: false, error: "Not available." }, { status: 503 });
   await createAdminClient().from("integrations").delete().eq("user_id", user.userId).eq("provider", provider);
   return NextResponse.json({ ok: true });

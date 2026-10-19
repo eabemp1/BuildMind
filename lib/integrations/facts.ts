@@ -7,10 +7,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptSecret } from "@/lib/integrations/crypto";
 import { fetchStripeSummary, stripeFacts, type StripeSummary } from "@/lib/integrations/stripe";
 import { fetchGithubSummary, githubFacts, type GithubSummary } from "@/lib/integrations/github";
+import { fetchSearchSummary, searchFacts, type SearchSummary } from "@/lib/integrations/searchConsole";
 import type { PrepFact } from "@/lib/prep/kinds";
 
-export type KeyProvider = "stripe" | "github";
-export interface ConnectedFacts { facts: PrepFact[]; shipped: string[]; connected: KeyProvider[]; stale: KeyProvider[] }
+export type KeyProvider = "stripe" | "github" | "search_console";
+export interface ConnectedFacts { facts: PrepFact[]; shipped: string[]; search?: SearchSummary; connected: KeyProvider[]; stale: KeyProvider[] }
 
 interface Row { provider: KeyProvider; access_token: string; database_id: string | null; metadata: Record<string, unknown> | null }
 
@@ -19,16 +20,17 @@ const when = (iso: string) => iso.slice(0, 10);
 export async function loadConnectedFacts(admin: SupabaseClient, userId: string): Promise<ConnectedFacts> {
   const out: ConnectedFacts = { facts: [], shipped: [], connected: [], stale: [] };
   try {
-    const { data } = await admin.from("integrations").select("provider, access_token, database_id, metadata").eq("user_id", userId).in("provider", ["stripe", "github"]);
+    const { data } = await admin.from("integrations").select("provider, access_token, database_id, metadata").eq("user_id", userId).in("provider", ["stripe", "github", "search_console"]);
     const rows = (data ?? []) as Row[];
     await Promise.all(rows.map(async (r) => {
       out.connected.push(r.provider);
       const token = decryptSecret(r.access_token);
-      const cached = r.metadata?.summary as StripeSummary | GithubSummary | undefined;
-      let live: StripeSummary | GithubSummary | null = null;
+      const cached = r.metadata?.summary as StripeSummary | GithubSummary | SearchSummary | undefined;
+      let live: StripeSummary | GithubSummary | SearchSummary | null = null;
       let authFailed = false;
       if (token) {
         if (r.provider === "stripe") { const f = await fetchStripeSummary(token); if (f.ok) live = f.summary; else authFailed = f.kind !== "network"; }
+        else if (r.provider === "search_console") { if (r.database_id) { const f = await fetchSearchSummary(token, r.database_id); if (f.ok) live = f.summary; else authFailed = f.kind === "auth"; } }
         else if (r.database_id) { const f = await fetchGithubSummary(token, r.database_id); if (f.ok) live = f.summary; else authFailed = f.kind !== "network"; }
       } else authFailed = true;
 
@@ -41,6 +43,7 @@ export async function loadConnectedFacts(admin: SupabaseClient, userId: string):
       if (!s) { out.stale.push(r.provider); return; }
       if (!live) out.stale.push(r.provider);
       const note = live ? "" : ` (as of ${when(s.asOf)})`;
+      if (r.provider === "search_console") { out.search = s as SearchSummary; out.facts.push(...searchFacts(s as SearchSummary).map((f) => ({ ...f, value: f.value + note }))); return; }
       const facts = r.provider === "stripe" ? stripeFacts(s as StripeSummary) : githubFacts(s as GithubSummary);
       out.facts.push(...facts.map((f) => ({ ...f, value: f.value + note })));
       if (r.provider === "github") out.shipped.push(...(s as GithubSummary).shipped);

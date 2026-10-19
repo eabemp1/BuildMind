@@ -148,7 +148,7 @@ export function inferPlatform(task: string): "linkedin" | "x" | "reddit" | "hn" 
 
 export interface PrepVariant { id: string; label: string; text: string; why?: string }
 export interface PrepSection { heading: string; body?: string; bullets?: string[]; links?: Array<{ title: string; url: string }> }
-export interface PrepNeed { label: string; why: string; /** An app that would fill this gap. The Today panel offers to connect it right here. */ connect?: "stripe" | "github" }
+export interface PrepNeed { label: string; why: string; /** An app that would fill this gap. The Today panel offers to connect it right here. */ connect?: "stripe" | "github" | "search_console" }
 export interface PrepFact { label: string; value: string }
 
 export interface Prepared {
@@ -164,6 +164,8 @@ export interface Prepared {
   needs: PrepNeed[];
   /** What the Distribution engine learned from this founder and applied. */
   learned: string[];
+  /** A video the founder recorded and linked (Loom or YouTube). */
+  recorded?: { url: string; title: string; verified: boolean };
 }
 
 const str = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : "");
