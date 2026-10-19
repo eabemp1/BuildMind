@@ -20,6 +20,7 @@ import { ProfileCompletenessBar } from "@/components/ProfileCompletenessBar";
 import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, Plug2, type LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Price } from "@/components/Price";
+import ConnectedApps from "@/components/integrations/ConnectedApps";
 
 type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "integrations" | "public";
 
@@ -364,6 +365,10 @@ function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
             </div>
           </div>
         ))}
+      </div>
+      <div style={{ marginTop: 20 }}>
+        <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", marginBottom: 8 }}>Read-only apps for your drafts</div>
+        <ConnectedApps />
       </div>
     </div>
   );

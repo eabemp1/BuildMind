@@ -1,6 +1,8 @@
 "use client";
 
 import FollowUpCard from "@/components/today/FollowUpCard";
+import PreparedWork from "@/components/today/PreparedWork";
+import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
 import EveningCloseout from "@/components/today/EveningCloseout";
 import TomorrowCarry from "@/components/today/TomorrowCarry";
 import CompanionBrief from "@/components/companion/CompanionBrief";
@@ -945,6 +947,7 @@ function TodayContent() {
       // FIX (task-repeat bug): tells the server which task was just
       // rejected via "Replace this task" so buildDecisionState() can
       // exclude it from candidate ranking instead of re-picking it.
+      clientHour: new Date().getHours(),
       excludeAction: lastRejectedActionRef.current ?? undefined,
       swap: lastRejectedActionRef.current ? (lastSwapRef.current ?? undefined) : undefined,
       // The server stamps the cached task with THIS day key so the cache check
@@ -1261,6 +1264,12 @@ function TodayContent() {
   // Build / analyze / pricing / unblock / reset days have no outreach draft, so
   // they get a "how to do it" panel instead of a message box and channel picker.
   const noDraft = Boolean(actionData?.missionKind) && actionData?.hasDraft === false;
+  // The Today screen reshapes itself around the kind of work the task is. When
+  // BuildMind has prepared work for it, that work is the main surface, and the
+  // generic message box and channel picker (which only make sense for outreach)
+  // step aside.
+  const prepKind = actionData?.action ? prepKindFor(actionData.action, actionData.missionKind ?? null) : null;
+  const hideLegacy = Boolean(prepKind) && prepKind !== "outreach";
   const criticalSignal = actionData?.intelligence?.top_signals.find((signal) => signal.severity === "critical");
   const supportingSignals = actionData?.intelligence?.top_signals.filter((signal) => signal.severity !== "critical") ?? [];
 
@@ -2190,7 +2199,7 @@ function TodayContent() {
               kicker={actionData.missionLabel}
               accent={missionAccent(actionData.missionKind)}
               reasons={actionData.missionReasons}
-              executeLabel="Open script"
+              executeLabel={prepKind ? `Open ${PREP_META[prepKind].label.toLowerCase()}` : "Open script"}
               onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
               timeText={actionData?.time ?? null}
@@ -2217,8 +2226,8 @@ function TodayContent() {
             />
           )}
 
-          {/* Script instruction */}
-          <div style={{
+          {/* Script instruction (only when there is no prepared work to show instead) */}
+          {!prepKind && <div style={{
             display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)",
             padding: "var(--space-2) var(--space-3)", borderRadius: "var(--r-lg)",
             background: "var(--bm-bg3)", border: "1px solid var(--bm-border)",
@@ -2233,7 +2242,7 @@ function TodayContent() {
                   : "Use the script as written unless the context is wrong."}
               </p>
             </div>
-          </div>
+          </div>}
 
           {/* Supplementary context — the rationale text itself now lives
               only in DecisionBrief's "Why now" section above (line ~2533);
@@ -2280,8 +2289,20 @@ function TodayContent() {
             </div>
           )}
 
+          <div ref={hideLegacy ? executionScriptRef : undefined} style={{ scrollMarginTop: 16 }}>
+          {actionData?.action && (
+            <PreparedWork
+              task={actionData.action}
+              missionKind={actionData.missionKind ?? null}
+              firstStep={actionData.firstStep}
+              projectId={project?.id ?? null}
+              onUseDraft={(t) => setDraftMessage(t)}
+            />
+          )}
+          </div>
+
           {/* ── Message template — pre-filled with real project values ── */}
-          {noDraft ? (
+          {hideLegacy ? null : noDraft ? (
             <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: "var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
               {actionData.missionLabel && (
                 <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>
@@ -2351,7 +2372,7 @@ function TodayContent() {
       )}
 
       {/* ── Choose channel & audience ── */}
-      {!noDraft && (
+      {!noDraft && !hideLegacy && (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
         style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)", marginBottom: "var(--space-4)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>

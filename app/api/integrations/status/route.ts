@@ -28,9 +28,9 @@ export async function GET() {
     const admin = createAdminClient();
     const { data: integrations } = await admin
       .from("integrations")
-      .select("provider, metadata")
+      .select("provider, metadata, database_id")
       .eq("user_id", user.id)
-      .in("provider", ["notion", "linear"]);
+      .in("provider", ["notion", "linear", "stripe", "github"]);
 
     const providers = new Set((integrations ?? []).map(i => i.provider));
 
@@ -44,7 +44,10 @@ export async function GET() {
       notion: providers.has("notion"),
       linear: providers.has("linear"),
       // A connected row whose token stopped working. Settings should ask to reconnect.
-      needsReconnect: { notion: needs.has("notion"), linear: needs.has("linear") },
+      needsReconnect: { notion: needs.has("notion"), linear: needs.has("linear"), stripe: needs.has("stripe"), github: needs.has("github") },
+      stripe: providers.has("stripe"),
+      github: providers.has("github"),
+      githubRepo: ((integrations ?? []) as Array<{ provider: string; database_id?: string | null }>).find((i) => i.provider === "github")?.database_id ?? null,
     });
   } catch {
     return NextResponse.json({ notion: false, linear: false });
