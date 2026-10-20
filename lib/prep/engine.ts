@@ -15,6 +15,7 @@ import { getFounderSnapshot } from "@/lib/server/founderSnapshot";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
 import { draftContent, keepPastBehaviourQuestions, unsupportedNumbers, type ProjectCtx } from "@/lib/distribution/engine";
 import { searchPromptBlock, searchSections } from "@/lib/integrations/searchConsole";
+import { fallbackPrep } from "@/lib/prep/fallback";
 import { loadInferredContext } from "@/lib/prep/context";
 import { learnedLessons, type LearnRow } from "@/lib/prep/learning";
 import { PREP_META, hasContent, inferPlatform, normalizePrepared, prepKindFor, type PrepFact, type PrepKind, type Prepared } from "@/lib/prep/kinds";
@@ -324,7 +325,7 @@ export async function generatePrep(
       if (sec) sec.links = ctx.serp.map((s) => ({ title: s.title.slice(0, 120), url: s.url }));
     }
   }
-  if (!prepared || !hasContent(prepared)) return null;
+  if (!prepared || !hasContent(prepared)) return { kind, platform, prepared: fallbackPrep(kind, input.task, input.firstStep) };
   if (kind === "seo" && connected?.search) prepared = { ...prepared, sections: [...searchSections(connected.search), ...prepared.sections] };
 
   const needs = [...prepared.needs];

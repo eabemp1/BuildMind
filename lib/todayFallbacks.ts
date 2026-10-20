@@ -6,6 +6,8 @@
  */
 
 import type { MissionKind } from "@/lib/todayMission";
+import type { Ledger } from "@/lib/today/facts";
+import { guardRules } from "@/lib/today/rules";
 
 export interface FallbackInput {
   userType: string;
@@ -162,7 +164,25 @@ function hash(s: string): number {
   return Math.abs(h);
 }
 
-export function fallbackForKind(kind: MissionKind, input: FallbackInput, seed = ""): KindFallback {
+/** Used only when every banked variant contradicts what the founder has said. Names no people, no channel. */
+function safeFallback(i: FallbackInput): KindFallback {
+  return {
+    action: `Write down 3 specific people (names or exact handles) who could have the problem ${i.productName} solves, and where you would reach each one. Do not contact anyone yet.`,
+    platform: "",
+    message: "",
+    why: `Your recent notes rule out the usual channels, so the useful move is a short list of real, reachable people.`,
+    time: "20 minutes",
+    done_when: `Three names or handles are written down, each with the place you would reach them.`,
+    first_step: `Open a blank note and write the first person who comes to mind.`,
+  };
+}
+
+export function fallbackForKind(kind: MissionKind, input: FallbackInput, seed = "", ledger?: Ledger): KindFallback {
   const variants = BANK[kind] ?? BANK.reset;
-  return variants[hash(seed || `${kind}:${input.stage}`) % variants.length](input);
+  const start = hash(seed || `${kind}:${input.stage}`) % variants.length;
+  for (let n = 0; n < variants.length; n++) {
+    const v = variants[(start + n) % variants.length](input);
+    if (!ledger || guardRules(`${v.action} ${v.first_step}`, ledger, v.message).length === 0) return v;
+  }
+  return safeFallback(input);
 }

@@ -18,7 +18,8 @@ import type { NotesRead } from "@/lib/prep/notes";
  */
 
 interface Prep {
-  id: string;
+  /** Null when the work could not be saved (database not set up). It is still shown. */
+  id: string | null;
   kind: PrepKind;
   prepared: Prepared;
   chosenVariant: string | null;
@@ -60,6 +61,8 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   const kind = React.useMemo(() => prepKindFor(task, missionKind), [task, missionKind]);
   const [prep, setPrep] = React.useState<Prep | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [loadError, setLoadError] = React.useState("");
+  const [unsaved, setUnsaved] = React.useState(false);
   const [active, setActive] = React.useState("v1");
   const [texts, setTexts] = React.useState<Record<string, string>>({});
   const [origin, setOrigin] = React.useState<Record<string, string>>({});
@@ -83,11 +86,13 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
 
   const load = React.useCallback(async (regenerate = false) => {
     if (!kind) return;
-    setLoading(true); setNote("");
-    const r = await post<{ prep: Prep | null }>("/api/ai/prep", { task, missionKind: missionKind ?? null, projectId: projectId ?? null, firstStep, regenerate });
+    setLoading(true); setNote(""); setLoadError("");
+    const r = await post<{ prep: Prep | null; reason?: string }>("/api/ai/prep", { task, missionKind: missionKind ?? null, projectId: projectId ?? null, firstStep, regenerate });
     setLoading(false);
+    if (!r.ok) { setLoadError(r.error ?? "Could not prepare this task."); if (regenerate) setNote(r.error ?? ""); return; }
     const p = r.data?.prep ?? null;
-    if (!r.ok) { if (regenerate) setNote(r.error ?? ""); return; }
+    setUnsaved(r.data?.reason === "setup");
+    if (!p) { setLoadError("Nothing could be prepared for this task."); return; }
     setPrep(p); setDiag(null); setExtra([]);
     if (p) {
       const t: Record<string, string> = {}; const o: Record<string, string> = {};
@@ -124,14 +129,23 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
       </div>
     );
   }
-  if (!prep) return null;
+  if (!prep) {
+    // Never disappear silently: say what happened and offer a retry.
+    return loadError ? (
+      <div style={box} role="status">
+        <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>Prepared for you</div>
+        <p style={{ ...muted, color: "var(--bm-text2)" }}>{loadError}</p>
+        <div><button type="button" style={btn()} onClick={() => void load(false)}>Try again</button></div>
+      </div>
+    ) : null;
+  }
 
   const variants = [...prep.prepared.variants, ...extra];
   const current = variants.find((v) => v.id === active) ?? variants[0];
   const text = current ? (texts[current.id] ?? current.text) : "";
   const done = prep.status === "sent";
   const record = (event: "edited" | "used" | "sent" | "outcome", more: Record<string, unknown> = {}) =>
-    post("/api/ai/prep/record", { id: prep.id, event, variantId: current?.id.startsWith("v") && prep.prepared.variants.some((v) => v.id === current.id) ? current.id : undefined, originalText: current ? origin[current.id] : undefined, finalText: text, ...more });
+    !prep.id ? Promise.resolve({ ok: false } as { ok: boolean }) : post("/api/ai/prep/record", { id: prep.id, event, variantId: current?.id.startsWith("v") && prep.prepared.variants.some((v) => v.id === current.id) ? current.id : undefined, originalText: current ? origin[current.id] : undefined, finalText: text, ...more });
 
   const bump = (s: Prep["status"]) => setPrep((p) => (p ? { ...p, status: (["prepared", "edited", "used", "sent"].indexOf(s) > ["prepared", "edited", "used", "sent"].indexOf(p.status) ? s : p.status) } : p));
 
@@ -142,6 +156,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   async function markDone() { bump("sent"); await record("sent"); }
   async function setOutcome(id: string) { setPrep((p) => (p ? { ...p, outcome: id } : p)); await record("outcome", { outcome: id, finalText: undefined, originalText: undefined }); }
   async function fix() {
+    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
     setBusy("fix"); setNote("");
     const r = await post<{ diagnosis: Diagnosis }>("/api/ai/prep/correct", { id: prep!.id, text });
     setBusy("");
@@ -156,6 +171,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   }
 
   async function askReply(mode: "reply" | "followup") {
+    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
     setAssistBusy(true); setNote("");
     const r = await post<{ assist: ReplyAssist; outcome: string | null }>("/api/ai/prep/reply", { id: prep!.id, mode, theirReply: mode === "reply" ? theirReply : undefined });
     setAssistBusy(false);
@@ -164,6 +180,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     if (r.data.outcome) setPrep((p) => (p ? { ...p, outcome: r.data!.outcome } : p));
   }
   async function saveVideo() {
+    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
     setVideoBusy(true); setNote("");
     const r = await post<{ recorded: NonNullable<Prep["prepared"]["recorded"]> }>("/api/ai/prep/link", { id: prep!.id, url: videoUrl });
     setVideoBusy(false);
@@ -171,6 +188,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     setPrep((p) => (p ? { ...p, status: "sent", prepared: { ...p.prepared, recorded: r.data!.recorded } } : p)); setVideoUrl("");
   }
   async function readNotes() {
+    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
     setNotesBusy(true); setNote("");
     const r = await post<{ read: NotesRead }>("/api/ai/prep/notes", { id: prep!.id, notes });
     setNotesBusy(false);
@@ -181,7 +199,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   const checks = (kind === "outreach" || kind === "post") && text.trim()
     ? [
         ...(kind === "outreach" && text.trim().split(/\s+/).length > 90 ? [{ key: "len", label: "Long for a first message", detail: `${text.trim().split(/\s+/).length} words. Short first messages get more replies.` }] : []),
-        ...observe(analyseText(text, platform), platform).filter((o) => o.status === "watch").map((o) => ({ key: o.key, label: o.label, detail: o.detail })),
+        ...observe(analyseText(text, platform), platform).filter((o) => o.status === "watch" && !(kind === "outreach" && (o.key === "specificity" || o.key === "opening-length"))).map((o) => ({ key: o.key, label: o.label, detail: o.detail })),
       ].slice(0, 3)
     : [];
 
@@ -331,12 +349,13 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         </div>
       )}
       {note && <p style={{ ...muted, color: "var(--bm-text2)" }}>{note}</p>}
+      {unsaved && <p style={muted}>Not saved. Your edits and results are not being recorded until the latest database migrations are run.</p>}
 
       {sections.map((s) => (
         <div key={s.heading} style={{ display: "grid", gap: 4, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
           <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>{s.heading}</div>
           {s.body && <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text)", lineHeight: "var(--leading-relaxed)", whiteSpace: "pre-wrap" }}>{s.body}</p>}
-          {s.bullets && <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 3 }}>{s.bullets.map((b, i) => <li key={i} style={{ fontSize: "var(--text-sm)", color: "var(--bm-text2)", lineHeight: "var(--leading-normal)" }}>{b}</li>)}</ul>}
+          {s.bullets && <ul style={{ margin: 0, paddingLeft: 18, listStyleType: "disc" }}>{s.bullets.map((b, i) => <li key={i} style={{ fontSize: "var(--text-sm)", color: "var(--bm-text2)", lineHeight: "var(--leading-normal)", marginBottom: 3 }}>{b}</li>)}</ul>}
           {s.links && <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>{s.links.map((l) => <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer nofollow" style={{ fontSize: "var(--text-xs)", color: "var(--bm-text2)" }}>{l.title} ↗</a>)}</div>}
         </div>
       ))}

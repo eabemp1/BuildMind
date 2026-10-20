@@ -74,7 +74,7 @@ export default function ConnectCard({ app, onConnected, onCancel }: Props) {
     <div style={{ display: "grid", gap: 8, border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 12px" }}>
       <div style={label}>Connect {c.name}, read-only</div>
       <p style={small}>BuildMind reads: {c.reads.join(", ")}. {c.never}</p>
-      <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 2 }}>{c.steps.map((s) => <li key={s} style={small}>{s}</li>)}</ol>
+      <ol style={{ margin: 0, paddingLeft: 18, listStyleType: "decimal" }}>{c.steps.map((s) => <li key={s} style={{ ...small, marginBottom: 2 }}>{s}</li>)}</ol>
       {app === "github" && <input style={input} value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repository" aria-label="Repository" autoComplete="off" spellCheck={false} />}
       <input style={input} type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={c.placeholder} aria-label={`${c.name} key`} autoComplete="off" spellCheck={false} />
       <p style={small}>The key is tested first, then stored encrypted. You can remove it any time in Settings.</p>

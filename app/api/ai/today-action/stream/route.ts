@@ -52,6 +52,7 @@ import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuali
 import { fallbackForKind } from "@/lib/todayFallbacks";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
 import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
+import { fitMissionToState } from "@/lib/founderState";
 
 import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
 
@@ -468,6 +469,7 @@ export async function POST(request: Request) {
           acknowledgeDebt,
           sessionId,
           excludeAction,
+          clientHour: Number.isInteger(body?.clientHour) ? Number(body.clientHour) : null,
         });
 
         if (tctx.debtSuppression.suppressed) {
@@ -554,7 +556,9 @@ export async function POST(request: Request) {
         });
         // Importance-preserving swap (lib/today/swap.ts).
         const swapHistory = excludeAction ? await loadSwapHistory(hasAdminEnv() ? createAdminClient() : null, userId) : [];
-        const { mission, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
+        const { mission: swapped, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
+        // Fit to how the founder is doing right now (lib/founderState.ts): lighter and shorter, never less important.
+        const mission = fitMissionToState(swapped, tctx.founderState);
         const grounding = wantsGrounding(mission.kind)
           ? await groundTargetUsers({ key: projectId, targetUsers, problem })
           : [];
@@ -567,6 +571,7 @@ export async function POST(request: Request) {
           mission.kind,
           { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage },
           `${userId}:${new Date().toISOString().slice(0, 10)}`,
+          personalisationCtx.ledger,
         );
         const qualityCtx = {
           ledger: personalisationCtx.ledger,

@@ -293,81 +293,11 @@ function IntegrationsTab({ initialStatus }: { initialStatus: string | null }) {
         </div>
       )}
 
-      {/* Phase 2 integrations — GitHub + Stripe */}
+      {/* Read-only apps. They replace the old "Phase 2" placeholders: they work now and are optional. */}
       <div style={{ marginTop: 8 }}>
-        <p style={{
-          fontFamily: "'DM Mono', monospace",
-          fontSize: 9,
-          textTransform: "uppercase",
-          letterSpacing: "0.10em",
-          color: "var(--bm-text3)",
-          marginBottom: 12,
-        }}>
-          Phase 2 — Q4 2026
+        <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)", marginBottom: 12 }}>
+          Optional, read-only: sharper drafts
         </p>
-        {[
-          {
-            logo: "GH",
-            logoBg: "#24292e",
-            logoColor: "#fff",
-            name: "GitHub",
-            desc: "Shipping velocity signal. BuildMind reads your commit frequency, PR merges, and issue throughput to calibrate whether your execution is matching your stated priorities.",
-          },
-          {
-            logo: "$",
-            logoBg: "#635bff",
-            logoColor: "#fff",
-            name: "Stripe MRR",
-            desc: "Revenue reality check. Pulls your MRR automatically — replaces manual entry and collapses the distance between AI advice and revenue operating system. Available at 50 paying users.",
-          },
-        ].map((intg) => (
-          <div
-            key={intg.name}
-            style={{
-              background: "var(--bm-bg2)",
-              border: "1px solid var(--bm-border)",
-              borderRadius: "var(--r-lg)",
-              padding: "18px 20px",
-              opacity: 0.55,
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 14,
-              marginBottom: 10,
-            }}
-          >
-            <div style={{
-              width: 36, height: 36, borderRadius: "var(--r-md)", flexShrink: 0,
-              background: intg.logoBg, border: "1px solid var(--bm-border)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 13, fontWeight: 800, color: intg.logoColor,
-            }}>
-              {intg.logo}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)" }}>{intg.name}</span>
-                <span style={{
-                  fontFamily: "'DM Mono', monospace",
-                  fontSize: 8,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  padding: "2px 8px",
-                  border: "1px solid var(--bm-border2)",
-                  borderRadius: "var(--r-sm)",
-                  color: "var(--bm-text3)",
-                }}>
-                  Phase 2 · Q4 2026
-                </span>
-              </div>
-              <p style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, margin: 0 }}>
-                {intg.desc}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{ marginTop: 20 }}>
-        <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", marginBottom: 8 }}>Read-only apps for your drafts</div>
         <ConnectedApps />
       </div>
     </div>

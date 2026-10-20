@@ -16,10 +16,10 @@ describe("prepKindFor", () => {
     expect(prepKindFor("Talk to 3 founders about how they pick tasks", "interview")).toBe("validation_kit");
     expect(prepKindFor("Share one lesson from this week", "publish")).toBe("post");
   });
-  it("gives build and unblock days a build plan, and rest days nothing", () => {
+  it("gives build and unblock days a build plan, and rest days an action plan", () => {
     expect(prepKindFor("Fix the login redirect bug", "build")).toBe("build_plan");
     expect(prepKindFor("Get the export working", "unblock")).toBe("build_plan");
-    expect(prepKindFor("Tidy your task list", "reset")).toBeNull();
+    expect(prepKindFor("Tidy your task list", "reset")).toBe("action_plan");
     expect(prepKindFor("hi", null)).toBeNull();
   });
   it("falls back to keywords when there is no mission kind", () => {

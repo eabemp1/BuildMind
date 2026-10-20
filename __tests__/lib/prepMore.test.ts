@@ -34,6 +34,11 @@ describe("inferred context", () => {
     expect(block).toContain("Write the pricing page");
     expect(block).toContain("Do not restate it as new facts");
   });
+  it("carries what the founder actually told BuildMind, so a task cannot assume the opposite", () => {
+    const block = inferredBlock([], [{ today_action: "DM a beta founder", outcome: "partial", created_at: "2026-10-16T20:00:00Z", what_tried: "I don't have beta users", blocker: null }], now, null, [{ task_text: "Send a DM to a paying beta founder", reason: "no_users", note: null, created_at: "2026-10-17T08:00:00Z" }]);
+    expect(block).toContain("no users or beta users yet");
+    expect(block).toContain("I don't have beta users");
+  });
   it("is empty with no record, and notices unused drafts", () => {
     expect(inferredBlock([], [], now)).toBe("");
     const unused = Array.from({ length: 3 }, () => ({ kind: "post", task_text: "x", status: "prepared", outcome: null, created_at: "2026-10-18T10:00:00Z" }));

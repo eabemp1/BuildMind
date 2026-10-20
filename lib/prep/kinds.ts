@@ -22,7 +22,8 @@ export type PrepKind =
   | "build_plan"
   | "launch_plan"
   | "pricing_test"
-  | "prospects";
+  | "prospects"
+  | "action_plan";
 
 /** content: drafted by the Distribution engine and improved from edits and results.
  *  research: grounded in live search or the founder's own record. */
@@ -74,6 +75,7 @@ export const PREP_META: Record<PrepKind, PrepMeta> = {
     ],
   },
   pricing_test: { label: "Pricing test", headline: "A pricing test you can run this week", engine: "research", doneVerb: null, outcomes: null, learns: false },
+  action_plan: { label: "Action plan", headline: "Your first move, broken down", engine: "content", doneVerb: null, outcomes: null, learns: false },
   prospects: { label: "Prospect map", headline: "Where your first ten conversations are", engine: "research", doneVerb: null, outcomes: null, learns: false },
 };
 
@@ -113,13 +115,14 @@ export function prepKindFor(task: string, missionKind?: string | null): PrepKind
   if (missionKind === "outreach" || missionKind === "follow_up") return "outreach";
   if (missionKind === "interview") return "validation_kit";
   if (missionKind === "publish") return "post";
-  if (missionKind === "reset") return null;
+  if (missionKind === "reset") return "action_plan";
   if (missionKind === "build" || missionKind === "unblock") return "build_plan";
   if (RX.validation.test(t)) return "validation_kit";
   if (RX.outreach.test(t)) return "outreach";
   if (RX.post.test(t)) return "post";
   if (RX.build.test(t)) return "build_plan";
-  return null;
+  // Every task gets a prepared surface. Anything that is not one of the specific kinds gets a plain action plan.
+  return "action_plan";
 }
 
 /** Small stable hash (no crypto needed) so a task maps to one cached preparation per day. */
@@ -164,6 +167,8 @@ export interface Prepared {
   needs: PrepNeed[];
   /** What the Distribution engine learned from this founder and applied. */
   learned: string[];
+  /** True when the draft could not be generated and this is only a starting structure. */
+  degraded?: boolean;
   /** A video the founder recorded and linked (Loom or YouTube). */
   recorded?: { url: string; title: string; verified: boolean };
 }

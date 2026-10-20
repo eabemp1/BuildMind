@@ -4,6 +4,7 @@ import { fallbackForKind } from "@/lib/todayFallbacks";
 import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
 import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
+import { fitMissionToState } from "@/lib/founderState";
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -187,6 +188,7 @@ export async function POST(request: Request) {
       completionRate:    z.number().min(0).max(100).optional(),
       acknowledgeDebt:   z.boolean().optional(),
       excludeAction:     z.string().max(500).optional(),
+      clientHour:        z.number().int().min(0).max(23).optional(),
       swap:              z.object({ reason: z.string().max(30).nullish(), mode: z.string().max(20).nullish() }).optional(),
       dayKey:            z.string().max(10).optional(),
     });
@@ -261,6 +263,7 @@ export async function POST(request: Request) {
       acknowledgeDebt,
       sessionId: requestId,
       excludeAction,
+      clientHour: Number.isInteger(body?.clientHour) ? Number(body.clientHour) : null,
     });
 
     if (tctx.debtSuppression.suppressed) {
@@ -661,7 +664,9 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     // Importance-preserving swap (lib/today/swap.ts): a rejected task is
     // shrunk or replaced by something equally important, never made easier.
     const swapHistory = excludeAction ? await loadSwapHistory(hasAdminEnv() ? createAdminClient() : null, userId) : [];
-    const { mission, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
+    const { mission: swapped, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
+    // Fit to how the founder is doing right now (lib/founderState.ts): lighter and shorter, never less important.
+    const mission = fitMissionToState(swapped, tctx.founderState);
     const missionGrounding = wantsGrounding(mission.kind) && projectId ? await groundTargetUsers({ key: projectId, targetUsers, problem }) : [];
     lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
     if (swapPlan) lastReflectionContext += `\n\n${[swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n")}`;
@@ -670,6 +675,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       mission.kind,
       { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: problem || title || "this problem", productName: title?.trim() || "your product", stage },
       `${userId}:${new Date().toISOString().slice(0, 10)}`,
+      personalisationCtx.ledger,
     );
 
     // NOTE: founderIntelligence loading + prediction recording already

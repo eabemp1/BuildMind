@@ -1,4 +1,5 @@
 import { buildSwapOptions } from "@/lib/today/swap";
+import { stateNote, type FounderState as CapacityState } from "@/lib/founderState";
 import { buildExecutionSignature, type ExecutionSignature, type TaskRecord } from "@/lib/outcomeCorrelation";
 import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@/lib/temporalPatterns";
 import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
@@ -27,7 +28,8 @@ export type IntelligenceSignalType =
   | "BUSYWORK_PATTERN"
   | "RECOMMENDATION_REJECTION_PATTERN"
   | "MOMENTUM_CHANGE"
-  | "FOUNDER_BEHAVIOR_CHANGE";
+  | "FOUNDER_BEHAVIOR_CHANGE"
+  | "LOW_CAPACITY";
 
 export type SignalSeverity = "low" | "medium" | "high" | "critical";
 
@@ -189,6 +191,8 @@ export interface DecisionState {
   candidates: DecisionCandidate[];
   top_candidate: DecisionCandidate | null;
   decision_basis: string[];
+  /** Capacity level this decision was ranked for; a cached decision is only reused at the same level. */
+  state_level?: string;
 }
 
 export interface FounderIntelligenceState {
@@ -211,6 +215,8 @@ export interface FounderIntelligenceState {
    * penalty — so ranking behaves exactly as it did before this existed.
    */
   archetype_stats: Record<string, { successes: number; failures: number; recent_successes: number; recent_failures: number }>;
+  /** How the founder is doing right now. Absent when nothing is known. */
+  capacity?: CapacityState | null;
   source_summary: {
     reflections: number;
     learning_logs: number;
@@ -253,6 +259,8 @@ export interface FounderIntelligenceInput {
    * an explicit "give me something else" should always compute fresh.
    */
   cachedDecision?: { decision: DecisionState; date: string } | null;
+  /** How the founder is doing right now (lib/founderState.ts). Shapes ranking and the signals. */
+  founderState?: CapacityState | null;
 }
 
 const EXTERNAL_KEYWORDS = /\b(user|customer|interview|feedback|talked|called|met|spoke|revenue|sale|paid|pricing|launch|publish|post|pitch|email|reach out|dm|contact)\b/i;
@@ -666,6 +674,22 @@ export function deriveIntelligenceSignals(params: {
     }));
   }
 
+  const cap = input.founderState;
+  if (cap && (cap.level === "low" || cap.level === "depleted")) {
+    signals.push(signal({
+      now,
+      type: "LOW_CAPACITY",
+      severity: cap.level === "depleted" ? "high" : "medium",
+      confidence: cap.confidence,
+      title: cap.level === "depleted" ? "Running on empty right now" : "Energy is low right now",
+      summary: stateNote(cap) ?? "Capacity is low right now.",
+      evidence: cap.reasons.map((r) => ({ source: "founder_state", detail: r })),
+      recommended_response: "Keep the task important but small, easy to start and easy to finish. Hold irreversible decisions until rested.",
+      interpretation_confidence: cap.source === "self" ? 0.85 : 0.5,
+      alternative_explanations: cap.source === "self" ? [] : ["Late hour rather than genuine fatigue", "A hard day that doesn't affect tomorrow"],
+    }));
+  }
+
   return signals.sort((a, b) => {
     const sev = { critical: 4, high: 3, medium: 2, low: 1 } as const;
     return sev[b.severity] - sev[a.severity] || b.confidence - a.confidence;
@@ -917,6 +941,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     temporal,
     signals,
     archetype_stats: computeArchetypeStats(learningLogs),
+    capacity: input.founderState ?? null,
     source_summary: {
       reflections: reflections.length,
       learning_logs: learningLogs.length,
@@ -934,7 +959,10 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
   const cachedCandidates = input.cachedDecision?.decision?.candidates ?? [];
   const cacheIsCurrentVersion =
     cachedCandidates.length > 0 && cachedCandidates.every((c) => typeof c.scores?.predicted_success === "number");
-  const hasFreshCache = !input.excludeAction && input.cachedDecision?.date === todayDateStr && cacheIsCurrentVersion;
+  // A decision ranked for a rested founder is wrong for a depleted one, and the reverse.
+  const levelKey = (l?: string | null) => (l === "steady" || !l ? "fresh" : l);
+  const sameCapacity = levelKey(input.cachedDecision?.decision?.state_level) === levelKey(input.founderState?.level);
+  const hasFreshCache = !input.excludeAction && input.cachedDecision?.date === todayDateStr && cacheIsCurrentVersion && sameCapacity;
   // A cached decision keeps its ranked candidates, but its basis lines quote the
   // signals as they were when it was cached. Rebuild them from the live signals
   // so the report never shows 63 days beside 64, or 30 rejections beside 14.
@@ -942,7 +970,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     ? refreshDecisionBasis(input.cachedDecision!.decision, stateWithoutDecision.signals, now)
     : buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, input.excludeAction);
 
-  return { ...stateWithoutDecision, decision };
+  return { ...stateWithoutDecision, decision: { ...decision, state_level: input.founderState?.level ?? "fresh" } };
 }
 
 // Same success/failure definition as getCandidateArchetypeStats() in
@@ -1148,8 +1176,14 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   const intervention_penalty = (archetypeHistory?.successes ?? 0) === 0 && failures >= 3
     ? Math.min(40, 20 + (failures - 3) * 5)
     : histN >= 4 && predicted_success < 25 ? 15 : 0;
+  // Capacity: a candidate heavier than the founder can carry right now is ranked down,
+  // the small first-slice candidate up. Importance is untouched.
+  const cap = state.capacity;
+  const candidateEffort = ({ avoidance_microdose: 1, evidence_probe: 2, unstall_goal: 3, continue_best_next_task: 3 } as Record<string, number>)[candidate.id] ?? 2;
+  const capacity_penalty = cap && (cap.level === "low" || cap.level === "depleted") ? Math.max(0, candidateEffort - cap.effortCap) * 12 + (cap.holdBigDecisions && /pivot|pricing|rewrite|rebuild|shut/i.test(candidate.action) ? 20 : 0) : 0;
+  const capacity_boost = cap && (cap.level === "low" || cap.level === "depleted") && candidateEffort === 1 ? 8 : 0;
   const total = clampScore(
-    impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08 - intervention_penalty,
+    capacity_boost - capacity_penalty + impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08 - intervention_penalty,
   );
   return {
     ...candidate,
@@ -1203,10 +1237,9 @@ export function buildDecisionState(state: FounderIntelligenceState, excludeActio
 
   if (live.some((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN")) {
     const avoid = state.founder.avoidance_patterns[0] ?? "the avoided work";
-    const platform = pickPlatform(`avoidance_microdose:${avoid}`);
     candidates.push({
       id: "avoidance_microdose",
-      action: `Spend 15 minutes on ${avoid} today: send 1 message on ${platform} that advances ${currentGoal} without letting avoidance pick the agenda.`,
+      action: `Spend 15 minutes on the thing you keep putting off: do only its first small step today, then note what happened.`,
       rationale: "The behavioral pattern is now part of the startup bottleneck, not a side issue.",
       expected_evidence: "Whether a smaller version of the avoided action gets started or still gets resisted.",
       supporting_signals: topSignals.filter((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN").map((s) => s.type),
@@ -1310,6 +1343,7 @@ export function summarizeFounderIntelligenceForClient(state: FounderIntelligence
       basis: state.decision.decision_basis,
     },
     cofounder_judgment: cofounderJudgment,
+    capacity: state.capacity ? { level: state.capacity.level, note: stateNote(state.capacity), hold_big_decisions: state.capacity.holdBigDecisions, max_minutes: state.capacity.maxMinutes } : null,
     source_summary: state.source_summary,
   };
 }
@@ -1387,6 +1421,7 @@ export async function loadFounderIntelligence(
       now,
       excludeAction: preloaded.excludeAction,
       cachedDecision,
+      founderState: preloaded.founderState ?? null,
     });
 
     // Cache miss (no same-day cache, or excludeAction forced a fresh
@@ -1394,7 +1429,7 @@ export async function loadFounderIntelligence(
     // today (Today's own retry, Coach, any other surface) reads this same
     // committed decision instead of drawing its own sample. Fire-and-forget:
     // never adds latency to the response this decision is already part of.
-    const wasFreshCompute = preloaded.excludeAction || cachedDecision?.date !== todayDateStr;
+    const wasFreshCompute = preloaded.excludeAction || cachedDecision?.date !== todayDateStr || result.decision.state_level !== cachedDecision?.decision?.state_level;
     if (wasFreshCompute) {
       Promise.resolve(
         supabase.from("founder_context").update({

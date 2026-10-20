@@ -58,6 +58,7 @@ import { buildStartupRelationshipGraph, traceRelationshipChain } from "@/lib/fou
 import { buildCofounderJudgment, buildCofounderJudgmentPromptBlock } from "@/lib/cofounderJudgment";
 import { logError } from "@/lib/server/logger";
 import { recordActivity } from "@/lib/server/activityLog";
+import { buildFounderState, type FounderState } from "@/lib/founderState";
 
 export interface TodayActionContext {
   // Project data
@@ -91,6 +92,7 @@ export interface TodayActionContext {
     factsBlock?: string;
   };
   founderIntelligence: FounderIntelligenceState | null;
+  founderState: FounderState | null;
   intelligenceSummary: (ReturnType<typeof summarizeFounderIntelligenceForClient> & { recommendation_id?: string | null }) | undefined;
   /** `reflexion_learning_log.id` for the recommendation shown in this response. */
   recommendationId: string | null;
@@ -119,8 +121,9 @@ export async function loadTodayActionContext(params: {
    *  the deterministic candidate ranking doesn't just re-pick the same
    *  task the founder already rejected. */
   excludeAction?: string;
+  clientHour?: number | null;
 }): Promise<TodayActionContext> {
-  const { userId, projectId, providedStage, acknowledgeDebt, sessionId, excludeAction } = params;
+  const { userId, projectId, providedStage, acknowledgeDebt, sessionId, excludeAction, clientHour } = params;
 
   const ctx: TodayActionContext = {
     stage: providedStage || "Idea",
@@ -142,6 +145,7 @@ export async function loadTodayActionContext(params: {
     lastReflectionNote: undefined,
     personalisationCtx: { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [], activeGoals: [] },
     founderIntelligence: null,
+    founderState: null,
     intelligenceSummary: undefined,
     recommendationId: null,
     debtSuppression: { suppressed: false },
@@ -419,6 +423,7 @@ export async function loadTodayActionContext(params: {
       // other writer of this column exists, so the raw value never matched
       // ReflexionContext's vocabulary before this mapping existed.
       ctx.cognitionCognitiveLoad = mapEnergyToCognitiveLoad(cognitionInput.context?.cognitive_load);
+      ctx.founderState = buildFounderState({ cognitiveLoad: cognitionInput.context?.cognitive_load, clientHour });
     } catch (err) {
       logError("todayActionContext/cognition", err, { userId });
     }
@@ -451,7 +456,7 @@ export async function loadTodayActionContext(params: {
 
   // ── 8. Founder Intelligence OS coherence layer ─────────────────────────
   try {
-    ctx.founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, { now: new Date(), excludeAction });
+    ctx.founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, { now: new Date(), excludeAction, founderState: ctx.founderState });
     ctx.founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(ctx.founderIntelligence);
     ctx.founderIntelligencePromptBlock += `\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(ctx.founderIntelligence))}`;
     ctx.intelligenceSummary = summarizeFounderIntelligenceForClient(ctx.founderIntelligence);
