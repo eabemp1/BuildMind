@@ -277,7 +277,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
         {focus.mode === "idle" && !done && (
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: narrow ? 10 : 18 }}>
             <button type="button" className="bm-ink-btn" onClick={start} disabled={!actionTitle}
-              style={{ fontSize: 16, fontWeight: 700, padding: "14px 24px", borderRadius: 999, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "#15130a", background: ink, border: "none", fontFamily: "inherit", flex: narrow ? "1 1 100%" : "0 0 auto" }}>
+              style={{ fontSize: 16, fontWeight: 700, padding: "14px 24px", borderRadius: 999, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "var(--mood-on-accent, #15130a)", background: ink, border: "none", fontFamily: "inherit", flex: narrow ? "1 1 100%" : "0 0 auto" }}>
               Start {minutes}-minute focus
             </button>
             <div role="group" aria-label="Block length" style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -304,7 +304,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
             <span style={{ fontSize: 14, color: "var(--bm-text3)" }}>{running ? "focusing" : paused ? "paused" : "block done"}</span>
             <span style={{ display: "inline-flex", gap: 14, flexWrap: "wrap" }}>
               {running && <button type="button" className="bm-ink-link" onClick={() => setFocus((f) => pauseFocus(f, new Date()))} style={link()}>Pause</button>}
-              {paused && <button type="button" className="bm-ink-btn" onClick={() => setFocus((f) => resumeFocus(f, new Date()))} style={{ ...btn(ink, "#15130a"), borderRadius: 999 }}>Resume</button>}
+              {paused && <button type="button" className="bm-ink-btn" onClick={() => setFocus((f) => resumeFocus(f, new Date()))} style={{ ...btn(ink, "var(--mood-on-accent, #15130a)"), borderRadius: 999 }}>Resume</button>}
               {(running || paused) && <button type="button" className="bm-ink-link" onClick={() => setFocus((f) => resetFocus(f, minutes))} style={link({ color: "var(--bm-text3)" })}>Stop</button>}
               {(running || paused) && <button type="button" className="bm-ink-link" onClick={askCoach} style={link({ color: "var(--bm-text3)" })}>Stuck? Ask the coach</button>}
               {finished && <button type="button" className="bm-ink-btn" onClick={goToCheckIn} style={{ ...btn("var(--bm-green, #4ade80)", "#0b1a10"), borderRadius: 999 }}>{done ? "Reflect on it" : "Log how it went"}</button>}

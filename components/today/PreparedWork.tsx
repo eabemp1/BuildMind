@@ -240,7 +240,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
             onChange={(e) => setTexts((t) => ({ ...t, [current.id]: e.target.value }))}
             onBlur={() => { if (text.trim() && text !== origin[current.id]) { bump("edited"); void record("edited"); } }}
             rows={Math.min(14, Math.max(4, Math.ceil(text.length / 70) + text.split("\n").length))}
-            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "10px 12px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)", lineHeight: "var(--leading-relaxed)" }}
+            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--mood-radius, 10px)", padding: "10px 12px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)", lineHeight: "var(--leading-relaxed)" }}
           />
           {current.why && <p style={muted}>{current.why}</p>}
           {(kind === "outreach" || kind === "post") && text.trim() && (
@@ -273,7 +273,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
           <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>Did they answer?</div>
           <textarea value={theirReply} onChange={(e) => setTheirReply(e.target.value)} rows={3} placeholder="Paste what they wrote and BuildMind drafts your reply" aria-label="Their reply"
-            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
+            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--mood-radius, 10px)", padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" style={btn(true)} disabled={assistBusy || theirReply.trim().length < 5} onClick={() => askReply("reply")}>{assistBusy && assistMode !== "followup" ? "Reading…" : "Draft my reply"}</button>
             <button type="button" style={btn()} disabled={assistBusy} onClick={() => askReply("followup")}>No answer yet: draft a follow-up</button>
@@ -285,7 +285,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
               {assist.reply && (
                 <>
                   <textarea value={assistText} onChange={(e) => setAssistText(e.target.value)} rows={4} aria-label="Draft reply"
-                    style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "10px 12px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)", lineHeight: "var(--leading-relaxed)" }} />
+                    style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--mood-radius, 10px)", padding: "10px 12px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)", lineHeight: "var(--leading-relaxed)" }} />
                   <div><button type="button" style={btn()} onClick={() => { void navigator.clipboard?.writeText(assistText).catch(() => {}); }}>Copy</button></div>
                 </>
               )}
@@ -314,7 +314,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
           <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>After the interview</div>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Paste your notes. BuildMind pulls out themes with their exact words and separates what they did from what they said they would do." aria-label="Interview notes"
-            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
+            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--mood-radius, 10px)", padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
           <div><button type="button" style={btn(true)} disabled={notesBusy || notes.trim().length < 40} onClick={readNotes}>{notesBusy ? "Reading…" : "Read my notes"}</button></div>
           {notesRead && (
             <div style={{ display: "grid", gap: 6 }}>

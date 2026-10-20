@@ -104,6 +104,22 @@ export default function BreakPublicPage() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [domain, setDomain] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanNote, setScanNote] = useState("");
+
+  const handleScan = async () => {
+    if (scanning || domain.trim().length < 4) return;
+    setScanning(true); setScanNote(""); setError("");
+    try {
+      const res = await fetch("/api/ai/break-public/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain: domain.trim() }) });
+      const b = await res.json().catch(() => ({}));
+      if (!res.ok || !b.success) throw new Error(b?.error ?? "Scan failed. Type it in instead.");
+      setIdea(b.data.idea); setTargetUsers(b.data.targetUsers || ""); setProblem(b.data.problem || "");
+      setScanNote(`Filled from ${b.data.domain}. Read it, fix anything wrong, then run it.`);
+    } catch (e) { setScanNote(e instanceof Error ? e.message : "Scan failed. Type it in instead."); }
+    finally { setScanning(false); }
+  };
 
   const canRun = idea.trim().length > 10;
 
@@ -176,6 +192,16 @@ export default function BreakPublicPage() {
               </div>
 
               <div style={{ background:"var(--bm-border)", border:"1px solid var(--bm-border2)", borderRadius:16, overflow:"hidden" }}>
+                <div style={{ padding:"16px 24px", borderBottom:"1px solid var(--bm-border)" }}>
+                  <label htmlFor="break-domain" style={{ fontSize:11, color:"var(--bm-text4)", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", display:"block", marginBottom:8 }}>Already live? Scan your site (optional)</label>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <input id="break-domain" value={domain} onChange={e=>setDomain(e.target.value)} onKeyDown={e=>{ if (e.key==="Enter") void handleScan(); }} placeholder="yourapp.com" inputMode="url" autoCapitalize="none" autoCorrect="off"
+                      style={{ flex:1, minWidth:0, background:"transparent", border:"1px solid var(--bm-border2)", borderRadius:8, color:"#f0f0f5", fontSize:14, fontFamily:"inherit", outline:"none", padding:"10px 12px", boxSizing:"border-box" }} />
+                    <button type="button" onClick={handleScan} disabled={scanning || domain.trim().length<4}
+                      style={{ padding:"0 16px", minHeight:44, borderRadius:8, border:"1px solid var(--bm-border3)", background:"transparent", color:"#f0f0f5", fontSize:13, fontWeight:600, fontFamily:"inherit", cursor: scanning?"wait":"pointer", opacity: domain.trim().length<4?0.5:1 }}>{scanning ? "Reading…" : "Scan"}</button>
+                  </div>
+                  {scanNote && <div role="status" style={{ fontSize:12, color:"var(--bm-text3)", marginTop:8 }}>{scanNote}</div>}
+                </div>
                 <div style={{ padding:"20px 24px", borderBottom:"1px solid var(--bm-border)" }}>
                   <label style={{ fontSize:11, color:"var(--bm-text4)", fontFamily:"monospace", letterSpacing:"0.1em", textTransform:"uppercase", display:"block", marginBottom:10 }}>What are you building? *</label>
                   <textarea value={idea} onChange={e=>setIdea(e.target.value)} autoFocus

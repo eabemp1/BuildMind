@@ -72,14 +72,26 @@ export async function readPage(url: string): Promise<PageDigest> {
   const fail = (status?: number): PageDigest => ({ url, ok: false, title: "", description: "", headings: [], text: "", prices: [], hasPricingPage: false, status });
   if (!isSafePublicUrl(url)) return fail();
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; BuildMindResearch/1.0; +https://buildmind.live)", Accept: "text/html,application/xhtml+xml", "Accept-Language": "en" },
-      signal: AbortSignal.timeout(TIMEOUT),
-      redirect: "follow",
-    });
+    // Follow redirects by hand so every hop is checked before it is requested.
+    let cur = url;
+    let res: Response | null = null;
+    for (let hop = 0; hop < 4; hop++) {
+      res = await fetch(cur, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; BuildMindResearch/1.0; +https://buildmind.live)", Accept: "text/html,application/xhtml+xml", "Accept-Language": "en" },
+        signal: AbortSignal.timeout(TIMEOUT),
+        redirect: "manual",
+      });
+      if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+        let next = "";
+        try { next = new URL(res.headers.get("location") as string, cur).toString(); } catch { return fail(); }
+        if (!isSafePublicUrl(next)) return fail();
+        cur = next;
+        continue;
+      }
+      break;
+    }
+    if (!res || (res.status >= 300 && res.status < 400)) return fail(res?.status);
     if (!res.ok) return fail(res.status);
-    // Redirects must stay public too.
-    if (res.url && !isSafePublicUrl(res.url)) return fail();
     const ct = res.headers.get("content-type") ?? "";
     if (ct && !/text\/html|application\/xhtml/i.test(ct)) return fail(res.status);
     const reader = res.body?.getReader();

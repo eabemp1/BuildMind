@@ -482,3 +482,37 @@ body {
   text-decoration: none;
 }
 .bm-skip-link:focus { top: 12px; }
+
+/* ── Today moods (lib/today/mood.ts) ─────────────────────────────────────
+   Flat, no gradients. Each mood sets accent, surface tint, type scale,
+   density, radius and column width. Phone first: widths only apply above 640px. */
+.today-mood { --mood-max: 920px; --mood-radius: 10px; --mood-gap: 14px; transition: max-width .3s ease; }
+.today-mood * { transition-property: background-color, border-color, color; transition-duration: .3s; }
+@media (prefers-reduced-motion: reduce) { .today-mood, .today-mood * { transition: none !important; } }
+.today-mood[data-mood] {
+  --bm-accent-dim: color-mix(in srgb, var(--bm-accent) 9%, transparent);
+  --bm-accent-bd:  color-mix(in srgb, var(--bm-accent) 28%, transparent);
+  --bm-bg3: color-mix(in srgb, var(--bm-accent) 4%, var(--bm-bg2));
+}
+.today-mood[data-mood="people"]  { --bm-accent: #E58A6B; --bm-accent2: #C96F51; --mood-max: 760px; --mood-radius: 14px; --mood-gap: 18px; --text-sm: 13px; --text-base: 14px; --text-md: 15px; --leading-normal: 1.62; }
+.today-mood[data-mood="build"]   { --bm-accent: #7C9CFF; --bm-accent2: #5F7FE0; --mood-max: 1000px; --mood-radius: 4px; --mood-gap: 10px; --text-sm: 12px; --text-base: 12.5px; --text-md: 13px; --leading-normal: 1.4; }
+.today-mood[data-mood="publish"] { --bm-accent: #B39DFA; --bm-accent2: #957EE6; --mood-max: 820px; --mood-radius: 8px; --mood-gap: 14px; --text-base: 13.5px; --text-md: 14.5px; }
+.today-mood[data-mood="pricing"] { --bm-accent: #4CAF7D; --bm-accent2: #3A9565; --mood-max: 860px; --mood-radius: 6px; --mood-gap: 12px; --leading-normal: 1.45; }
+.today-mood[data-mood="analyze"] { --bm-accent: #4FC3DC; --bm-accent2: #36A5BE; --mood-max: 1000px; --mood-radius: 6px; --mood-gap: 10px; --text-sm: 12px; --text-base: 12.5px; --leading-normal: 1.4; }
+.today-mood[data-mood="unblock"] { --bm-accent: #F0A24F; --bm-accent2: #D4862F; --mood-max: 700px; --mood-radius: 16px; --mood-gap: 20px; --text-sm: 13px; --text-base: 14px; --text-md: 15px; --leading-normal: 1.65; }
+.today-mood[data-mood="reset"]   { --bm-accent: #8FC4A0; --bm-accent2: #6FA882; --mood-max: 640px; --mood-radius: 18px; --mood-gap: 22px; --text-sm: 13px; --text-base: 14.5px; --text-md: 15.5px; --leading-normal: 1.7; }
+.light-mode .today-mood[data-mood="people"]  { --bm-accent: #B8452A; --bm-accent2: #93361F; }
+.light-mode .today-mood[data-mood="build"]   { --bm-accent: #3B5BDB; --bm-accent2: #2E48B0; }
+.light-mode .today-mood[data-mood="publish"] { --bm-accent: #6D4AE0; --bm-accent2: #5538B8; }
+.light-mode .today-mood[data-mood="pricing"] { --bm-accent: #1A7A4A; --bm-accent2: #14603A; }
+.light-mode .today-mood[data-mood="analyze"] { --bm-accent: #137A99; --bm-accent2: #0E6079; }
+.light-mode .today-mood[data-mood="unblock"] { --bm-accent: #B35F0B; --bm-accent2: #8F4B08; }
+.light-mode .today-mood[data-mood="reset"]   { --bm-accent: #3F7A55; --bm-accent2: #316043; }
+.today-mood-strip { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.today-mood-strip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bm-accent); flex: none; }
+@media (max-width: 640px) {
+  .today-mood { --mood-max: 100%; }
+  .today-mood-strip .tone { display: none; }
+}
+.today-mood { --mood-on-accent: #15130a; }
+.light-mode .today-mood { --mood-on-accent: #FFFFFF; }

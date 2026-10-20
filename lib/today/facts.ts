@@ -104,6 +104,7 @@ const GOT_USERS_RE = /\b(?:got|have|gained|landed|onboarded|first)\s+(?:my\s+)?(
 const NO_ACCESS_RE = /(?:\bdon'?t|\bdo\s+not|\bdidn'?t|\bdid\s+not|\bcan'?t|\bcannot|\bcouldn'?t|\bhave\s+no|\bno)\s+(?:have\s+)?(?:any\s+)?access\s+to\s+([^.,;\n]{3,80})/i;
 const SEARCH_FAILED_RE = /(?:looking|searching|searched|looked)\s+for\s+([^.,;\n]{3,90}?)\s+(?:and|but)\s+(?:i\s+)?(?:didn'?t|did\s+not|couldn'?t|could\s+not|never|can'?t)\s+(?:find|locate|get)/i;
 const ALREADY_DONE_RE = /\balready\s+(?:implemented|built|done|drafted|created|finished|completed|published|shipped|written|set\s+up|added|made|have)\b/i;
+const TOMORROW_RE = /tomorrow['’]s first move:\s*([^\n]{3,200})/i;
 const DIRECTION_RE = /\b(?:current\s+)?(?:direction|focus|priority)\s+is\s+([^.\n]{3,100})/i;
 
 const LOOP_RE = /\b(?:still\s+waiting|waiting\s+(?:for|on|a\s+full|to)|haven'?t\s+(?:yet\s+)?(?:recei|heard|got\s+a|gotten)|have\s+not\s+(?:yet\s+)?(?:recei|heard)|will\s+(?:check|measure|follow\s*up)|to\s+measure|no\s+reply\s+yet|awaiting)/i;
@@ -221,6 +222,19 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
       });
     }
 
+    // The founder's own plan for tomorrow, written at close-out. Binding for ~40 hours.
+    const tm = TOMORROW_RE.exec(text);
+    if (tm && now - Date.parse(at) < 40 * 3600 * 1000) {
+      drop((f) => f.kind === "direction" && f.evidence.startsWith("Tomorrow"));
+      facts.push({
+        kind: "direction",
+        subject: tm[1].trim().toLowerCase(),
+        rule: `The founder wrote their own first move for today: "${clip(tm[1].trim(), 140)}". Today's task must start from that, not from something else.`,
+        evidence: `Tomorrow's first move: ${clip(tm[1].trim(), 140)}`,
+        at,
+      });
+    }
+
     const lp = LOOP_RE.exec(text);
     if (lp) {
       // A newer reflection on the same task closes older loops about it.
@@ -282,6 +296,9 @@ export function factsPromptBlock(ledger: Ledger): string {
 const USERS_STRONG_RE = /\b(?:(?:your|our|current|existing|active|paying)\s+(?!(?:target|ideal|potential|prospective|future|new|first|early)\b)(?:[A-Za-z]+\s+)?(?:beta\s+)?(?:users?|customers?|testers?|founders?|members?)|(?:users?|founders?|people|customers?|testers?)\s+who\s+(?:used|tried|signed\s+up|joined|clicked|completed|use|have\s+used)|who\s+used\s+the\s+(?:referral|feature|app|product))\b/i;
 // "beta users" alone is fine when the task is about GETTING them ("recruit 5 beta users").
 const USERS_WEAK_RE = /\b(?:beta\s+(?:users?|founders?|testers?))\b/i;
+// "DM 3 users", "email your users": contacting existing users, with no word that says they are new.
+const CONTACT_USERS_RE = /\b(?:dm|message|email|call|interview|survey|ping|text|follow\s+up\s+with|schedule\s+(?:a\s+)?(?:[\w-]+\s+){0,3}(?:call|chat)\s+with)\s+(?:\d+|one|two|three|five|a|the|some)?\s*(?:[A-Za-z]+\s+){0,2}?(?:users?|customers?|testers?)\b/i;
+const NEW_WORD_RE = /\b(?:new|potential|prospective|target|ideal|future|first|early)\b/i;
 const ACQUIRE_RE = /\b(?:recruit|find|get|land|acquire|source|sign\s*up|onboard|convince|win|attract|reach\s+out\s+to\s+\d+\s+(?:new|potential|prospective))/i;
 const ACCESS_ACTION_RE = /\b(?:join|post|dm|message|send|introduce|pitch|comment|reply|share|announce|invite)\b/i;
 
@@ -311,7 +328,7 @@ export function findContradictions(task: string, ledger: Ledger): Contradiction[
   const out: Contradiction[] = [];
   const t = task ?? "";
   for (const f of ledger.facts) {
-    if (f.kind === "no_users" && (USERS_STRONG_RE.test(t) || (USERS_WEAK_RE.test(t) && !ACQUIRE_RE.test(t)))) {
+    if (f.kind === "no_users" && (USERS_STRONG_RE.test(t) || (USERS_WEAK_RE.test(t) && !ACQUIRE_RE.test(t)) || (CONTACT_USERS_RE.test(t) && !NEW_WORD_RE.test(t) && !ACQUIRE_RE.test(t)))) {
       out.push({ fact: "no_users", why: "Task assumes users/beta founders exist, but the founder said they have none." });
     }
     if (f.kind === "no_access" && f.subject) {

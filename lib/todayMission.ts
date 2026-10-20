@@ -271,11 +271,14 @@ export function planTodayMission(s: MissionSignals): Mission {
   }
 
   // 4. Avoidance zones point at a domain; avoid it less, but gently.
-  if (s.avoidance.length > 0 && s.cognitiveLoad !== "drained") {
+  // A zone only counts if the founder has not just done work in that domain.
+  const doneDomains = new Set(recent.slice(0, 6).filter((t) => OUTCOME_GOOD.has(t.outcome ?? "")).map((t) => classifyTask(t.text).domain).filter(Boolean));
+  const stillAvoided = s.avoidance.filter((a) => { const d = classifyTask(a).domain; return !(d && doneDomains.has(d)); });
+  if (stillAvoided.length > 0 && s.cognitiveLoad !== "drained") {
     bump("unblock", 2);
-    const named = s.avoidance[0];
+    const named = stillAvoided[0];
     reasons.push(`You've been avoiding ${named}.`);
-    for (const a of s.avoidance.slice(0, 3)) {
+    for (const a of stillAvoided.slice(0, 3)) {
       const c = classifyTask(a);
       const kinds = (c.domain && DOMAIN_TO_KIND[c.domain]) || [];
       kinds.forEach((k) => bump(k, 1.2));
