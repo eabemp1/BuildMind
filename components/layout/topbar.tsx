@@ -95,6 +95,7 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
       { label: "Projects",          href: "/projects",        keywords: ["workspace", "roadmap", "milestones"] },
       { label: "Intelligence",      href: "/ai-coach",        keywords: ["ai coach", "chat", "advice", "intelligence"] },
       { label: "Break My Startup",  href: "/break-my-startup", keywords: ["break", "analysis", "risk"] },
+      { label: "Radar",  href: "/radar", keywords: ["events", "hackathon", "grant", "people", "meeting"] },
       { label: "Progress",          href: "/reports",         keywords: ["reports", "weekly report"] },
       { label: "Settings",          href: "/settings",        keywords: ["profile", "preferences"] },
       ...(FEATURES.publicProjects ? [{ label: "Explore", href: "/explore", keywords: ["community"] }] : []),

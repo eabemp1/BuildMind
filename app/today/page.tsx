@@ -3,6 +3,8 @@
 import FollowUpCard from "@/components/today/FollowUpCard";
 import PreparedWork from "@/components/today/PreparedWork";
 import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
+import { moodFor, MOOD_META } from "@/lib/today/mood";
+import RadarToday from "@/components/radar/RadarToday";
 import EveningCloseout from "@/components/today/EveningCloseout";
 import TomorrowCarry from "@/components/today/TomorrowCarry";
 import CompanionBrief from "@/components/companion/CompanionBrief";
@@ -82,16 +84,9 @@ type MilestoneBreakResult = {
 };
 
 // One colour per kind of work, so the page itself says what sort of day this is.
-function missionAccent(kind?: string): string {
-  switch (kind) {
-    case "interview": case "outreach": case "follow_up": return "#4AB8B0";
-    case "build": return "#9B87F5";
-    case "publish": return "#E8C547";
-    case "pricing": return "var(--bm-green, #4ade80)";
-    case "analyze": return "var(--bm-intel, #6FA8FF)";
-    case "unblock": return "var(--bm-red, #E05555)";
-    default: return "var(--bm-accent)";
-  }
+function missionAccent(_kind?: string): string {
+  // The page mood (app/globals.css [data-mood]) sets --bm-accent per kind.
+  return "var(--bm-accent)";
 }
 
 type ActionData = {
@@ -1269,6 +1264,7 @@ function TodayContent() {
   // generic message box and channel picker (which only make sense for outreach)
   // step aside.
   const prepKind = actionData?.action ? prepKindFor(actionData.action, actionData.missionKind ?? null) : null;
+  const mood = moodFor(actionData?.missionKind, prepKind);
   const hideLegacy = Boolean(prepKind) && prepKind !== "outreach";
   const criticalSignal = actionData?.intelligence?.top_signals.find((signal) => signal.severity === "critical");
   const supportingSignals = actionData?.intelligence?.top_signals.filter((signal) => signal.severity !== "critical") ?? [];
@@ -1928,7 +1924,7 @@ function TodayContent() {
   });
 
   return (
-    <div style={{ maxWidth: 920, width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip" }}>
+    <div className="today-mood" data-mood={mood} style={{ maxWidth: "var(--mood-max, 920px)", width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip", borderTop: mood === "default" ? "none" : "2px solid var(--bm-accent)" }}>
 
       {/* Task-first top of page. Only the Lite/Pro toggle lives here: streak, momentum,
           stage progress and the weekly picture are in the Morning Briefing and the
@@ -1939,7 +1935,14 @@ function TodayContent() {
         transition={{ duration: 0.25 }}
         style={{ marginBottom: 14 }}
       >
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          {mood !== "default" ? (
+            <div className="today-mood-strip" aria-label={`Today is a ${MOOD_META[mood].label} day`}>
+              <span className="dot" />
+              <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--bm-accent)" }}>{MOOD_META[mood].label}</span>
+              <span className="tone" style={{ fontSize: "var(--text-sm)", color: "var(--bm-text3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{MOOD_META[mood].tone}</span>
+            </div>
+          ) : <span />}
           <UIModeToggle mode={uiMode} onChange={setUIMode} />
         </div>
 
@@ -2289,6 +2292,7 @@ function TodayContent() {
             </div>
           )}
 
+          <RadarToday projectId={project?.id ?? null} />
           <div ref={hideLegacy ? executionScriptRef : undefined} style={{ scrollMarginTop: 16 }}>
           {actionData?.action && (
             <PreparedWork
