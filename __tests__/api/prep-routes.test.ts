@@ -15,10 +15,8 @@ vi.mock("@/lib/search", () => ({ webSearch: (...a: unknown[]) => h.search(...a) 
 vi.mock("@/lib/server/founderSnapshot", () => ({ getFounderSnapshot: async () => ({ streak: 3, activeDaysThisWeek: 4 }) }));
 
 import { POST as prep } from "@/app/api/ai/prep/route";
-import { POST as record } from "@/app/api/ai/prep/record/route";
 import { POST as reply } from "@/app/api/ai/prep/reply/route";
 import { POST as notes } from "@/app/api/ai/prep/notes/route";
-import { POST as correct } from "@/app/api/ai/prep/correct/route";
 import { POST as link } from "@/app/api/ai/prep/link/route";
 import type { FakeDb as Db } from "../helpers/fakeAdmin";
 
@@ -104,34 +102,29 @@ describe("POST /api/ai/prep", () => {
   });
 });
 
-describe("record, reply, notes, correct, link", () => {
+describe("reply, notes, link", () => {
   async function prepared(task = "Send a personalized WhatsApp message to a founder", mk: string | null = "outreach") {
     h.model.mockResolvedValue(OUTREACH);
     const r = await json(await prep(req({ task, missionKind: mk, projectId: PID })));
     return r.body.prep.id as string;
   }
 
-  it("records edits, sending and a result, and computes the edit ratio", async () => {
-    const id = await prepared();
-    const edited = await json(await record(req({ id, event: "edited", variantId: "v1", finalText: "Hi Sam, quick one: what did you do last time your plan fell apart mid-week?" })));
-    expect(edited.body.ok).toBe(true);
-    expect(edited.body.editRatio).toBeGreaterThan(0);
-    await record(req({ id, event: "sent", finalText: "Hi Sam, quick one: what did you do last time your plan fell apart mid-week?" }));
-    const out = await json(await record(req({ id, event: "outcome", outcome: "replied" })));
-    expect(out.body.ok).toBe(true);
-    const row = db().rows("prepared_work")[0];
-    expect(row.status).toBe("sent"); expect(row.outcome).toBe("replied"); expect(row.final_text).toContain("quick one");
-  });
+  function markSent(id: string, finalText: string) {
+    const row = db().rows("prepared_work").find((r) => r.id === id);
+    if (!row) throw new Error("prepared row missing");
+    row.status = "sent";
+    row.final_text = finalText;
+  }
 
-  it("refuses a result before the draft was used", async () => {
+  it("refuses drafting a reply before the draft was marked sent", async () => {
     const id = await prepared();
-    const r = await json(await record(req({ id, event: "outcome", outcome: "replied" })));
+    const r = await json(await reply(req({ id, mode: "reply", theirReply: "Sounds ok but we already use a spreadsheet for this." })));
     expect(r.status).toBe(409);
   });
 
   it("drafts a reply, verifies the quote, and records that they replied", async () => {
     const id = await prepared();
-    await record(req({ id, event: "sent", finalText: "Hi Sam, what did you do the last time a plan fell apart?" }));
+    markSent(id, "Hi Sam, what did you do the last time a plan fell apart?");
     h.model.mockResolvedValue({ read: "question", summary: "Asks how it differs from a spreadsheet.", quote: "we already use a spreadsheet", reply: "Fair question. A spreadsheet shows the plan; BuildMind shows what you skipped. Want to see one real example?", nextStep: "Send an example." });
     const r = await json(await reply(req({ id, mode: "reply", theirReply: "Sounds ok but we already use a spreadsheet for this." })));
     expect(r.status).toBe(200);
@@ -141,7 +134,7 @@ describe("record, reply, notes, correct, link", () => {
 
   it("drafts a follow-up when nobody answered", async () => {
     const id = await prepared();
-    await record(req({ id, event: "sent", finalText: "Hi Sam, what did you do the last time a plan fell apart?" }));
+    markSent(id, "Hi Sam, what did you do the last time a plan fell apart?");
     h.model.mockResolvedValue({ read: "unclear", summary: "", quote: "", reply: "Sam, one more angle: is it the planning or the following through that breaks first for you?", nextStep: "Send it in 3 days." });
     const r = await json(await reply(req({ id, mode: "followup" })));
     expect(r.status).toBe(200);
@@ -155,14 +148,6 @@ describe("record, reply, notes, correct, link", () => {
     const r = await json(await notes(req({ id, notes: text })));
     expect(r.status).toBe(200);
     expect(r.body.read.themes).toHaveLength(1);
-  });
-
-  it("runs the Studio correction on a message", async () => {
-    const id = await prepared();
-    h.model.mockResolvedValue({ insight: "Ask about behaviour.", working: [], weakening: [{ point: "Opens with the product", quote: "Hi Sam" }], revisions: [{ approach: "personal", text: "Sam, what did you do last time a plan fell apart?", why: "specific", hypothesis: "h", metric: "m", changeIf: "c" }], followUps: [] });
-    const r = await json(await correct(req({ id, text: "Hi Sam, I am building BuildMind, a daily execution system for founders. Want a demo?" })));
-    expect(r.status).toBe(200);
-    expect(r.body.diagnosis).toBeTruthy();
   });
 
   it("saves a video link", async () => {
