@@ -60,6 +60,13 @@ export async function POST(request: Request) {
   if (!draft) return NextResponse.json({ ok: false, error: "Could not read that link. Paste the details instead." }, { status: 422 });
   const kind: RadarKind = parsed.data.kind ?? draft.kind;
   const admin = createAdminClient();
+  if (draft.url) {
+    const { data: dup } = await admin.from("radar_items").select("id").eq("user_id", user.userId).eq("url", draft.url).maybeSingle();
+    if (dup) {
+      const { items: all } = await listRadar(admin, user.userId, { projectId: parsed.data.projectId });
+      return NextResponse.json({ ok: true, item: all.find((i) => i.id === (dup as { id: string }).id) ?? null, ask_kind: null, dropped: [], duplicate: true });
+    }
+  }
   const { data, error } = await admin.from("radar_items").insert({
     user_id: user.userId, project_id: parsed.data.projectId ?? null, type: typeOfKind(kind), kind, kind_confirmed: parsed.data.kind ? true : draft.kind_confirmed,
     title: draft.title, organizer: draft.organizer, url: draft.url, location: draft.location, is_virtual: draft.is_virtual, meeting_url: draft.meeting_url,

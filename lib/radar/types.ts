@@ -40,6 +40,8 @@ export interface RadarItem {
   fit_score: number | null;
   fit_reasons: { reasons: string[]; cautions: string[]; band: "act" | "consider" | "skip" } | null;
   prep: RadarPrep | null;
+  source?: "manual" | "discovered";
+  source_text?: string | null;
 }
 
 export interface RadarPrep {

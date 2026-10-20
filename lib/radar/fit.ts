@@ -78,7 +78,7 @@ export function fitFor(i: RadarItem, ctx: FitContext): Fit {
 
   // 2. Topic overlap with the founder's own project (0-30)
   const mine = stems(ctx.projectText);
-  const theirs = stems([i.title, i.organizer ?? "", i.notes ?? "", i.eligibility ?? ""].join(" "));
+  const theirs = stems([i.title, i.organizer ?? "", i.notes ?? "", i.eligibility ?? "", (i.source_text ?? "").slice(0, 700)].join(" "));
   let shared = 0; theirs.forEach((w) => { if (mine.has(w)) shared++; });
   const topic = Math.min(30, shared * 10);
   score += topic;

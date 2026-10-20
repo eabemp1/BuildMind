@@ -5,6 +5,7 @@
  */
 import { readPage, readPages, type PageDigest } from "@/lib/pageReader";
 import { callModelJSON } from "@/lib/ai-providers";
+import { webSearch } from "@/lib/search";
 import { digestForPrompt, type SiteFacts } from "@/lib/break/domain";
 
 export interface SiteBrief extends SiteFacts {
@@ -17,6 +18,8 @@ export interface SiteBrief extends SiteFacts {
   /** Full pre-filled text for the signed-in form (<= 3800 chars). */
   brief: string;
   pagesRead: number;
+  /** "search" when the site blocked direct reading and the brief comes from public search results instead. */
+  via: "site" | "search";
 }
 
 const PROMPT = `You read a company's own website text and extract facts for a startup stress test. Return ONLY JSON:
@@ -35,21 +38,38 @@ const BASE_UNKNOWNS = [
 const clip = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n);
 const strList = (v: unknown, n: number, len: number): string[] => (Array.isArray(v) ? v.map((x) => clip(String(x ?? ""), len)).filter((x) => x.length > 2).slice(0, n) : []);
 
-export function composeBrief(b: Pick<SiteBrief, "domain" | "idea" | "problem" | "capabilities" | "audiences" | "prices" | "unknowns">): string {
-  const lines: string[] = [`Website: https://${b.domain}`, "", `What it is (from the site): ${b.idea}`];
+export function composeBrief(b: Pick<SiteBrief, "via" | "domain" | "idea" | "problem" | "capabilities" | "audiences" | "prices" | "unknowns">): string {
+  const lines: string[] = [`Website: https://${b.domain}`, "", `What it is (from ${b.via === "search" ? "public search results" : "the site"}): ${b.idea}`];
   if (b.problem) lines.push("", `Problem it says it solves: ${b.problem}`);
   if (b.capabilities.length) lines.push("", "What the site says it does:", ...b.capabilities.map((c) => `- ${c}`));
   if (b.audiences.length) lines.push("", "Who the site says it is for:", ...b.audiences.map((c) => `- ${c}`));
   if (b.prices.length) lines.push("", `Prices shown on the site: ${b.prices.join(", ")}`);
   lines.push("", "Not on the site (unknown, to validate, not a weakness by itself):", ...b.unknowns.map((u) => `- ${u}`));
-  lines.push("", "Judge this on what the site says. Do not assume weak traction because it is new; say what evidence is missing.");
+  if (b.via === "search") lines.push("", "Note: the site blocked direct reading, so this comes from public search snippets and may be incomplete.");
+  lines.push("", "Judge this on what the source says. Do not assume weak traction because it is new; say what evidence is missing.");
   return lines.join("\n").slice(0, 3800);
 }
 
+/** The site refused or could not be read. Fall back to what public search says about the domain, and say so. */
+async function digestFromSearch(domain: string): Promise<PageDigest | null> {
+  try {
+    const res = await webSearch(domain, 6);
+    const own = res.results.filter((r) => { try { const h = new URL(r.url).hostname.replace(/^www\./, ""); return h === domain.replace(/^www\./, "") || h.endsWith(`.${domain.replace(/^www\./, "")}`); } catch { return false; } });
+    if (!own.length) return null;
+    const text = own.map((r) => `${r.title}. ${r.snippet ?? ""}`).join(" ").replace(/\s+/g, " ").slice(0, 3500);
+    return { url: `https://${domain}`, ok: true, title: own[0].title ?? domain, description: (own[0].snippet ?? "").slice(0, 300), headings: own.slice(1, 6).map((r) => r.title).filter(Boolean) as string[], text, prices: [], hasPricingPage: false };
+  } catch { return null; }
+}
+
 export async function scanSite(url: string, opts: { useAI: boolean }): Promise<SiteBrief | null> {
-  const home = await readPage(url);
-  if (!home.ok || (!home.title && !home.description && !home.text)) return null;
-  const extra = (await readPages([`${url}/pricing`, `${url}/about`], 2)).filter((p): p is PageDigest => Boolean(p?.ok && p.text));
+  let via: "site" | "search" = "site";
+  let home = await readPage(url);
+  if (!home.ok || (!home.title && !home.description && !home.text)) {
+    const fallback = await digestFromSearch(new URL(url).hostname);
+    if (!fallback) return null;
+    home = fallback; via = "search";
+  }
+  const extra = via === "site" ? (await readPages([`${url}/pricing`, `${url}/about`], 2)).filter((p): p is PageDigest => Boolean(p?.ok && p.text)) : [];
   const prices = [...new Set([...home.prices, ...extra.flatMap((p) => p.prices)])].slice(0, 6);
   const domain = new URL(url).hostname;
 
@@ -72,6 +92,6 @@ export async function scanSite(url: string, opts: { useAI: boolean }): Promise<S
   }
   if (idea.length < 10) return null;
   const unknowns = BASE_UNKNOWNS.filter((u) => !(prices.length && u === "Willingness to pay"));
-  const base = { domain, idea, problem, capabilities, audiences, prices, unknowns };
-  return { ...base, targetUsers: audiences.slice(0, 2).join("; "), source, title: home.title, brief: composeBrief(base), pagesRead: 1 + extra.length };
+  const base = { via, domain, idea, problem, capabilities, audiences, prices, unknowns };
+  return { ...base, targetUsers: audiences.slice(0, 2).join("; "), source, title: home.title, brief: composeBrief(base), pagesRead: 1 + extra.length, via };
 }

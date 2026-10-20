@@ -36,6 +36,8 @@ interface Props {
   missionKind?: string | null;
   firstStep?: string;
   projectId?: string | null;
+  /** The idea being tested when it is not a saved project (Break My Startup). */
+  idea?: string;
   /** Puts a variant into the editable message box further down the page. */
   onUseDraft?: (text: string) => void;
 }
@@ -57,12 +59,13 @@ async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; data?
   } catch { return { ok: false, error: "Could not reach BuildMind." }; }
 }
 
-export default function PreparedWork({ task, missionKind, firstStep, projectId, onUseDraft }: Props) {
+export default function PreparedWork({ task, missionKind, firstStep, projectId, onUseDraft, idea }: Props) {
   const kind = React.useMemo(() => prepKindFor(task, missionKind), [task, missionKind]);
   const [prep, setPrep] = React.useState<Prep | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [loadError, setLoadError] = React.useState("");
   const [unsaved, setUnsaved] = React.useState(false);
+  const [saveDetail, setSaveDetail] = React.useState("");
   const [active, setActive] = React.useState("v1");
   const [texts, setTexts] = React.useState<Record<string, string>>({});
   const [origin, setOrigin] = React.useState<Record<string, string>>({});
@@ -87,11 +90,12 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   const load = React.useCallback(async (regenerate = false) => {
     if (!kind) return;
     setLoading(true); setNote(""); setLoadError("");
-    const r = await post<{ prep: Prep | null; reason?: string }>("/api/ai/prep", { task, missionKind: missionKind ?? null, projectId: projectId ?? null, firstStep, regenerate });
+    const r = await post<{ prep: Prep | null; reason?: string }>("/api/ai/prep", { task, missionKind: missionKind ?? null, projectId: projectId ?? null, firstStep, regenerate, ...(idea ? { idea } : {}) });
     setLoading(false);
     if (!r.ok) { setLoadError(r.error ?? "Could not prepare this task."); if (regenerate) setNote(r.error ?? ""); return; }
     const p = r.data?.prep ?? null;
     setUnsaved(r.data?.reason === "setup");
+    setSaveDetail((r.data as { detail?: string } | null)?.detail ?? "");
     if (!p) { setLoadError("Nothing could be prepared for this task."); return; }
     setPrep(p); setDiag(null); setExtra([]);
     if (p) {
@@ -156,9 +160,8 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   async function markDone() { bump("sent"); await record("sent"); }
   async function setOutcome(id: string) { setPrep((p) => (p ? { ...p, outcome: id } : p)); await record("outcome", { outcome: id, finalText: undefined, originalText: undefined }); }
   async function fix() {
-    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
     setBusy("fix"); setNote("");
-    const r = await post<{ diagnosis: Diagnosis }>("/api/ai/prep/correct", { id: prep!.id, text });
+    const r = await post<{ diagnosis: Diagnosis }>("/api/ai/prep/correct", prep!.id ? { id: prep!.id, text } : { text, kind: prep!.kind, platform: prep!.prepared.platform ?? "other" });
     setBusy("");
     if (!r.ok || !r.data) return setNote(r.error ?? "Could not review this draft.");
     setDiag(r.data.diagnosis);
@@ -171,16 +174,15 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   }
 
   async function askReply(mode: "reply" | "followup") {
-    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
     setAssistBusy(true); setNote("");
-    const r = await post<{ assist: ReplyAssist; outcome: string | null }>("/api/ai/prep/reply", { id: prep!.id, mode, theirReply: mode === "reply" ? theirReply : undefined });
+    const r = await post<{ assist: ReplyAssist; outcome: string | null }>("/api/ai/prep/reply", { ...(prep!.id ? { id: prep!.id } : { mine: text, platform: prep!.prepared.platform ?? "other" }), mode, theirReply: mode === "reply" ? theirReply : undefined });
     setAssistBusy(false);
     if (!r.ok || !r.data) return setNote(r.error ?? "Could not draft that just now.");
     setAssist(r.data.assist); setAssistText(r.data.assist.reply); setAssistMode(mode);
     if (r.data.outcome) setPrep((p) => (p ? { ...p, outcome: r.data!.outcome } : p));
   }
   async function saveVideo() {
-    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
+    if (!prep!.id) return setNote(saveDetail ? `Not saved: ${saveDetail}. Run supabase/migrations/20261020000000_prepared_work.sql.` : "This needs the prepared_work table. Run supabase/migrations/20261020000000_prepared_work.sql.");
     setVideoBusy(true); setNote("");
     const r = await post<{ recorded: NonNullable<Prep["prepared"]["recorded"]> }>("/api/ai/prep/link", { id: prep!.id, url: videoUrl });
     setVideoBusy(false);
@@ -188,7 +190,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     setPrep((p) => (p ? { ...p, status: "sent", prepared: { ...p.prepared, recorded: r.data!.recorded } } : p)); setVideoUrl("");
   }
   async function readNotes() {
-    if (!prep!.id) return setNote("Run the latest database migrations to use this.");
+    if (!prep!.id) return setNote(saveDetail ? `Not saved: ${saveDetail}. Run supabase/migrations/20261020000000_prepared_work.sql.` : "This needs the prepared_work table. Run supabase/migrations/20261020000000_prepared_work.sql.");
     setNotesBusy(true); setNote("");
     const r = await post<{ read: NotesRead }>("/api/ai/prep/notes", { id: prep!.id, notes });
     setNotesBusy(false);
@@ -349,7 +351,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         </div>
       )}
       {note && <p style={{ ...muted, color: "var(--bm-text2)" }}>{note}</p>}
-      {unsaved && <p style={muted}>Not saved. Your edits and results are not being recorded until the latest database migrations are run.</p>}
+      {unsaved && <p style={muted}>Not saved{saveDetail ? ` (${saveDetail})` : ""}. Drafting, fixing and replies still work, but results are not recorded until supabase/migrations/20261020000000_prepared_work.sql is run.</p>}
 
       {sections.map((s) => (
         <div key={s.heading} style={{ display: "grid", gap: 4, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>

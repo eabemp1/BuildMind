@@ -27,6 +27,7 @@ const Body = z.object({
   projectId: z.string().uuid().nullable().optional(),
   firstStep: z.string().max(400).optional(),
   regenerate: z.boolean().optional(),
+  idea: z.string().max(1500).optional(),
 });
 
 type Row = { id: string; kind: PrepKind; payload: Prepared; chosen_variant: string | null; final_text: string | null; status: string; outcome: string | null; corrections: number };
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const parsed = Body.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
-  const { task, missionKind, projectId, firstStep, regenerate } = parsed.data;
+  const { task, missionKind, projectId, firstStep, regenerate, idea } = parsed.data;
 
   const kind = prepKindFor(task, missionKind);
   if (!kind) return NextResponse.json({ ok: true, prep: null, reason: "no_task" });
@@ -63,17 +64,18 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, prep: { id: r.id, kind: r.kind, prepared: r.payload, chosenVariant: r.chosen_variant, finalText: r.final_text, status: r.status, outcome: r.outcome, corrections: r.corrections, cached: true, ...(await summary()) } });
       }
     }
-  } catch {
+  } catch (e) {
+    const detail = e instanceof Error ? e.message.slice(0, 160) : "";
     // The table is missing (migration not run). Still prepare and show the work, unsaved.
-    const unsaved = await generatePrep(admin, user.userId, { task, missionKind, projectId, firstStep }).catch(() => null);
+    const unsaved = await generatePrep(admin, user.userId, { task, missionKind, projectId, firstStep, idea }).catch(() => null);
     const prepared = unsaved?.prepared ?? fallbackPrep(kind, task, firstStep);
-    return NextResponse.json({ ok: true, reason: "setup", prep: { id: null, kind, prepared, chosenVariant: null, finalText: null, status: "prepared", outcome: null, corrections: 0, cached: false, learned: [], performance: null } });
+    return NextResponse.json({ ok: true, reason: "setup", detail, prep: { id: null, kind, prepared, chosenVariant: null, finalText: null, status: "prepared", outcome: null, corrections: 0, cached: false, learned: [], performance: null } });
   }
 
   const blocked = await gateAIUsage(user.userId, "core");
   if (blocked) return blocked;
 
-  const generated = await generatePrep(admin, user.userId, { task, missionKind, projectId, firstStep }).catch(() => null);
+  const generated = await generatePrep(admin, user.userId, { task, missionKind, projectId, firstStep, idea }).catch(() => null);
   // Never return nothing: if generation failed, the founder still gets a starting structure from their own task.
   const result = generated ?? { kind, platform: "other", prepared: fallbackPrep(kind, task, firstStep) };
 
@@ -82,7 +84,7 @@ export async function POST(request: Request) {
     kind: result.kind, platform: result.platform, payload: result.prepared,
     chosen_variant: null, final_text: null, edit_ratio: null, status: "prepared", outcome: null, outcome_at: null, corrections: 0, updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,day,task_hash" }).select("id").single();
-  if (error || !saved) return NextResponse.json({ ok: true, reason: "setup", prep: { id: null, kind: result.kind, prepared: result.prepared, chosenVariant: null, finalText: null, status: "prepared", outcome: null, corrections: 0, cached: false, learned: [], performance: null } });
+  if (error || !saved) return NextResponse.json({ ok: true, reason: "setup", detail: (error?.message ?? "").slice(0, 160), prep: { id: null, kind: result.kind, prepared: result.prepared, chosenVariant: null, finalText: null, status: "prepared", outcome: null, corrections: 0, cached: false, learned: [], performance: null } });
 
   return NextResponse.json({ ok: true, prep: { id: saved.id as string, kind: result.kind, prepared: result.prepared, chosenVariant: null, finalText: null, status: "prepared", outcome: null, corrections: 0, cached: false, ...(await summary()) } });
 }

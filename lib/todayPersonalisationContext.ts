@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { distinctByAction, isShownTaskRow } from "@/lib/recommendationRows";
 import { buildLedger, factsPromptBlock, type Ledger } from "@/lib/today/facts";
 import { loopsPromptBlock, partitionLoops, type Loop } from "@/lib/today/loops";
+import { radarPromptBlock } from "@/lib/radar/store";
 
 export interface TodayPersonalisationContext {
   /** Last 7 actions shown (from reflexion_learning_log), formatted for prompt injection */
@@ -170,7 +171,8 @@ export async function buildTodayPersonalisationContext(
     const ledger = buildLedger(ledgerRows, { feedback: feedbackRows as import("@/lib/today/facts").FeedbackRow[] });
     const loopRows = loopsResult.status === "fulfilled" && !loopsResult.value.error ? ((loopsResult.value.data ?? []) as Loop[]) : [];
     const { due: dueLoops } = partitionLoops(loopRows);
-    const factsBlock = [factsPromptBlock(ledger), loopsPromptBlock(dueLoops)].filter(Boolean).join("\n\n");
+    const radarBlock = await radarPromptBlock(supabase, userId, projectId).catch(() => "");
+    const factsBlock = [factsPromptBlock(ledger), loopsPromptBlock(dueLoops), radarBlock].filter(Boolean).join("\n\n");
 
     return {
       recentActionsBlock,

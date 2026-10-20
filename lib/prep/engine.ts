@@ -290,11 +290,12 @@ export interface PrepResult { kind: PrepKind; platform: string; prepared: Prepar
 export async function generatePrep(
   admin: SupabaseClient,
   userId: string,
-  input: { task: string; missionKind?: string | null; projectId?: string | null; firstStep?: string },
+  input: { task: string; missionKind?: string | null; projectId?: string | null; firstStep?: string; idea?: string },
 ): Promise<PrepResult | null> {
   const kind = prepKindFor(input.task, input.missionKind);
   if (!kind) return null;
-  const project = await loadProject(admin, userId, input.projectId);
+  // A founder testing an idea that is not a saved project gets prepared work about THAT idea, not their latest project.
+  const project = input.idea ? { ...(await loadProject(admin, userId, input.projectId)), name: input.idea.split("\n")[0].slice(0, 80), description: input.idea.slice(0, 600), problem: "", targetUsers: "" } : await loadProject(admin, userId, input.projectId);
   const platform = inferPlatform(input.task);
   let prepared: Prepared | null = null;
   let connected: ConnectedFacts | null = null;

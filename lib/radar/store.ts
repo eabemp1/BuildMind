@@ -28,3 +28,12 @@ export function todayPicks(items: RadarView[]): RadarView[] {
     .filter((i) => i.fit.band !== "skip" && i.kind_confirmed && (i.days === null ? false : i.days >= (i.type === "person" ? -30 : 0) && i.days <= 14))
     .slice(0, 2);
 }
+
+/** A short block for the Today task generator: confirmed, worthwhile things that are due soon. Empty when there is nothing. */
+export async function radarPromptBlock(admin: SupabaseClient, userId: string, projectId?: string | null, now = Date.now()): Promise<string> {
+  const { items } = await listRadar(admin, userId, { projectId, now });
+  const due = items.filter((i) => i.kind_confirmed && i.fit.band === "act" && i.days !== null && i.days >= 0 && i.days <= 7).slice(0, 2);
+  if (!due.length) return "";
+  const lines = due.map((i) => `- ${i.kind}: "${i.title}"${i.days === 0 ? ", due today" : `, in ${i.days} day${i.days === 1 ? "" : "s"}`}${i.location && !i.is_virtual ? `, at ${i.location}` : i.meeting_url || i.is_virtual ? ", online" : ""}. Next step: ${i.next_move}`);
+  return `OPPORTUNITIES THE FOUNDER ALREADY TRACKS (confirmed, worth acting on this week). If today's task can honestly advance one of these, make it that task and use these exact details. If it does not fit their current direction, stated blockers or access, ignore this block. Never add details that are not written here:\n${lines.join("\n")}`;
+}
