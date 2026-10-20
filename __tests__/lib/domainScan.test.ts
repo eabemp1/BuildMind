@@ -19,3 +19,14 @@ describe("scan my site", () => {
     expect(f.problem).toBe("");
   });
 });
+
+import { composeBrief } from "@/lib/break/siteScan";
+describe("composeBrief", () => {
+  it("separates site facts from unknowns and stays under the idea limit", () => {
+    const t = composeBrief({ domain: "acme.com", idea: "Invoices for freelancers.", problem: "", capabilities: ["Sends invoices", "Tracks payment"], audiences: [], prices: [], unknowns: ["Active users", "Willingness to pay"] });
+    expect(t).toContain("What the site says it does:");
+    expect(t).toContain("Not on the site (unknown");
+    expect(t).not.toContain("Problem it says");
+    expect(t.length).toBeLessThan(3800);
+  });
+});

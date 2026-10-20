@@ -136,6 +136,22 @@ export default function BreakMyStartupPage() {
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [customIdea, setCustomIdea] = useState("");
+  const [scanDomain, setScanDomain] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanNote, setScanNote] = useState("");
+  async function handleScan() {
+    if (scanning || scanDomain.trim().length < 4) return;
+    setScanning(true); setScanNote("");
+    try {
+      const res = await fetch("/api/ai/break-my-startup/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain: scanDomain.trim() }) });
+      const b = await res.json().catch(() => ({}));
+      if (!res.ok || !b.success) throw new Error(b?.error ?? "Scan failed. Describe it instead.");
+      setSelectedProjectId(""); setProjectExplicitlySelected(false);
+      setCustomIdea(b.data.brief);
+      setScanNote(`Read ${b.data.pagesRead} page${b.data.pagesRead === 1 ? "" : "s"} on ${b.data.domain}. Facts come from the site; unknowns are listed separately. Edit anything wrong, then run it.`);
+    } catch (e) { setScanNote(e instanceof Error ? e.message : "Scan failed. Describe it instead."); }
+    finally { setScanning(false); }
+  }
   const [knownCompetitors, setKnownCompetitors] = useState("");
   const [focusAreas, setFocusAreas] = useState<FocusArea[]>([]);
   const [executionMode, setExecutionMode] = useState(false);
@@ -698,6 +714,19 @@ export default function BreakMyStartupPage() {
                 )}
               </Card>
             )}
+
+            {/* Scan a live site to pre-fill the brief */}
+            <div className="flex flex-col gap-2">
+              <label htmlFor="bms-domain" className="text-xs font-medium text-[var(--bm-text2)] uppercase tracking-widest">Already live? Scan your site (optional)</label>
+              <div className="flex gap-2">
+                <input id="bms-domain" value={scanDomain} onChange={(e) => setScanDomain(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleScan(); } }}
+                  placeholder="yourapp.com" inputMode="url" autoCapitalize="none" autoCorrect="off"
+                  className="flex-1 min-w-0 rounded-lg border border-[var(--bm-border2)] bg-transparent px-3 py-2.5 text-sm text-[var(--bm-text)] outline-none" />
+                <button type="button" onClick={handleScan} disabled={scanning || scanDomain.trim().length < 4}
+                  className="min-h-[44px] rounded-lg border border-[var(--bm-border3)] px-4 text-sm font-semibold text-[var(--bm-text)] disabled:opacity-50">{scanning ? "Reading…" : "Scan"}</button>
+              </div>
+              {scanNote && <p role="status" className="text-xs text-[var(--bm-text3)] m-0">{scanNote}</p>}
+            </div>
 
             {/* Custom idea textarea */}
             <Textarea
