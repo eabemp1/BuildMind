@@ -25,6 +25,16 @@ const PREFIX: Partial<Record<PrepKind, string>> = {
   competitor_brief: "Research competitors and alternatives:", prospects: "Find the people who have this problem:", validation_kit: "Plan customer interviews:", pricing_test: "Test pricing:", outreach: "Draft outreach:", launch_plan: "Plan the launch:",
 };
 
+/** Which crew agent on /agents does the work a step describes. Competitor words win over generic research. */
+export function agentFor(step: string): "competitor" | "research" | "validation" | null {
+  const t = String(step ?? "");
+  if (t.trim().length < 8) return null;
+  if (/\b(compet\w*|alternatives?|incumbents?|landscape|benchmark\w*|market scan)\b/i.test(t)) return "competitor";
+  if (/\b(interview\w*|talk to|survey\w*|customer discovery|validate|validation)\b/i.test(t)) return "validation";
+  if (/\b(research|investigat\w*|look into|find out|explor\w*|study|diligence|discover\w*)\b/i.test(t)) return "research";
+  return null;
+}
+
 export function stepActions(step: string, max = 3): StepAction[] {
   const text = String(step ?? "").trim();
   if (text.length < 8) return [];

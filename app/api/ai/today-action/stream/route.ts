@@ -42,7 +42,7 @@ import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { upsertTodayActionCache } from "@/lib/todayActionCache";
 import { logQualityEvent } from "@/lib/today/telemetry";
 import { buildTodayPersonalisationContext } from "@/lib/todayPersonalisationContext";
-import { recordActionShown } from "@/lib/learning";
+import { adoptPredictionAsShown, recordActionShown } from "@/lib/learning";
 import { buildFounderIntelligencePromptBlock, loadFounderIntelligence, summarizeFounderIntelligenceForClient, type FounderIntelligenceState } from "@/lib/founderIntelligence";
 import { recordFounderIntelligencePrediction } from "@/lib/learningLoop";
 import { loadTodayActionContext } from "@/lib/todayActionContext";
@@ -981,7 +981,15 @@ ${JSON.stringify(structuredA)}`,
 
           if (adminForCache) {
             const learningSessionId = `today_action:${projectId ?? "none"}:${Date.now()}`;
-            const logRowId = await recordActionShown({
+            // One row per recommendation: write the shown task onto the prediction row when there is one.
+            const logRowId = (await adoptPredictionAsShown({
+              recommendationId: tctx.recommendationId,
+              userId,
+              sessionId: learningSessionId,
+              stage,
+              actionShown: finalData.action,
+              criticPersona: criticPersona.name,
+            })) ?? await recordActionShown({
               userId,
               projectId: projectId ?? "",
               sessionId: learningSessionId,

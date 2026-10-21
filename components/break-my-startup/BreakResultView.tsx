@@ -16,6 +16,7 @@
  *   Next steps what to do first, the test, the plan, pivots
  */
 
+import StepActions from "@/components/break-my-startup/StepActions";
 import { ShareBreak } from "./ShareBreak";
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -50,6 +51,8 @@ export interface BreakResultViewProps {
   onUnlock: () => void;
   /** Idea text, used as the title on the shared card. */
   ideaTitle?: string;
+  /** The saved project being tested, when there is one. */
+  projectId?: string | null;
 }
 
 function Hero({ result, onJump, onUnlock }: { result: BreakResult; onJump: (t: TabId) => void; onUnlock: () => void }) {
@@ -125,7 +128,7 @@ function KeyFact({ label, tone, onClick, action, children }: { label: string; to
   );
 }
 
-function RiskRow({ risk, index, defaultOpen, focusToken }: { risk: RiskItem; index: number; defaultOpen: boolean; focusToken?: number }) {
+function RiskRow({ risk, index, defaultOpen, focusToken, idea, projectId }: { risk: RiskItem; index: number; defaultOpen: boolean; focusToken?: number; idea?: string; projectId?: string | null }) {
   const [open, setOpen] = useState(defaultOpen);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -158,6 +161,8 @@ function RiskRow({ risk, index, defaultOpen, focusToken }: { risk: RiskItem; ind
             <div style={{ minWidth: 0 }}>
               <p style={labelText}>How to de-risk it</p>
               <div style={{ maxWidth: "68ch", marginTop: 2 }}><Markdown textSize={13.5}>{sanitizeMarkdown(risk.mitigation)}</Markdown></div>
+              {/* The risk's fix often IS a tool ("run a competitor scan"): put the tool right here. */}
+              <div style={{ marginTop: 8 }}><StepActions step={risk.mitigation} idea={idea} projectId={projectId} /></div>
             </div>
           </div>
           {risk.relatedFocusAreas && risk.relatedFocusAreas.length > 0 && <FocusTags areas={risk.relatedFocusAreas} />}
@@ -178,7 +183,7 @@ function FocusTags({ areas }: { areas?: string[] }) {
   );
 }
 
-function RisksTab({ result }: { result: BreakResult }) {
+function RisksTab({ result, idea, projectId }: { result: BreakResult; idea?: string; projectId?: string | null }) {
   const counts = (["Critical", "High", "Medium", "Low"] as RiskSeverity[]).map((s) => ({ s, n: result.risks.filter((r) => r.severity === s).length })).filter((x) => x.n > 0);
   const [allWork, setAllWork] = useState(false);
   const work = result.surviveReasons ?? [];
@@ -200,7 +205,7 @@ function RisksTab({ result }: { result: BreakResult }) {
             {counts.map((c) => <Chip key={c.s} color={SEV_COLOR[c.s]}>{c.n} {c.s.toLowerCase()}</Chip>)}
           </div>
         </div>
-        {result.risks.map((r, i) => <RiskRow key={i} risk={r} index={i} defaultOpen={i === 0} focusToken={pick?.i === i ? pick.t : undefined} />)}
+        {result.risks.map((r, i) => <RiskRow key={i} risk={r} index={i} defaultOpen={i === 0} focusToken={pick?.i === i ? pick.t : undefined} idea={idea} projectId={projectId} />)}
       </section>
 
       {work.length > 0 && (
@@ -397,6 +402,7 @@ function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResu
           {mv ? (
             <>
               <p style={{ fontFamily: display, fontSize: 20, fontWeight: 700, lineHeight: 1.3, color: "var(--bm-text)", margin: 0, letterSpacing: "-0.01em", maxWidth: "46ch" }}>{mv.action}</p>
+              <StepActions step={mv.action} idea={props.ideaTitle} projectId={props.projectId} />
               <p style={{ ...bodyText, maxWidth: "68ch" }}>{mv.why}</p>
               {mv.doNotBuildYet.length > 0 && (
                 <div><p style={labelText}>Not yet</p><ul style={{ ...bodyText, margin: "4px 0 0", paddingLeft: 18, listStyle: "disc" }}>{mv.doNotBuildYet.map((t) => <li key={t}>{t}</li>)}</ul></div>
@@ -507,7 +513,7 @@ export function BreakResultView(props: BreakResultViewProps) {
 
       <AnimatePresence mode="wait">
         <motion.div key={tab} role="tabpanel" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
-          {tab === "risks" && <RisksTab result={result} />}
+          {tab === "risks" && <RisksTab result={result} idea={props.ideaTitle} projectId={props.projectId} />}
           {tab === "proof" && result.evidence && (
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
               <section style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px" }}><ConfidenceSummary layer={result.evidence} /></section>

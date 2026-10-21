@@ -50,7 +50,7 @@ export default function EveningCloseout({ task, projectId, onSaved }: { task?: s
     try {
       const r = await fetch("/api/evening-checkin", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: note.trim(), outcome, blocker: needsBlocker(outcome) ? blocker : null, tomorrow: tomorrow.trim() || null, task: task ?? null, projectId: projectId ?? null }),
+        body: JSON.stringify({ note: note.trim(), outcome, blocker: needsBlocker(outcome) ? blocker : null, tomorrow: tomorrow.trim() || null, task: task ?? null, dayKey: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(), projectId: projectId ?? null }),
       });
       if (!r.ok) throw new Error("save failed");
       if (follow && task) {

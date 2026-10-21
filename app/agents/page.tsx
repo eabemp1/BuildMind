@@ -311,6 +311,15 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
 // ── Main page ──
 
 export default function AgentsPage() {
+  // Deep link from Break My Startup: /agents?agent=competitor highlights that crew card.
+  const [focusAgent, setFocusAgent] = useState<string | null>(null);
+  useEffect(() => {
+    const a = new URLSearchParams(window.location.search).get("agent");
+    if (a === "competitor" || a === "research" || a === "validation") {
+      setFocusAgent(a);
+      window.setTimeout(() => document.getElementById(`crew-${a}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 400);
+    }
+  }, []);
   const { plan, isLoading: planLoading } = usePlan();
   const activeProjectId = useActiveProjectId();
 
@@ -512,8 +521,10 @@ export default function AgentsPage() {
       {!activeRun && !deploying && (
         <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", minWidth: 0 }}>
           {(["research", "validation", "competitor"] as AgentType[]).map((type) => (
-            <CrewCard key={type} agent={type} name={AGENT_IDENTITY[type].name} tagline={AGENT_IDENTITY[type].tagline}
+            <div key={type} id={`crew-${type}`} style={{ borderRadius: 12, outline: focusAgent === type ? "2px solid var(--bm-accent)" : "none", outlineOffset: 3, minWidth: 0 }}>
+            <CrewCard agent={type} name={AGENT_IDENTITY[type].name} tagline={AGENT_IDENTITY[type].tagline}
               stat={crew[type]} deploying={deploying} locked={locked} onDeploy={() => handleDeploy(type)} />
+            </div>
           ))}
         </div>
       )}

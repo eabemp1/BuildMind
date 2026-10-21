@@ -355,6 +355,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           created_at:    new Date().toISOString(),
         };
         let reflectionRow: { id?: unknown } | null = duplicateReflectionId ? { id: duplicateReflectionId } : null;
+        let isDuplicateSubmit = Boolean(duplicateReflectionId);
         if (!reflectionRow) {
           // The idempotency key is the exact guard (unique index); the 60s match above covers old clients.
           const withKey = body.idempotencyKey ? { ...reflectionRowValues, idempotency_key: body.idempotencyKey } : reflectionRowValues;
@@ -363,7 +364,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
             if ((ins.error as { code?: string }).code === "23505") {
               // Same key already saved: this is the same reflection, reuse it.
               const { data: existing } = await supabase.from("reflections").select("id").eq("user_id", verifiedUserId).eq("idempotency_key", body.idempotencyKey).maybeSingle();
-              if (existing?.id) ins = { data: existing, error: null } as unknown as typeof ins;
+              if (existing?.id) { ins = { data: existing, error: null } as unknown as typeof ins; isDuplicateSubmit = true; }
             } else {
               // Column not migrated yet: save without the key rather than lose the reflection.
               ins = await supabase.from("reflections").insert(reflectionRowValues).select("id").maybeSingle();
@@ -371,6 +372,10 @@ Target users: ${project.target_users ?? "Not specified"}`;
           }
           reflectionRow = ins.data ?? null;
         }
+        // The same reflection arriving twice must not run its side effects twice (momentum, streak,
+        // XP, task status, patterns, the learning comparison). Jump to the response; the catch
+        // below continues with local data, exactly as when the database is unavailable.
+        if (isDuplicateSubmit) throw new Error("duplicate-reflection");
 
         // Learn from swaps: if this was a swapped-in task, record how it went.
         void resolveSwap(createAdminClient(), verifiedUserId, todayAction, outcome);
@@ -543,7 +548,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
                 .select("id")
                 .eq("id", candidate)
                 .eq("user_id", verifiedUserId)
-                .eq("outcome", "pending") // a stored id that was already resolved must not be reused
+                .is("evidence_match_score", null) // a stored id that was already resolved must not be reused
                 .maybeSingle();
               if (row?.id) effectiveRecommendationId = candidate;
             }

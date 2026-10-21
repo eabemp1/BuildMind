@@ -34,7 +34,7 @@ export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
 export const maxDuration = 30; // reflexion loop (Generator + Critic + Refiner) ~15–20 s
 import { inferStage } from "@/lib/stages";
-import { recordActionShown } from "@/lib/learning";
+import { adoptPredictionAsShown, recordActionShown } from "@/lib/learning";
 import { resolveDayKey } from "@/lib/dayKey";
 import { truncateWords } from "@/lib/textTruncate";
 
@@ -1084,7 +1084,15 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     if (hasAdminEnv() && finalResult.action && userId) {
       recordActivity(userId, "task_accepted", { projectId, stage, action: finalResult.action }).catch(() => {});
       const learningSessionId = `today_action:${projectId ?? "none"}:${Date.now()}`;
-      const logRowId = await recordActionShown({
+      // One row per recommendation: write the shown task onto the prediction row when there is one.
+      const logRowId = (await adoptPredictionAsShown({
+        recommendationId: tctx.recommendationId,
+        userId,
+        sessionId: learningSessionId,
+        stage,
+        actionShown: finalResult.action,
+        criticPersona: reflexionOutput ? getWeeklyCriticPersona().name : "fallback",
+      })) ?? await recordActionShown({
         userId,
         projectId: projectId ?? "",
         sessionId: learningSessionId,

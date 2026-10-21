@@ -31,7 +31,9 @@ export default function TomorrowCarry() {
     <div style={{ border: "1px solid var(--bm-border)", borderRadius: 10, background: "var(--bm-bg2)", padding: "10px 12px", marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
       <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
         <div style={{ fontSize: 11, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: 0.4 }}>Your first move, from last night</div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginTop: 2 }}>{carry.text}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginTop: 2 }}>{carry.clear || carry.text}</div>
+        {carry.task ? <div style={{ fontSize: 12, color: "var(--bm-text3)", marginTop: 3 }}>Continuing: {carry.task.length > 110 ? `${carry.task.slice(0, 110)}...` : carry.task}</div> : null}
+        {carry.clear && carry.clear.trim().toLowerCase() !== carry.text.trim().toLowerCase() ? <div style={{ fontSize: 12, color: "var(--bm-text4)", marginTop: 2 }}>You wrote: {carry.text}</div> : null}
       </div>
       <button type="button" onClick={dismiss} style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)", borderRadius: 6, padding: "4px 9px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>Done</button>
     </div>

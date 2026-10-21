@@ -78,7 +78,12 @@ export function eveningToReflection(i: EveningInput) {
 }
 
 export interface TomorrowCarry {
+  /** The founder's own words. */
   text: string;
+  /** The same move rewritten so it still makes sense the next morning. */
+  clear?: string;
+  /** The task it continues. */
+  task?: string;
   /** Local day the founder wrote it. */
   date: string;
   dismissed?: boolean;

@@ -532,6 +532,50 @@ export async function recordActionShown(params: {
 }
 
 /**
+ * One row per recommendation. The Founder Intelligence prediction row is created when the
+ * decision is computed; the task actually shown is the same recommendation, so it is written
+ * onto that row instead of creating a second one. Two rows per generation made every
+ * completion count twice (Ghost Race, pulse, accuracy). Returns the row id, or null when
+ * there is no prediction row to adopt (the caller then falls back to recordActionShown).
+ */
+export async function adoptPredictionAsShown(params: {
+  recommendationId: string | null | undefined;
+  userId: string;
+  sessionId: string;
+  stage: string;
+  actionShown: string;
+  criticPersona?: string;
+}): Promise<string | null> {
+  if (!params.recommendationId) return null;
+  try {
+    const supabase = createAdminClient();
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("reflexion_learning_log")
+      .update({
+        session_id: params.sessionId,
+        stage: params.stage,
+        action_shown: params.actionShown,
+        action_type: inferActionType(params.actionShown),
+        action_platform: inferActionPlatform(params.actionShown),
+        critic_persona: params.criticPersona ?? null,
+        recommendation_shown_at: now,
+        lifecycle_events: [{ type: "shown", at: now }],
+      })
+      .eq("id", params.recommendationId)
+      .eq("user_id", params.userId)
+      .eq("prediction_source", "founder_intelligence")
+      .eq("outcome", "pending")
+      .select("id");
+    if (error || !Array.isArray(data) || data.length === 0) return null;
+    return String(data[0].id);
+  } catch (err) {
+    logError("learning/adoptPredictionAsShown", err);
+    return null;
+  }
+}
+
+/**
  * recordActionOutcome — updates the outcome of a log row.
  * Called from /api/ai/reflexion-outcome route when founder responds.
  * After updating, re-derives and caches patterns.

@@ -17,6 +17,9 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { classifyBlocker } from "@/lib/blockerIntelligence";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
+import { resolveDayKey } from "@/lib/dayKey";
+import { callModelJSON } from "@/lib/ai-providers";
+import { acceptRewrite, clarifyMove } from "@/lib/today/clarify";
 import { EVENING_MARK, NOTE_MAX, TOMORROW_MAX, canSubmit, eveningToReflection } from "@/lib/today/evening";
 
 export const runtime = "nodejs";
@@ -28,6 +31,7 @@ const schema = z.object({
   blocker: z.enum(["time", "unclear", "avoided", "waiting", "too_big", "other"]).nullish(),
   tomorrow: z.string().trim().max(TOMORROW_MAX).nullish(),
   task: z.string().trim().max(2000).nullish(),
+  dayKey: z.string().max(10).optional(),
   projectId: z.string().uuid().nullish(),
 });
 
@@ -68,10 +72,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       saved = !write.error;
 
       const tomorrow = (b.tomorrow ?? "").trim();
+      // Make the line self-contained for the morning. Model rewrite if it passes the guard, else deterministic.
+      const det = clarifyMove(tomorrow, b.task);
+      let clear = det.clear;
+      if (tomorrow && det.vague) {
+        try {
+          const ai = await Promise.race([
+            callModelJSON<{ move?: string }>([{ role: "user", content: `A solo founder wrote this note at night about the first thing to do tomorrow. Rewrite it as ONE clear imperative sentence (max 25 words) that a tired person could act on without remembering today. Use ONLY facts and nouns from the note and the task. Do not invent names, numbers or tools. Start with a verb.\nNote: "${tomorrow}"\nTask it continues: "${(b.task ?? "").slice(0, 300)}"\nReturn JSON: {"move": "..."}` }], { role: "fast", temperature: 0.2, maxTokens: 120 }),
+            new Promise<null>((r) => setTimeout(() => r(null), 6000)),
+          ]);
+          const ok = acceptRewrite(ai?.move, tomorrow, b.task);
+          if (ok) clear = ok;
+        } catch { /* keep the deterministic line */ }
+      }
       await admin.from("user_behavior_state").upsert({
         user_id: user.userId,
         key: "tomorrow_first_move",
-        value: { text: tomorrow, date: now.slice(0, 10), task: (b.task ?? "").slice(0, 200) },
+        value: { text: tomorrow, clear: clear || tomorrow, date: resolveDayKey(b.dayKey), task: (b.task ?? "").slice(0, 200) },
         updated_at: now,
       }, { onConflict: "user_id,key" });
     }

@@ -63,12 +63,14 @@ export interface TodayCommandCenterProps {
   streak: number;
   /** Shown in the phone reminder so the alert says what to start with. */
   firstStep?: string | null;
+  /** Called with true while a focus block is running, so the page can dim everything else. */
+  onEngage?: (on: boolean) => void;
 }
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
 
-export default function TodayCommandCenter({ action, kicker, accent, rationale, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", actionTitle, timeText, done, streak, firstStep }: TodayCommandCenterProps) {
+export default function TodayCommandCenter({ action, kicker, accent, rationale, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
   const { openPane } = useSidePane();
   const askCoach = () => openPane({ kind: "coach", title: "Coach on today's task", prompt: actionTitle ? `I'm about to work on this: "${actionTitle}". What is the smallest first move, and what usually makes people stall on it?` : undefined });
   const showWhy = () => openPane({
@@ -199,6 +201,17 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
   const total = Math.max(1, focus.durationSec);
   const progress = done ? 1 : finished ? 1 : focus.mode === "idle" ? 0 : 1 - left / total;
 
+  // A running focus block engages the page (everything else dims) and puts the countdown in the tab title.
+  useEffect(() => { onEngage?.(running); return () => onEngage?.(false); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running]);
+  useEffect(() => {
+    if (!running || typeof document === "undefined") return;
+    const prev = document.title;
+    const s = Math.max(0, Math.round(left));
+    document.title = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} · ${actionTitle ?? "Focus"}`;
+    return () => { document.title = prev; };
+  }, [running, left, actionTitle]);
+
   const nudge = nudgeLine({
     now, done, streak: snap?.streak ?? streak, focusMinutesToday: focus.minutesToday,
     activeDaysThisWeek: snap?.activeDaysThisWeek, activeDaysLastWeekSamePoint: snap?.activeDaysLastWeekSamePoint,
@@ -245,6 +258,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
       </div>
 
       <h2
+        data-mood-title
         style={{
           margin: "10px 0 0", ...display, fontWeight: 700, color: "var(--bm-text)", textWrap: "balance",
           fontSize: headlineSize(narrow, nodesLength(action ?? actionTitle)), lineHeight: 1.2, letterSpacing: "-0.02em",

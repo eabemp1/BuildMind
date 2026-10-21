@@ -3,8 +3,11 @@
 import FollowUpCard from "@/components/today/FollowUpCard";
 import PreparedWork from "@/components/today/PreparedWork";
 import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
-import { moodFor, MOOD_META } from "@/lib/today/mood";
+import { moodFor, MOOD_META, MOOD_BEHAVIOR, isCalm, nextTick } from "@/lib/today/mood";
+import MoodStrip from "@/components/today/MoodStrip";
 import RadarToday from "@/components/radar/RadarToday";
+import RadarBar, { useRadarSignal, markUndone } from "@/components/today/RadarBar";
+import RadarItemCard from "@/components/radar/RadarItemCard";
 import EveningCloseout from "@/components/today/EveningCloseout";
 import TomorrowCarry from "@/components/today/TomorrowCarry";
 import CompanionBrief from "@/components/companion/CompanionBrief";
@@ -116,6 +119,8 @@ type ActionData = {
   firstStep?: string;
   hasDraft?: boolean;
   groundedIn?: Array<{ title: string; url: string }>;
+  /** Set when Radar replaced the generated task with an opportunity's next move. */
+  radarItemId?: string;
 };
 
 type CachedTodayAction = {
@@ -452,6 +457,9 @@ function TodayContent() {
 
   // AI-personalised action state
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
+  // Radar: always-on status, and the takeover when something cannot wait (lib/radar/urgency.ts).
+  const radar = useRadarSignal(project?.id ?? null);
+  const [radarOriginal, setRadarOriginal] = useState<ActionData | null>(null);
   const [recentOutcomes, setRecentOutcomes] = useState<Array<{ action_shown: string; outcome: string; outcome_note: string | null; evidence_match_score: number | null; outcome_recorded_at: string | null }>>([]);
   const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
   const [aiUsage, setAiUsage] = useState<{ monthlyUsed: number; monthlyLimit: number; unlimited: boolean } | null>(null);
@@ -1268,7 +1276,25 @@ function TodayContent() {
   // step aside.
   const prepKind = actionData?.action ? prepKindFor(actionData.action, actionData.missionKind ?? null) : null;
   const mood = moodFor(actionData?.missionKind, prepKind);
-  const hideLegacy = Boolean(prepKind) && prepKind !== "outreach";
+  // Active mood layer (lib/today/mood.ts): focus engages the page, calm moods fold the extras away,
+  // and every mood change replays the entrance.
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [manualFocus, setManualFocus] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [moodTick, setMoodTick] = useState(0);
+  const lastMood = useRef(mood);
+  useEffect(() => { if (lastMood.current !== mood) { lastMood.current = mood; setMoodTick(nextTick); setShowAll(false); } }, [mood]);
+  useEffect(() => {
+    if (!manualFocus) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setManualFocus(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [manualFocus]);
+  const engaged = timerRunning || manualFocus;
+  const calm = isCalm(mood, showAll);
+  // Distribution Studio (PreparedWork) is the one working surface for every task, outreach included.
+  // The old "Execution draft/script" card was a second text box for the same message, so it is gone.
+  const hideLegacy = Boolean(actionData?.action);
   const criticalSignal = actionData?.intelligence?.top_signals.find((signal) => signal.severity === "critical");
   const supportingSignals = actionData?.intelligence?.top_signals.filter((signal) => signal.severity !== "critical") ?? [];
 
@@ -1340,6 +1366,39 @@ function TodayContent() {
     } catch { /* non-fatal */ }
   }, []);
 
+  // Radar takeover: a tracked opportunity that cannot wait replaces today's generated task.
+  // Deterministic (urgency.ts), reversible ("Keep my usual task"), and applied once per item per day.
+  useEffect(() => {
+    const s = radar.signal;
+    if (s.level !== "takeover" || !s.item || !aiAction || aiAction.radarItemId || done || actionLoading || replacingTask) return;
+    const item = s.item;
+    setRadarOriginal(aiAction);
+    setAiAction({
+      ...aiAction,
+      action: s.task,
+      why: `${s.headline}. ${item.fit.reasons[0] ?? "It fits what you are building."}`,
+      message: "",
+      hasDraft: false,
+      time: "25 min",
+      missionKind: "radar",
+      missionLabel: "Radar",
+      missionReasons: [s.headline],
+      firstStep: s.task.split(/(?<=[.!?])\s+/)[0] ?? s.task,
+      doneWhen: item.type === "program" ? "The application is submitted, or saved as a draft you can finish in one sitting." : item.type === "person" ? "The message is sent and the next follow-up date is set." : "It is on your calendar and your prep is written down.",
+      radarItemId: item.id,
+      isAI: true,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [radar.signal, aiAction, done, actionLoading]);
+
+  const undoRadarTakeover = useCallback(() => {
+    const id = aiAction?.radarItemId;
+    if (id) markUndone(id);
+    if (radarOriginal) setAiAction(radarOriginal);
+    setRadarOriginal(null);
+    radar.reload();
+  }, [aiAction?.radarItemId, radarOriginal, radar]);
+
   const handlePreTaskReplace = useCallback(async (swap?: { reason: string | null; mode: string }) => {
     lastSwapRef.current = swap ?? { reason: null, mode: "alternative" };
     setReplacingTask(true);
@@ -1353,6 +1412,8 @@ function TodayContent() {
     if (aiAction?.action) {
       observeTaskEvent(aiAction.action, "skipped").catch(() => {});
     }
+    // Replacing a Radar task means the founder said no to it for today: do not take over again.
+    if (aiAction?.radarItemId) { markUndone(aiAction.radarItemId); setRadarOriginal(null); }
     // Always clear cache and fetch a new task regardless of plan or API response
     setAiAction(null);
     setDebtSuppression(null);
@@ -1399,6 +1460,7 @@ function TodayContent() {
   function handleSwapAlternative(alt: NonNullable<TodayIntelligenceSummary["decision"]["alternatives"]>[number]) {
     if (!aiAction) return;
     const rejectedAction = aiAction.action;
+    if (aiAction.radarItemId) { markUndone(aiAction.radarItemId); setRadarOriginal(null); }
     // Update the displayed action immediately — the founder shouldn't wait
     // on a network round-trip to see the swap take effect.
     setAiAction({
@@ -1432,6 +1494,15 @@ function TodayContent() {
     checkInFired.current = true;
     setSubmitting(true);
     try {
+      // A finished Radar task moves the item forward, so it stops taking over tomorrow.
+      const rid = aiAction?.radarItemId;
+      const ritem = radar.signal.item;
+      if (rid && ritem?.id === rid && selectedOutcome === "completed") {
+        const patch: Record<string, unknown> = ritem.type === "program" ? { status: "applied" }
+          : ritem.type === "person" ? { last_contacted_at: new Date().toISOString(), next_follow_up_at: null }
+          : { status: "attending" };
+        void fetch("/api/radar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: rid, ...patch }) }).catch(() => {});
+      }
       recordTaskCompletion();
       if (!storage.get("bm_first_task_completed_tracked")) {
         trackFunnelStep("first_task_completed");
@@ -1928,7 +1999,7 @@ function TodayContent() {
   });
 
   return (
-    <div className="today-mood" data-mood={mood} style={{ maxWidth: "var(--mood-max, 920px)", width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip", borderTop: mood === "default" ? "none" : "2px solid var(--bm-accent)" }}>
+    <div className="today-mood" data-mood={mood} data-tick={moodTick} data-engaged={engaged ? "true" : "false"} data-calm={calm && !engaged ? "true" : "false"} style={{ maxWidth: "var(--mood-max, 920px)", width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip" }}>
 
       {/* Task-first top of page. Only the Lite/Pro toggle lives here: streak, momentum,
           stage progress and the weekly picture are in the Morning Briefing and the
@@ -1940,13 +2011,8 @@ function TodayContent() {
         style={{ marginBottom: 14 }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          {mood !== "default" ? (
-            <div className="today-mood-strip" aria-label={`Today is a ${MOOD_META[mood].label} day`}>
-              <span className="dot" />
-              <span style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--bm-accent)" }}>{MOOD_META[mood].label}</span>
-              <span className="tone" style={{ fontSize: "var(--text-sm)", color: "var(--bm-text3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{MOOD_META[mood].tone}</span>
-            </div>
-          ) : <span />}
+          <MoodStrip mood={mood} engaged={engaged} timerRunning={timerRunning} calm={MOOD_BEHAVIOR[mood].calm} showAll={showAll}
+            onToggleFocus={() => setManualFocus((v) => !v)} onToggleAll={() => setShowAll((v) => !v)} />
           <UIModeToggle mode={uiMode} onChange={setUIMode} />
         </div>
 
@@ -2063,9 +2129,12 @@ function TodayContent() {
           recommendation is tucked behind the evening pill. */}
       {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
 
-      <CompanionBrief />
-      <TomorrowCarry />
-      <FollowUpCard />
+      <div className="mood-secondary"><CompanionBrief /></div>
+      <div style={{ marginBottom: 12 }}>
+        <RadarBar signal={radar.signal} setup={radar.setup} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} />
+      </div>
+      <div className="mood-dim"><TomorrowCarry /></div>
+      <div className="mood-dim"><FollowUpCard /></div>
 
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)
@@ -2213,6 +2282,7 @@ function TodayContent() {
               done={done}
               streak={streak}
               firstStep={actionData?.firstStep ?? null}
+              onEngage={setTimerRunning}
             />
             {actionData.isLowConfidence && (
               <div style={{ marginTop: isMobile ? 12 : 0 }}>
@@ -2221,16 +2291,18 @@ function TodayContent() {
             )}
           </div>
 
-          <WhyThisPanel data={{ isAI: actionData.isAI, isLowConfidence: actionData.isLowConfidence, reflexion: actionData.reflexion, intelligence: actionData.intelligence }} />
+          <div className="mood-secondary"><WhyThisPanel data={{ isAI: actionData.isAI, isLowConfidence: actionData.isLowConfidence, reflexion: actionData.reflexion, intelligence: actionData.intelligence }} /></div>
 
 
           {!done && !actionLoading && (
+            <div className="mood-dim">
             <ReplaceWithReason
               taskText={actionData.action ?? ""}
               projectId={project?.id ?? null}
               busy={replacingTask}
               onReplace={handlePreTaskReplace}
             />
+            </div>
           )}
 
           {/* Script instruction (only when there is no prepared work to show instead) */}
@@ -2296,9 +2368,12 @@ function TodayContent() {
             </div>
           )}
 
-          <RadarToday projectId={project?.id ?? null} />
+          <div className="mood-secondary"><RadarToday projectId={project?.id ?? null} /></div>
           <div ref={hideLegacy ? executionScriptRef : undefined} style={{ scrollMarginTop: 16 }}>
-          {actionData?.action && (
+          {actionData?.action && aiAction?.radarItemId && radar.signal.item?.id === aiAction.radarItemId && (
+            <RadarItemCard item={radar.signal.item} onChange={radar.reload} />
+          )}
+          {actionData?.action && !aiAction?.radarItemId && (
             <PreparedWork
               task={actionData.action}
               missionKind={actionData.missionKind ?? null}
@@ -2306,6 +2381,11 @@ function TodayContent() {
               projectId={project?.id ?? null}
               onUseDraft={(t) => setDraftMessage(t)}
             />
+          )}
+          {actionData?.action && actionData.doneWhen && (
+            <p style={{ margin: "8px 2px 0", fontSize: "var(--text-sm)", color: "var(--bm-text3)", lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 700 }}>Done when:</span> {sanitizeOutput(actionData.doneWhen)}
+            </p>
           )}
           </div>
 
