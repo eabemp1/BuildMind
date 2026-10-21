@@ -47,6 +47,9 @@ const ALLOWED_KEYS = new Set([
   "idle_alerted_date",
   "avoidance_signals",
   "tomorrow_first_move",
+  "founder_energy",
+  "tz_offset_minutes",
+  "tour_state",
 ]);
 
 function isAllowedKey(key: unknown): key is string {

@@ -1013,16 +1013,33 @@ function computeArchetypeStats(learningLogs: LearningLogRow[]): Record<string, {
 // balance: an archetype with 1 success and 0 failures still occasionally
 // loses to one with 20/20, because its posterior is wide, not because it's
 // being penalized.
+// Seedable RNG: ranking must be reproducible for the same founder/day/exclusion, so a re-render
+// or retry cannot flip the top candidate from sampling variance alone. Defaults to Math.random.
+let rng: () => number = Math.random;
+
+function seededRng(seed: string): () => number {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) { h = Math.imul(h ^ seed.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  let a = (h ^ (h >>> 16)) >>> 0;
+  return () => { // mulberry32
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function gaussianRandom(): number {
   let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
 function sampleGamma(shape: number): number {
   if (shape < 1) {
-    const u = Math.random();
+    const u = rng();
     return sampleGamma(shape + 1) * Math.pow(u, 1 / shape);
   }
   const d = shape - 1 / 3;
@@ -1034,7 +1051,7 @@ function sampleGamma(shape: number): number {
       v = 1 + c * x;
     } while (v <= 0);
     v = v * v * v;
-    const u = Math.random();
+    const u = rng();
     if (u < 1 - 0.0331 * x * x * x * x) return d * v;
     if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
   }
@@ -1206,6 +1223,18 @@ function pickPlatform(seed: string): string {
 }
 
 export function buildDecisionState(state: FounderIntelligenceState, excludeAction?: string): DecisionState {
+  // Same inputs on the same day give the same draw; "replace this task" changes the seed, so it still draws fresh.
+  const stats = JSON.stringify(state.archetype_stats ?? {});
+  const previous = rng;
+  rng = seededRng(`${state.generated_at.slice(0, 10)}|${excludeAction ?? ""}|${state.startup.current_goal ?? ""}|${stats}`);
+  try {
+    return buildDecisionStateInner(state, excludeAction);
+  } finally {
+    rng = previous;
+  }
+}
+
+function buildDecisionStateInner(state: FounderIntelligenceState, excludeAction?: string): DecisionState {
   const candidates: Array<Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">> = [];
   const currentGoal = state.startup.current_goal ?? "the current startup goal";
   const target = state.startup.assumptions.find((a) => a.toLowerCase().includes("target segment"))?.replace(/^Target segment: /, "") || "target users";

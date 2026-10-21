@@ -15,6 +15,9 @@ export default function RadarPage() {
   const [where, setWhere] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [finding, setFinding] = useState(false);
+  const [feed, setFeed] = useState<{ url: string; webcal: string } | null>(null);
+  const [feedNote, setFeedNote] = useState("");
   const [ask, setAsk] = useState<{ id: string; options: RadarKind[]; why: string } | null>(null);
 
   useEffect(() => { try { setWhere(localStorage.getItem("bm_radar_where") ?? ""); } catch { /* ignore */ } }, []);
@@ -40,6 +43,27 @@ export default function RadarPage() {
       load();
     } finally { setBusy(false); }
   }
+  async function discover() {
+    if (finding) return;
+    setFinding(true); setNote("");
+    try {
+      const r = await fetch("/api/radar/discover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ where: where.trim() }) });
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok || !b.ok) { setNote(b?.error ?? "Search failed. Try again."); return; }
+      const st = b.stats ?? {};
+      setNote(b.added.length
+        ? `Found ${b.added.length} that fit you. Each one has a date taken from its page. Verify on the page before you rely on it.`
+        : `Nothing new that fits right now. Looked at ${st.found ?? 0} pages; left out ${(st.undated ?? 0)} with no clear date, ${(st.passed ?? 0)} already passed, ${(st.lowFit ?? 0)} that did not fit you.`);
+      load();
+    } catch { setNote("Search failed. Try again."); } finally { setFinding(false); }
+  }
+  async function getFeed() {
+    setFeedNote("");
+    const r = await fetch("/api/radar/feed", { method: "POST" });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok || !b.ok) { setFeedNote(b?.error ?? "Could not create the calendar link."); return; }
+    setFeed({ url: b.url, webcal: b.webcal });
+  }
   async function confirmKind(kind: RadarKind) {
     if (!ask) return;
     await fetch("/api/radar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: ask.id, kind }) });
@@ -48,7 +72,7 @@ export default function RadarPage() {
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto", padding: "20px 8px 48px", display: "grid", gap: 14 }}>
-      <div>
+      <div data-tour="radar-header">
         <h1 style={{ fontSize: "var(--text-xl)", margin: 0, color: "var(--bm-text)" }}>Radar</h1>
         <p style={{ margin: "4px 0 0", fontSize: "var(--text-base)", color: "var(--bm-text2)" }}>Paste a hackathon, grant, event, meeting or person. BuildMind works out what it is, scores it against your startup, and puts the ones worth your time on Today.</p>
       </div>
@@ -57,6 +81,7 @@ export default function RadarPage() {
         <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Link to the event, call, application or profile" inputMode="url" autoCapitalize="none" style={field} aria-label="Link" />
         <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Or paste the details (dates, place, who can apply). LinkedIn blocks reading, so paste a person's bio here." style={{ ...field, resize: "vertical" }} aria-label="Details" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button type="button" onClick={discover} disabled={finding} style={{ ...btn, background: "transparent", color: "var(--bm-text)" }}>{finding ? "Searching…" : "Find opportunities for me"}</button>
           <button type="button" onClick={add} disabled={busy || (!link.trim() && text.trim().length < 6)} style={{ ...btn, opacity: busy || (!link.trim() && text.trim().length < 6) ? 0.5 : 1 }}>{busy ? "Reading…" : "Add to Radar"}</button>
           <input value={where} onChange={(e) => { setWhere(e.target.value); try { localStorage.setItem("bm_radar_where", e.target.value); } catch { /* ignore */ } }} placeholder="Where are you? (e.g. Accra)" style={{ ...field, flex: "1 1 180px", width: "auto" }} aria-label="Where are you" />
         </div>
@@ -67,6 +92,16 @@ export default function RadarPage() {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{[...new Set(ask.options)].map((k) => <button key={k} type="button" onClick={() => confirmKind(k)} style={{ ...btn, background: "transparent", color: "var(--bm-text)", minHeight: 36 }}>{KIND_LABEL[k]}</button>)}</div>
           </div>
         )}
+      </div>
+      <div style={{ display: "grid", gap: 6, border: "1px solid var(--bm-border2)", borderRadius: 10, padding: 12 }}>
+        <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text2)" }}>Put Radar in your calendar. Subscribe once and every date here appears in Google, Apple or Outlook calendar and stays up to date.</p>
+        {feed ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <a href={feed.webcal} style={{ ...btn, background: "transparent", color: "var(--bm-text)", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Subscribe</a>
+            <button type="button" style={{ ...btn, background: "transparent", color: "var(--bm-text)" }} onClick={() => { try { void navigator.clipboard.writeText(feed.url); setFeedNote("Link copied. In Google Calendar choose Other calendars, then From URL."); } catch { setFeedNote(feed.url); } }}>Copy link</button>
+          </div>
+        ) : <div><button type="button" style={{ ...btn, background: "transparent", color: "var(--bm-text)" }} onClick={getFeed}>Create my calendar link</button></div>}
+        {feedNote && <p role="status" style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text3)" }}>{feedNote}</p>}
       </div>
       {items.length === 0 && !setup ? <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text3)" }}>Nothing on your Radar yet.</p> : (
         <div style={{ display: "grid", gap: 8 }}>{items.map((i) => <RadarItemCard key={i.id} item={i} onChange={load} />)}</div>

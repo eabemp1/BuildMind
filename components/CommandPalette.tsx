@@ -47,6 +47,7 @@ export default function CommandPalette() {
         },
       },
       { id: "log", label: "Log today's outcome", hint: "Today", keywords: "check in log outcome complete done finished", run: () => { close(); if (pathname === "/today") document.getElementById("today-action")?.scrollIntoView({ behavior: "smooth" }); else router.push("/today"); } },
+      { id: "tour", label: "Take the product tour", hint: "Help", keywords: "tour guide walkthrough onboarding help intro how it works", run: () => { close(); router.push("/today"); window.setTimeout(() => window.dispatchEvent(new Event("bm:start-tour")), 250); } },
       { id: "coach", label: "Ask the AI Coach", hint: "Coach", keywords: "coach ask help chat", run: go("/ai-coach") },
     ];
     const pages: Command[] = NAV_TARGETS.map((t) => ({

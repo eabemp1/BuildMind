@@ -12,7 +12,7 @@
 import { logError } from "@/lib/server/logger";
 import type { ActionOutcome } from "@/lib/learning";
 
-type SupabaseLike = { from: (table: string) => any };
+type SupabaseLike = { from: (table: string) => any; rpc?: (fn: string, args: Record<string, unknown>) => any };
 
 export type RecommendationLifecycleEventType =
   | "shown"
@@ -81,8 +81,23 @@ async function updateRecommendationById(
   if (findError) throw findError;
   if (!pending?.id) return null;
 
-  const currentEvents = Array.isArray(pending.lifecycle_events) ? pending.lifecycle_events : [];
   const event = patch.lifecycle_events as RecommendationLifecycleEvent | undefined;
+  // Preferred: one atomic append in the database (no read-modify-write window).
+  if (event) {
+    try {
+      const rest = { ...patch };
+      delete rest.lifecycle_events;
+      const { data: appended, error: rpcError } = await (supabase.rpc ? supabase.rpc("append_recommendation_event", { p_id: pending.id, p_user: userId, p_event: event }) : Promise.resolve({ data: null, error: { message: "no rpc" } }));
+      if (!rpcError && appended) {
+        if (Object.keys(rest).length) {
+          const { error: restError } = await supabase.from("reflexion_learning_log").update(rest).eq("id", pending.id).eq("user_id", userId);
+          if (restError) throw restError;
+        }
+        return pending.id as string;
+      }
+    } catch { /* function not installed yet: fall back to the guarded read-modify-write below */ }
+  }
+  const currentEvents = Array.isArray(pending.lifecycle_events) ? pending.lifecycle_events : [];
   const nextPatch = event
     ? { ...patch, lifecycle_events: [...currentEvents, event] }
     : patch;

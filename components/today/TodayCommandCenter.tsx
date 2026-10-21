@@ -222,7 +222,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
   const week = snap?.weekDays ?? [];
 
   return (
-    <section aria-label="Today" style={{ margin: "0 0 22px", minWidth: 0 }}>
+    <section aria-label="Today" data-tour="today-task" style={{ margin: "0 0 22px", minWidth: 0 }}>
       <style>{`
         @keyframes bm-word-in { from { opacity: 0; transform: translateY(0.35em); } to { opacity: 1; transform: none; } }
         .bm-ink-word { display: inline-block; animation: bm-word-in .6s cubic-bezier(.16,1,.3,1) both; transition: color .5s ease; }
@@ -276,7 +276,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
       <div style={{ marginTop: narrow ? 24 : 30, minWidth: 0 }}>
         {focus.mode === "idle" && !done && (
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: narrow ? 10 : 18 }}>
-            <button type="button" className="bm-ink-btn" onClick={start} disabled={!actionTitle}
+            <button type="button" data-tour="today-start" className="bm-ink-btn" onClick={start} disabled={!actionTitle}
               style={{ fontSize: 16, fontWeight: 700, padding: "14px 24px", borderRadius: 999, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "var(--mood-on-accent, #15130a)", background: ink, border: "none", fontFamily: "inherit", flex: narrow ? "1 1 100%" : "0 0 auto" }}>
               Start {minutes}-minute focus
             </button>
@@ -289,7 +289,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
               ))}
             </div>
             <span style={{ display: "inline-flex", gap: 14, flexWrap: "wrap", marginLeft: narrow ? 0 : "auto" }}>
-              <button type="button" className="bm-ink-link" onClick={showWhy} style={link()}>Why this</button>
+              <button type="button" data-tour="today-why" className="bm-ink-link" onClick={showWhy} style={link()}>Why this</button>
               <button type="button" className="bm-ink-link" onClick={askCoach} style={link()}>Ask the coach</button>
               {onExecute ? <button type="button" className="bm-ink-link" onClick={onExecute} style={link()}>{executeLabel}</button> : null}
             </span>

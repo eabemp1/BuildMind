@@ -719,6 +719,8 @@ function TodayContent() {
           try { setStreak(getStoredStreak()); } catch {}
         });
         syncUrgencyFromServer().catch(() => {});
+        // The device's real UTC offset (minutes) - the Ghost Race and weekly pulse bucket completions by it.
+        persistBehaviorState({ tz_offset_minutes: -new Date().getTimezoneOffset() }).catch(() => {});
 
         // Fetch active blocker insight — the "cheat code" card
         fetch("/api/blocker-insight")
@@ -1455,6 +1457,7 @@ function TodayContent() {
             // itself in that case instead of writing a duplicate row.
             log_row_id: aiAction?.log_row_id ?? null,
             recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+            dayKey: localDayKey(),
           }),
         });
         if (tcRes.ok) {

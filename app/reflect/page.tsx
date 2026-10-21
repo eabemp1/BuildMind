@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats } from "@/lib/achievements";
@@ -71,6 +71,8 @@ function reflectDayKey(date = new Date()): string {
 }
 
 export default function ReflectPage() {
+  // One key per form visit: a double tap or a retry after a slow response is the same reflection.
+  const reflectKeyRef = useRef<string>(typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `r-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const router = useRouter();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   // FIX: outcome used to be freely re-pickable here even when it arrived
@@ -319,6 +321,8 @@ export default function ReflectPage() {
             todayAction,
             streak,
             projectId: activeProjectId,
+            idempotencyKey: reflectKeyRef.current,
+            dayKey: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(),
           }),
         });
         if (res.ok) {

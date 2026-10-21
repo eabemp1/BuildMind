@@ -20,6 +20,7 @@ import { evaluateAndCacheStageTransition } from "@/lib/server/stageTransition";
 import { invalidateCognitionCache } from "@/lib/founderCognition";
 import { actionCategoryLabelOrNull, inferActionType } from "@/lib/actionClassification";
 import { deduplicateTags } from "@/lib/founderMemory";
+import { resolveDayKey } from "@/lib/dayKey";
 import { recordActionOutcome, markIgnoredAfter24h } from "@/lib/learning";
 
 export async function POST(req: Request) {
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const { stage = "", projectId = "", taskTitle = "", outcome = "completed", log_row_id = "", recommendation_id = "" } = await req.json().catch(() => ({}));
+  const { stage = "", projectId = "", taskTitle = "", outcome = "completed", log_row_id = "", recommendation_id = "", dayKey: rawDayKey } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
 
   // Fetch context + founder_memory + recent task titles in parallel for pattern detection
@@ -70,7 +71,9 @@ export async function POST(req: Request) {
   // EMA needs to know how many days elapsed since momentum was last touched —
   // a task completed after a 5-day gap should compound differently than one
   // completed the day after the last update.
-  const today = new Date().toISOString().slice(0, 10); // UTC — matches fetchBehaviorState comparison
+  // The founder's LOCAL day (client-sent, validated within a day of UTC now). Today compares
+  // checkin_done_date to the local day, so stamping UTC made evening completions look undone.
+  const today = resolveDayKey(rawDayKey);
   const lastActiveForGap = ctx?.last_active ?? today;
   const daysSinceLastUpdate = Math.max(
     1,

@@ -1,6 +1,7 @@
 import { sanitizeAvoidanceZones, sanitizeTopics } from "@/lib/avoidanceSanitize";
 import { NextResponse } from "next/server";
 import { logQualityEvent } from "@/lib/today/telemetry";
+import { resolveDayKey } from "@/lib/dayKey";
 import { checkOutcome, type CheckedOutcome } from "@/lib/today/outcomeCheck";
 import { AIUsageUnavailableError } from "@/lib/server/aiUsageStore";
 import { groqJSON, hasAdminEnv, enforceAndTrackAIUsage } from "@/app/api/ai/_utils";
@@ -45,6 +46,8 @@ const ReflectActionSchema = z.object({
   // daily action that isn't in the tasks table at all).
   taskId:        z.string().uuid().optional(),
   recommendationId: z.string().uuid().optional(),
+  dayKey:        z.string().max(10).optional(),
+  idempotencyKey: z.string().min(8).max(80).optional(),
 });
 
 interface ReflectActionInput {
@@ -62,6 +65,8 @@ interface ReflectActionInput {
   projectId?:    string;
   taskId?:       string;
   recommendationId?: string;
+  dayKey?: string;
+  idempotencyKey?: string;
 }
 
 interface ReflectActionOutput {
@@ -333,7 +338,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
             .maybeSingle();
           if (dup?.id) duplicateReflectionId = String(dup.id);
         } catch { /* best effort: fall through to a normal insert */ }
-        const { data: reflectionRow } = duplicateReflectionId ? { data: { id: duplicateReflectionId } } : await supabase.from("reflections").insert({
+        const reflectionRowValues = {
           user_id:      verifiedUserId,
           project_id:   projectId,
           task_id:      taskId ?? null,
@@ -348,7 +353,24 @@ Target users: ${project.target_users ?? "Not specified"}`;
           confidence,
           today_action:  todayAction,
           created_at:    new Date().toISOString(),
-        }).select("id").maybeSingle();
+        };
+        let reflectionRow: { id?: unknown } | null = duplicateReflectionId ? { id: duplicateReflectionId } : null;
+        if (!reflectionRow) {
+          // The idempotency key is the exact guard (unique index); the 60s match above covers old clients.
+          const withKey = body.idempotencyKey ? { ...reflectionRowValues, idempotency_key: body.idempotencyKey } : reflectionRowValues;
+          let ins = await supabase.from("reflections").insert(withKey).select("id").maybeSingle();
+          if (ins.error && body.idempotencyKey) {
+            if ((ins.error as { code?: string }).code === "23505") {
+              // Same key already saved: this is the same reflection, reuse it.
+              const { data: existing } = await supabase.from("reflections").select("id").eq("user_id", verifiedUserId).eq("idempotency_key", body.idempotencyKey).maybeSingle();
+              if (existing?.id) ins = { data: existing, error: null } as unknown as typeof ins;
+            } else {
+              // Column not migrated yet: save without the key rather than lose the reflection.
+              ins = await supabase.from("reflections").insert(reflectionRowValues).select("id").maybeSingle();
+            }
+          }
+          reflectionRow = ins.data ?? null;
+        }
 
         // Learn from swaps: if this was a swapped-in task, record how it went.
         void resolveSwap(createAdminClient(), verifiedUserId, todayAction, outcome);
@@ -378,7 +400,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
         if (blockerCategory && blockerCategory !== "other") {
           void runBlockerIntelligencePipeline(supabase, verifiedUserId);
         }
-        const todayDate = new Date().toISOString().slice(0, 10);
+        const todayDate = resolveDayKey((body as { dayKey?: string }).dayKey); // founder-local day
         // FIX: this was a THIRD independent, non-atomic (read-then-write,
         // no row lock) reimplementation of streak logic — separate from the
         // dedicated /api/founder-context/streak route and from

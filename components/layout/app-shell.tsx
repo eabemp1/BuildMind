@@ -14,6 +14,7 @@ import { cachedRead } from "@/lib/shellCache";
 import { fetchBehaviorState } from "@/lib/userBehaviorState";
 import dynamic from "next/dynamic";
 const CommandPalette = dynamic(() => import("@/components/CommandPalette"), { ssr: false });
+const ProductTour = dynamic(() => import("@/components/tour/ProductTour"), { ssr: false });
 import { SidePaneProvider, useSidePane } from "@/components/layout/side-pane-context";
 import SidePaneHost from "@/components/layout/side-pane";
 
@@ -285,6 +286,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             content by default, so one wide card made the whole page scroll
             sideways on phones (Today). */}
         <CommandPalette />
+        <ProductTour />
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 outline-none overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-8 sm:py-8">
           <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%", minWidth: 0 }}>{children}</div>
         </main>

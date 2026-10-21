@@ -153,3 +153,11 @@ describe("Founder Intelligence coherence layer", () => {
     expect(state.signals.some((item) => item.type === "GOAL_SLIPPAGE")).toBe(false);
   });
 });
+
+describe("decision ranking is reproducible", () => {
+  it("same founder, same day, same exclusion gives the same ranking every time", () => {
+    const state = buildFounderIntelligenceState(baseInput());
+    const runs = Array.from({ length: 6 }, () => buildDecisionState(state).candidates.map((c) => `${c.id}:${c.scores.total}`).join("|"));
+    expect(new Set(runs).size).toBe(1);
+  });
+});

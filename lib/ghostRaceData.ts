@@ -29,6 +29,12 @@ export function founderLocalNow(tzOffsetHours: number, now: Date = new Date()): 
 /** The founder's stored UTC offset in hours (founder_context.timezone_offset); 0 when unknown. */
 export async function loadTzOffset(admin: SupabaseClient, userId: string): Promise<number> {
   try {
+    // The device-reported offset (written by the Today page) beats the IP-guessed whole-hour one.
+    const { data: dev } = await admin.from("user_behavior_state").select("value").eq("user_id", userId).eq("key", "tz_offset_minutes").maybeSingle();
+    const mins = Number((dev as { value?: unknown } | null)?.value);
+    if (Number.isFinite(mins) && Math.abs(mins) <= 14 * 60) return mins / 60;
+  } catch { /* fall through */ }
+  try {
     const { data } = await admin.from("founder_context").select("timezone_offset").eq("user_id", userId).maybeSingle();
     const n = Number((data as { timezone_offset?: number } | null)?.timezone_offset);
     return Number.isFinite(n) && Math.abs(n) <= 14 ? n : 0;
