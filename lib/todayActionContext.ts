@@ -15,6 +15,7 @@
  * SERVER-SIDE ONLY — imports server-only libs (admin client, cognition).
  */
 
+import { buildFounderState, stateNote, type FounderState as CapacityState } from "@/lib/founderState";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
@@ -58,7 +59,6 @@ import { buildStartupRelationshipGraph, traceRelationshipChain } from "@/lib/fou
 import { buildCofounderJudgment, buildCofounderJudgmentPromptBlock } from "@/lib/cofounderJudgment";
 import { logError } from "@/lib/server/logger";
 import { recordActivity } from "@/lib/server/activityLog";
-import { buildFounderState, type FounderState } from "@/lib/founderState";
 
 export interface TodayActionContext {
   // Project data
@@ -82,6 +82,8 @@ export interface TodayActionContext {
   cognitionMomentumScore: number;
   cognitionAvoidanceSignals: string[];
   cognitionCognitiveLoad: ReflexionContext["cognitiveLoad"];
+  /** How the founder is doing right now; shapes the mission, the ranking and the prompt. */
+  founderState: CapacityState | null;
   lastReflectionNote: string | undefined;
   personalisationCtx: {
     recentActionsBlock: string;
@@ -92,7 +94,6 @@ export interface TodayActionContext {
     factsBlock?: string;
   };
   founderIntelligence: FounderIntelligenceState | null;
-  founderState: FounderState | null;
   intelligenceSummary: (ReturnType<typeof summarizeFounderIntelligenceForClient> & { recommendation_id?: string | null }) | undefined;
   /** `reflexion_learning_log.id` for the recommendation shown in this response. */
   recommendationId: string | null;
@@ -121,9 +122,12 @@ export async function loadTodayActionContext(params: {
    *  the deterministic candidate ranking doesn't just re-pick the same
    *  task the founder already rejected. */
   excludeAction?: string;
+  /** Founder's local hour 0-23 from the browser. */
   clientHour?: number | null;
 }): Promise<TodayActionContext> {
   const { userId, projectId, providedStage, acknowledgeDebt, sessionId, excludeAction, clientHour } = params;
+  // PostgREST filter: this project's rows plus legacy rows with no project; a no-op when no project id is given.
+  const projectScope = /^[0-9a-f-]{36}$/i.test(projectId ?? "") ? `project_id.eq.${projectId},project_id.is.null` : "id.not.is.null";
 
   const ctx: TodayActionContext = {
     stage: providedStage || "Idea",
@@ -142,10 +146,10 @@ export async function loadTodayActionContext(params: {
     cognitionMomentumScore: 50,
     cognitionAvoidanceSignals: [],
     cognitionCognitiveLoad: "fresh",
+    founderState: null,
     lastReflectionNote: undefined,
     personalisationCtx: { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [], activeGoals: [] },
     founderIntelligence: null,
-    founderState: null,
     intelligenceSummary: undefined,
     recommendationId: null,
     debtSuppression: { suppressed: false },
@@ -350,6 +354,8 @@ export async function loadTodayActionContext(params: {
     .from("reflections")
     .select("outcome, note, confidence, today_action, created_at, what_tried, what_happened, what_learned, blocker")
     .eq("user_id", userId)
+    // Project-scoped (legacy rows without a project still count) so another project's last reflection never steers this one.
+    .or(projectScope)
     .gte("created_at", new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString())
     .order("created_at", { ascending: false })
     .limit(1)
@@ -374,6 +380,7 @@ export async function loadTodayActionContext(params: {
       .from("reflections")
       .select("outcome, note, today_action, created_at")
       .eq("user_id", userId)
+      .or(projectScope)
       .not("today_action", "is", null)
       .order("created_at", { ascending: false })
       .limit(8);
@@ -396,8 +403,9 @@ export async function loadTodayActionContext(params: {
         .eq("user_id", userId)
         .eq("key", "today_action_cache")
         .maybeSingle();
-      const cachedTask = cacheRow?.value as { data?: { action?: string }; shown_count?: number } | null;
-      if (cachedTask?.data?.action) {
+      const cachedTask = cacheRow?.value as { data?: { action?: string }; shown_count?: number; projectId?: string } | null;
+      // The cache row is per user; only treat it as this project's history when it belongs to it.
+      if (cachedTask?.data?.action && (!cachedTask.projectId || cachedTask.projectId === projectId)) {
         const shownCount = cachedTask.shown_count ?? 1;
         lines.push(`[REPLACED/SKIPPED ${shownCount}x without completion]: "${cachedTask.data.action}" -> replaced`);
       }
@@ -423,7 +431,6 @@ export async function loadTodayActionContext(params: {
       // other writer of this column exists, so the raw value never matched
       // ReflexionContext's vocabulary before this mapping existed.
       ctx.cognitionCognitiveLoad = mapEnergyToCognitiveLoad(cognitionInput.context?.cognitive_load);
-      ctx.founderState = buildFounderState({ cognitiveLoad: cognitionInput.context?.cognitive_load, clientHour });
     } catch (err) {
       logError("todayActionContext/cognition", err, { userId });
     }
@@ -454,10 +461,22 @@ export async function loadTodayActionContext(params: {
     }
   }
 
+  // ── 7b. Founder state: how they're doing right now ─────────────────────
+  try {
+    ctx.founderState = buildFounderState({ cognitiveLoad: ctx.cognitionCognitiveLoad, clientHour });
+    // The worse of the stored value and the live state wins.
+    if (ctx.founderState?.level === "low") ctx.cognitionCognitiveLoad = "drained";
+    else if (ctx.founderState?.level === "depleted") ctx.cognitionCognitiveLoad = "autopilot";
+  } catch (err) {
+    logError("todayActionContext/founderState", err, { userId });
+  }
+
   // ── 8. Founder Intelligence OS coherence layer ─────────────────────────
   try {
     ctx.founderIntelligence = await loadFounderIntelligence(supabase, userId, projectId, { now: new Date(), excludeAction, founderState: ctx.founderState });
     ctx.founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(ctx.founderIntelligence);
+    const stateBlock = stateNote(ctx.founderState);
+    if (stateBlock) ctx.founderIntelligencePromptBlock += `\n\n${stateBlock}`;
     ctx.founderIntelligencePromptBlock += `\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(ctx.founderIntelligence))}`;
     ctx.intelligenceSummary = summarizeFounderIntelligenceForClient(ctx.founderIntelligence);
 
@@ -466,7 +485,7 @@ export async function loadTodayActionContext(params: {
         supabase.from("projects").select("*").eq("id", projectId).eq("user_id", userId).maybeSingle(),
         supabase.from("milestones").select("*").eq("project_id", projectId).eq("user_id", userId).order("created_at", { ascending: true }).limit(30),
         supabase.from("tasks").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(80),
-        supabase.from("reflections").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(80),
+        supabase.from("reflections").select("*").eq("user_id", userId).or(projectScope).order("created_at", { ascending: false }).limit(80),
       ]);
       const data = <T,>(res: PromiseSettledResult<{ data: T }>, fallback: T): T =>
         res.status === "fulfilled" ? (res.value.data ?? fallback) : fallback;

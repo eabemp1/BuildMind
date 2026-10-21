@@ -937,7 +937,8 @@ ${JSON.stringify(structuredA)}`,
             verdict: criticVerdict,
             criticPersona: criticPersona.name,
             rationale,
-            loopRan: true,
+            loopRan: false, // this route runs the inline Agent A/B/C pipeline, not runReflexionLoop()
+            pipeline: "agent_abc",
             passedCritic: criticVerdict !== "fail",
             lastReflectionUsed: lastReflectionContext.includes("LAST REFLECTION"),
             // Surfaced to the client rather than hidden — if the AI's own
@@ -997,7 +998,9 @@ ${JSON.stringify(structuredA)}`,
               (finalData as typeof finalData & { log_row_id?: string }).log_row_id = logRowId;
             }
 
-            upsertTodayActionCache(adminForCache, userId, {
+            // Awaited: a serverless runtime can freeze once the stream closes, which
+            // would drop an un-awaited write and make the next load regenerate (and re-bill) today's task.
+            await upsertTodayActionCache(adminForCache, userId, {
               date: resolveDayKey(body?.dayKey), // client local day (validated) - see lib/dayKey.ts
               projectId,
               stage,

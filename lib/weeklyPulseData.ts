@@ -60,7 +60,7 @@ import { computeWeeklyGrades, type GradedDimension } from "@/lib/patternGrading"
 import { actionCategoryLabel, ACTION_TYPE_WEIGHT, type ActionType } from "@/lib/actionClassification";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
 import { computeGhostRace, type GhostRace } from "@/lib/ghostRace";
-import { loadGhostWeeks } from "@/lib/ghostRaceData";
+import { loadGhostWeeks, loadTzOffset, founderLocalNow, localDay } from "@/lib/ghostRaceData";
 import { matchZones } from "@/lib/avoidanceMatch";
 
 export interface SparklinePoint { date: string; real: number | null; ghost: number | null; }
@@ -191,7 +191,10 @@ export async function getWeeklyPulseData(
   const admin = createAdminClient();
   // Self-heal zone labels before reading them (no-op once the row is current).
   await healFounderMemoryIfStale(admin, userId);
-  const now = new Date();
+  // All "which day / which week" decisions use the founder's local calendar,
+  // so an evening completion counts on the day it happened, not the next UTC day.
+  const tz = await loadTzOffset(admin, userId);
+  const now = founderLocalNow(tz);
   const weekStart = weekStartMonday(now);
   // FIX: previously a rolling "now minus 7 days" window, while
   // weekly_goals (Ghost Goals, app/api/weekly-goal/route.ts) uses the
@@ -202,7 +205,7 @@ export async function getWeeklyPulseData(
   // Ghost Goals (Today) and This Week (Progress) could disagree, and why
   // it wasn't obvious which tasks were actually being reflected where.
   // Now both use the same Monday-anchored week.
-  const weekAgoIso = `${weekStart}T00:00:00.000Z`;
+  const weekAgoIso = new Date(Date.parse(`${weekStart}T00:00:00.000Z`) - tz * 3_600_000).toISOString();
 
   const [
     scorecardResult,
@@ -295,12 +298,12 @@ export async function getWeeklyPulseData(
   const activeDaySet = new Set<string>();
   for (const t of weekTasks as Array<{ outcome?: string | null; created_at?: string | null; outcome_recorded_at?: string | null }>) {
     if (t.outcome !== "completed") continue;
-    const day = (t.outcome_recorded_at ?? t.created_at ?? "").slice(0, 10);
+    const day = localDay(t.outcome_recorded_at ?? t.created_at ?? "", tz);
     if (day >= weekStart) activeDaySet.add(day);
   }
   for (const a of actionLogs as Array<{ outcome?: string | null; created_at?: string | null }>) {
     if (a.outcome !== "completed") continue;
-    const day = (a.created_at ?? "").slice(0, 10);
+    const day = localDay(a.created_at ?? "", tz);
     if (day >= weekStart) activeDaySet.add(day);
   }
   const activeDays = activeDaySet.size;
@@ -348,7 +351,7 @@ export async function getWeeklyPulseData(
   let ghostRace: GhostRace | null = null;
   let actionsCompleted = (weekTasks as Array<{ outcome?: string | null }>).filter((t) => t.outcome === "completed").length;
   try {
-    const weeks = await loadGhostWeeks(admin, userId, weekStart);
+    const weeks = await loadGhostWeeks(admin, userId, weekStart, tz);
     actionsCompleted = weeks.current.total;
     const todayIndex = Math.min(6, Math.max(0, Math.round((new Date(`${nowDateStr}T00:00:00.000Z`).getTime() - new Date(`${weekStart}T00:00:00.000Z`).getTime()) / 86_400_000)));
     ghostRace = computeGhostRace({ completedWeeks: weeks.completed, current: weeks.current, todayIndex });
@@ -383,7 +386,7 @@ export async function getWeeklyPulseData(
   // (outcome_recorded_at), same rule as activeDays above.
   for (const t of weekTasks as Array<{ outcome?: string; action_shown?: string; action_type?: string; created_at?: string; outcome_recorded_at?: string | null }>) {
     if (t.outcome !== "completed") continue;
-    const date = (t.outcome_recorded_at ?? t.created_at ?? "").slice(0, 10);
+    const date = localDay(t.outcome_recorded_at ?? t.created_at ?? "", tz);
     if (!date || date < weekStart) continue;
     const type = (t.action_type as ActionType) ?? "other";
     const entry: DayActivityEntry = {
@@ -398,7 +401,7 @@ export async function getWeeklyPulseData(
   // learning log: a day with a logged completion must never render empty.
   for (const a of actionLogs as Array<{ outcome?: string | null; created_at?: string | null }>) {
     if (a.outcome !== "completed") continue;
-    const date = (a.created_at ?? "").slice(0, 10);
+    const date = localDay(a.created_at ?? "", tz);
     if (!date || date < weekStart || activityByDate.has(date)) continue;
     activityByDate.set(date, [{ title: "Completed action", type: "other", weight: ACTION_TYPE_WEIGHT.other }]);
   }

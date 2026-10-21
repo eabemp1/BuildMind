@@ -921,6 +921,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         criticPersona: string;
         rationale: string;
         loopRan: boolean;
+        pipeline?: string;
         passedCritic: boolean;
         lastReflectionUsed: boolean;
         wasHardFallback?: boolean;

@@ -316,7 +316,24 @@ Target users: ${project.target_users ?? "Not specified"}`;
         const blockerCategory = blocker ? classifyBlocker(blocker) : null;
 
         // Write reflection to Supabase for future personalisation
-        const { data: reflectionRow } = await supabase.from("reflections").insert({
+        // Double-submit guard (double tap, retry after a slow response): an identical
+        // reflection from this user in the last 60s is the same reflection, not a new one.
+        let duplicateReflectionId: string | null = null;
+        try {
+          const { data: dup } = await supabase
+            .from("reflections")
+            .select("id")
+            .eq("user_id", verifiedUserId)
+            .eq("outcome", outcome)
+            .eq("today_action", todayAction)
+            .eq("note", note ?? "")
+            .gte("created_at", new Date(Date.now() - 60_000).toISOString())
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (dup?.id) duplicateReflectionId = String(dup.id);
+        } catch { /* best effort: fall through to a normal insert */ }
+        const { data: reflectionRow } = duplicateReflectionId ? { data: { id: duplicateReflectionId } } : await supabase.from("reflections").insert({
           user_id:      verifiedUserId,
           project_id:   projectId,
           task_id:      taskId ?? null,
@@ -504,6 +521,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
                 .select("id")
                 .eq("id", candidate)
                 .eq("user_id", verifiedUserId)
+                .eq("outcome", "pending") // a stored id that was already resolved must not be reused
                 .maybeSingle();
               if (row?.id) effectiveRecommendationId = candidate;
             }

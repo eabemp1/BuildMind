@@ -17,6 +17,7 @@ export type TodayActionData = {
     criticPersona: string;
     rationale: string;
     loopRan: boolean;
+    pipeline?: string;
     passedCritic: boolean;
     lastReflectionUsed: boolean;
     /** True when the pre-screen gate rejected the AI's own composition and

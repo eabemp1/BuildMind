@@ -14,6 +14,27 @@ import type { WeekRecord } from "@/lib/ghostRace";
 
 export const GHOST_LOOKBACK_WEEKS = 12;
 
+/** Calendar day (YYYY-MM-DD) of an instant in the founder's own timezone (whole-hour offset from UTC). */
+export function localDay(iso: string, tzOffsetHours: number): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  return new Date(t + tzOffsetHours * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** A Date whose UTC fields read as the founder's local clock, so getUTC* gives local day/week. */
+export function founderLocalNow(tzOffsetHours: number, now: Date = new Date()): Date {
+  return new Date(now.getTime() + tzOffsetHours * 3_600_000);
+}
+
+/** The founder's stored UTC offset in hours (founder_context.timezone_offset); 0 when unknown. */
+export async function loadTzOffset(admin: SupabaseClient, userId: string): Promise<number> {
+  try {
+    const { data } = await admin.from("founder_context").select("timezone_offset").eq("user_id", userId).maybeSingle();
+    const n = Number((data as { timezone_offset?: number } | null)?.timezone_offset);
+    return Number.isFinite(n) && Math.abs(n) <= 14 ? n : 0;
+  } catch { return 0; }
+}
+
 export function mondayOf(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00.000Z`);
   const diff = d.getUTCDay() === 0 ? -6 : 1 - d.getUTCDay();
@@ -58,8 +79,13 @@ export async function loadGhostWeeks(
   admin: SupabaseClient,
   userId: string,
   thisWeekStart: string,
+  tzOffsetHours?: number,
 ): Promise<{ completed: WeekRecord[]; current: WeekRecord }> {
-  const since = `${addDays(thisWeekStart, -7 * GHOST_LOOKBACK_WEEKS)}T00:00:00.000Z`;
+  // Completions are bucketed by the founder's LOCAL day, not the UTC day, so an
+  // evening completion for anyone east or west of UTC lands on the day they did it.
+  const tz = tzOffsetHours ?? (await loadTzOffset(admin, userId));
+  // Start a day early so a local-Monday completion that is still Sunday in UTC is not cut off.
+  const since = `${addDays(thisWeekStart, -7 * GHOST_LOOKBACK_WEEKS - 1)}T00:00:00.000Z`;
   const [learning, logs] = await Promise.allSettled([
     admin.from("reflexion_learning_log").select("outcome, session_id, created_at, outcome_recorded_at").eq("user_id", userId).eq("outcome", "completed").gte("created_at", since),
     admin.from("action_logs").select("outcome, created_at").eq("user_id", userId).eq("outcome", "completed").gte("created_at", since),
@@ -68,12 +94,12 @@ export async function loadGhostWeeks(
     learning.status === "fulfilled"
       ? ((learning.value.data ?? []) as Array<{ session_id?: string | null; created_at?: string | null; outcome_recorded_at?: string | null }>)
           .filter((r) => isTodayFlowSession(r.session_id))
-          .map((r) => (r.outcome_recorded_at ?? r.created_at ?? "").slice(0, 10))
+          .map((r) => localDay(r.outcome_recorded_at ?? r.created_at ?? "", tz))
           .filter(Boolean)
       : [];
   const logDays =
     logs.status === "fulfilled"
-      ? ((logs.value.data ?? []) as Array<{ created_at?: string | null }>).map((r) => (r.created_at ?? "").slice(0, 10)).filter(Boolean)
+      ? ((logs.value.data ?? []) as Array<{ created_at?: string | null }>).map((r) => localDay(r.created_at ?? "", tz)).filter(Boolean)
       : [];
   return bucketWeeks(learningDays, logDays, thisWeekStart);
 }

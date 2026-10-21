@@ -21,7 +21,7 @@ import { swapPredictionCandidate } from "@/lib/learningLoop";
 import { upsertTodayActionCache, type TodayActionCache, type TodayActionData } from "@/lib/todayActionCache";
 import { resolveDayKey } from "@/lib/dayKey";
 import type { DecisionCandidate } from "@/lib/founderIntelligence";
-import { isSwapMode, swapProblems } from "@/lib/today/swap";
+import { isSwapMode, isSwapReason, swapProblems } from "@/lib/today/swap";
 import { recordSwap } from "@/lib/today/swapStore";
 import { kindOfTask } from "@/lib/todayMission";
 
@@ -64,16 +64,17 @@ export async function POST(req: Request) {
   // Learn from the swap: what was rejected, what replaced it, and (once the
   // founder reflects) whether the replacement got done. Guard: a replacement
   // that is the same task or an easy exit is refused, never silently accepted.
-  const sw = (body?.swap ?? {}) as { rejected?: unknown; mode?: unknown; minutes?: unknown };
+  const sw = (body?.swap ?? {}) as { rejected?: unknown; mode?: unknown; minutes?: unknown; reason?: unknown };
+  const swapReason = isSwapReason(sw.reason) ? sw.reason : "no_motivation";
   const rejected = typeof sw.rejected === "string" ? sw.rejected.slice(0, 500) : "";
   const mode = isSwapMode(sw.mode) ? sw.mode : "alternative";
   if (rejected) {
-    const issues = swapProblems(fullCandidate.action, { rejected, reason: "no_motivation", mode, fromKind: kindOfTask(rejected) });
+    const issues = swapProblems(fullCandidate.action, { rejected, reason: swapReason, mode, fromKind: kindOfTask(rejected) });
     if (issues.includes("easy_exit") || issues.includes("same_as_rejected")) {
       return NextResponse.json({ ok: false, reason: "swap_not_important_enough", issues }, { status: 422 });
     }
     void recordSwap(admin, {
-      userId: user.id, projectId: projectId || null, rejected, rejectedKind: kindOfTask(rejected), reason: "no_motivation",
+      userId: user.id, projectId: projectId || null, rejected, rejectedKind: kindOfTask(rejected), reason: swapReason,
       mode, replacement: fullCandidate.action, replacementKind: fullCandidate.id, guarded: false,
     });
   }

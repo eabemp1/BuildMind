@@ -31,3 +31,9 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Production build
+        run: npx next build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://placeholder.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder

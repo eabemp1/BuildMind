@@ -64,6 +64,7 @@ type ReflexionMeta = {
   criticPersona: string;
   rationale: string;
   loopRan: boolean;
+  pipeline?: string;
   passedCritic: boolean;
   lastReflectionUsed: boolean;
   wasHardFallback?: boolean;

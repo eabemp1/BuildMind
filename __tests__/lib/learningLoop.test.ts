@@ -57,9 +57,16 @@ function makeSupabase(overrides: {
               }),
             };
           }),
-          update: vi.fn(() => ({
-            eq: vi.fn().mockResolvedValue(overrides.updateResult ?? { error: null }),
-          })),
+          update: vi.fn(() => {
+            // .eq() chains (id, user_id, outcome='pending') and ends in .select() or is awaited directly.
+            const res = overrides.updateResult ?? { data: [{ id: "log-1" }], error: null };
+            const chain: any = {
+              eq: () => chain,
+              select: () => Promise.resolve(res),
+              then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) => Promise.resolve(res).then(ok, bad),
+            };
+            return chain;
+          }),
         };
       }
       if (table === "founder_context") {
@@ -189,5 +196,18 @@ describe("learningLoop: updateIntelligenceAccuracy (LEARN)", () => {
     expect(accuracy.trend).toBe("up");
     expect(accuracy.sample_size).toBe(8);
     expect(founderContextUpdate).toHaveBeenCalled();
+  });
+});
+
+describe("learningLoop: exactly-once resolve", () => {
+  it("returns null when another request already resolved the row", async () => {
+    const { builder } = makeSupabase({
+      selectPendingResult: { data: { id: "log-1", predicted_evidence: "x", action_shown: "y", created_at: "2026-10-20T00:00:00Z" }, error: null },
+      updateResult: { data: [], error: null },
+    });
+    const result = await compareFounderIntelligenceOutcome(builder, {
+      userId: "u1", recommendationId: "log-1", taskTitle: "t", outcome: "completed", reflectionText: "did the thing",
+    });
+    expect(result).toBeNull();
   });
 });

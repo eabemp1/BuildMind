@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { loadGhostWeeks } from "@/lib/ghostRaceData";
+import { loadGhostWeeks, loadTzOffset, founderLocalNow } from "@/lib/ghostRaceData";
 import { ghostTarget } from "@/lib/ghostRace";
 
 /** Returns the ISO date string for the Monday of the week containing `d` */
@@ -57,7 +57,8 @@ export async function GET(req: Request) {
   if (!await projectIsOwnedByUser(admin, projectId, user.id)) {
     return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
   }
-  const week = weekStart(new Date());
+  const tz = await loadTzOffset(admin, user.id);
+  const week = weekStart(founderLocalNow(tz));
 
   const { data, error: dbErr } = await admin
     .from("weekly_goals")
@@ -81,7 +82,7 @@ export async function GET(req: Request) {
       if (typeof proj?.execution_score === "number") liveScore = proj.execution_score;
     } catch { /* keep stored value */ }
     try {
-      const weeks = await loadGhostWeeks(admin, user.id, week);
+      const weeks = await loadGhostWeeks(admin, user.id, week, tz);
       // Target comes from the Ghost Race too, so the goal and the race can't disagree.
       return NextResponse.json({ ok: true, data: { ...data, current_score: liveScore, tasks_done: weeks.current.total, target_tasks: ghostTarget(weeks.completed).ghost } });
     } catch { /* fall back to the stored counter */ }
@@ -120,7 +121,8 @@ export async function POST(req: Request) {
   if (!await projectIsOwnedByUser(admin, project_id, user.id)) {
     return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
   }
-  const week = weekStart(new Date());
+  const tz = await loadTzOffset(admin, user.id);
+  const week = weekStart(founderLocalNow(tz));
 
   // FIX: this previously always wrote tasks_done: 0, even when the founder
   // sets (or resets) their goal partway through the week. lib/weeklyPulseData.ts's
@@ -140,7 +142,7 @@ export async function POST(req: Request) {
   let backfilledTasksDone = 0;
   let ghostForWeek: number | null = null;
   try {
-    const weeks = await loadGhostWeeks(admin, user.id, week);
+    const weeks = await loadGhostWeeks(admin, user.id, week, tz);
     backfilledTasksDone = weeks.current.total;
     ghostForWeek = ghostTarget(weeks.completed).ghost;
   } catch { /* leave at 0 and use the caller's target */ }
@@ -205,7 +207,8 @@ export async function PATCH(req: Request) {
   if (!await projectIsOwnedByUser(admin, project_id, user.id)) {
     return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
   }
-  const week = weekStart(new Date());
+  const tz = await loadTzOffset(admin, user.id);
+  const week = weekStart(founderLocalNow(tz));
 
   // `increment_tasks_done` must not lose a completion when two check-ins
   // arrive together. There is no checked-in increment RPC, so use a bounded

@@ -259,7 +259,7 @@ export async function compareFounderIntelligenceOutcome(
     const hasStructuredEvidence = Boolean(params.evidenceReferences?.length);
     const score = Math.max(0, Math.min(1, actionOverlap * 0.35 + evidenceOverlap * 0.45 + (completed ? 0.1 : 0) + (hasStructuredEvidence ? 0.1 : 0)));
 
-    const { error: updateError } = await supabase
+    const { data: resolvedRows, error: updateError } = await supabase
       .from("reflexion_learning_log")
       .update({
         outcome: mapOutcome(params.outcome),
@@ -270,9 +270,14 @@ export async function compareFounderIntelligenceOutcome(
         outcome_quality: hasStructuredEvidence ? "strong" : "useful",
         evidence_references: params.evidenceReferences ?? [],
       })
-      .eq("id", pending.id);
+      .eq("id", pending.id)
+      .eq("user_id", params.userId)
+      // Exactly-once: only the request that still sees the row pending may resolve it.
+      .eq("outcome", "pending")
+      .select("id");
 
     if (updateError) throw updateError;
+    if (!Array.isArray(resolvedRows) || resolvedRows.length === 0) return null; // someone else resolved it first
 
     await updateIntelligenceAccuracy(supabase, params.userId);
 
