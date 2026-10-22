@@ -1,9 +1,10 @@
 "use client";
 
 import FollowUpCard from "@/components/today/FollowUpCard";
+import EnergyCheck from "@/components/today/EnergyCheck";
 import PreparedWork from "@/components/today/PreparedWork";
 import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
-import { moodFor, MOOD_META, MOOD_BEHAVIOR, isCalm, nextTick } from "@/lib/today/mood";
+import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
 import MoodStrip from "@/components/today/MoodStrip";
 import RadarToday from "@/components/radar/RadarToday";
 import RadarBar, { useRadarSignal, markUndone } from "@/components/today/RadarBar";
@@ -1279,19 +1280,11 @@ function TodayContent() {
   // Active mood layer (lib/today/mood.ts): focus engages the page, calm moods fold the extras away,
   // and every mood change replays the entrance.
   const [timerRunning, setTimerRunning] = useState(false);
-  const [manualFocus, setManualFocus] = useState(false);
-  const [showAll, setShowAll] = useState(false);
   const [moodTick, setMoodTick] = useState(0);
   const lastMood = useRef(mood);
-  useEffect(() => { if (lastMood.current !== mood) { lastMood.current = mood; setMoodTick(nextTick); setShowAll(false); } }, [mood]);
-  useEffect(() => {
-    if (!manualFocus) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setManualFocus(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [manualFocus]);
-  const engaged = timerRunning || manualFocus;
-  const calm = isCalm(mood, showAll);
+  useEffect(() => { if (lastMood.current !== mood) { lastMood.current = mood; setMoodTick(nextTick); } }, [mood]);
+  const engaged = timerRunning;
+  const calm = isCalm(mood, false);
   // Distribution Studio (PreparedWork) is the one working surface for every task, outreach included.
   // The old "Execution draft/script" card was a second text box for the same message, so it is gone.
   const hideLegacy = Boolean(actionData?.action);
@@ -2011,8 +2004,7 @@ function TodayContent() {
         style={{ marginBottom: 14 }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          <MoodStrip mood={mood} engaged={engaged} timerRunning={timerRunning} calm={MOOD_BEHAVIOR[mood].calm} showAll={showAll}
-            onToggleFocus={() => setManualFocus((v) => !v)} onToggleAll={() => setShowAll((v) => !v)} />
+          <MoodStrip mood={mood} engaged={engaged} />
           <UIModeToggle mode={uiMode} onChange={setUIMode} />
         </div>
 
@@ -2130,6 +2122,10 @@ function TodayContent() {
       {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
 
       <div className="mood-secondary"><CompanionBrief /></div>
+      <EnergyCheck
+        inferredNote={actionData?.intelligence?.capacity?.note ?? null}
+        onLighten={() => handlePreTaskReplace({ reason: "no_motivation", mode: "shrink" })}
+      />
       <div style={{ marginBottom: 12 }}>
         <RadarBar signal={radar.signal} setup={radar.setup} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} />
       </div>
@@ -3007,4 +3003,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+      }
