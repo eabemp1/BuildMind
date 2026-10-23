@@ -9,18 +9,22 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { makeCode, validateTarget } from "@/lib/signalLinks";
+import { isLinkSource } from "@/lib/linkNudge";
 import { countSignups } from "@/lib/signupGuard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_LINKS = 25;
-const pathFor = (kind: string, code: string) => (kind === "link" ? `/r/${code}` : kind === "confirm" ? `/v/${code}` : `/i/${code}`);
+const pathFor = (kind: string, code: string) => (kind === "link" ? `/r/${code}` : kind === "confirm" ? `/v/${code}` : kind === "inbound" ? "" : `/i/${code}`);
+const addressFor = (kind: string, code: string) => (kind === "inbound" && process.env.INBOUND_EMAIL_DOMAIN ? `reply+${code}@${process.env.INBOUND_EMAIL_DOMAIN}` : null);
 
+const src = z.enum(["x", "linkedin", "reddit", "whatsapp", "indiehackers", "hn", "devto", "email", "other"]).optional();
 const Body = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("link"), targetUrl: z.string().max(2000), label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
-  z.object({ kind: z.literal("confirm"), claim: z.enum(["reply", "conversation", "call"]), label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
-  z.object({ kind: z.literal("interest"), headline: z.string().trim().min(5).max(120), pitch: z.string().trim().max(300).optional(), label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
+  z.object({ kind: z.literal("inbound"), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
+  z.object({ kind: z.literal("link"), targetUrl: z.string().max(2000), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
+  z.object({ kind: z.literal("confirm"), claim: z.enum(["reply", "conversation", "call"]), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
+  z.object({ kind: z.literal("interest"), headline: z.string().trim().min(5).max(120), source: src, pitch: z.string().trim().max(300).optional(), label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
 ]);
 
 export async function POST(req: Request) {
@@ -51,12 +55,13 @@ export async function POST(req: Request) {
       code,
       kind: b.kind,
       claim_kind: b.kind === "confirm" ? b.claim : null,
+      source: isLinkSource(b.source) ? b.source : null,
       label: b.label || null,
       target_url: target,
       headline: b.kind === "interest" ? b.headline : null,
       pitch: b.kind === "interest" ? b.pitch || null : null,
     });
-    if (!error) return NextResponse.json({ ok: true, code, path: pathFor(b.kind, code) });
+    if (!error) return NextResponse.json({ ok: true, code, path: pathFor(b.kind, code), address: addressFor(b.kind, code) });
     if ((error as { code?: string }).code !== "23505") return NextResponse.json({ ok: false, error: "Could not create the link." }, { status: 500 });
   }
   return NextResponse.json({ ok: false, error: "Could not create the link. Try again." }, { status: 500 });
@@ -68,18 +73,18 @@ export async function GET() {
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const admin = createAdminClient();
   const [linksRes, eventsRes] = await Promise.all([
-    admin.from("signal_links").select("id, code, kind, claim_kind, label, target_url, headline, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(MAX_LINKS),
+    admin.from("signal_links").select("id, code, kind, claim_kind, source, label, target_url, headline, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(MAX_LINKS),
     admin.from("signal_events").select("link_id, event, visitor_hash, confirmed_at").eq("user_id", user.id).limit(20000),
   ]);
   if (linksRes.error) return NextResponse.json({ ok: true, links: [] });
   type Ev = { link_id: string; event: string; visitor_hash: string | null; confirmed_at: string | null };
   const byLink = new Map<string, Ev[]>();
   for (const e of (eventsRes.data ?? []) as Ev[]) byLink.set(e.link_id, [...(byLink.get(e.link_id) ?? []), e]);
-  const links = (linksRes.data ?? []).map((l: { id: string; code: string; kind: string; claim_kind: string | null; label: string | null; target_url: string | null; headline: string | null; created_at: string }) => {
+  const links = (linksRes.data ?? []).map((l: { id: string; code: string; kind: string; claim_kind: string | null; source: string | null; label: string | null; target_url: string | null; headline: string | null; created_at: string }) => {
     const evs = byLink.get(l.id) ?? [];
     const signupRows = evs.filter((e) => e.event === "signup");
     return {
-      code: l.code, kind: l.kind, claim_kind: l.claim_kind, label: l.label, target_url: l.target_url, headline: l.headline, created_at: l.created_at,
+      code: l.code, kind: l.kind, claim_kind: l.claim_kind, source: l.source, address: addressFor(l.kind, l.code), replies: evs.filter((e) => e.event === "reply").length, label: l.label, target_url: l.target_url, headline: l.headline, created_at: l.created_at,
       path: pathFor(l.kind, l.code),
       visits: evs.filter((e) => e.event === "visit").length,
       signups: countSignups(signupRows),

@@ -14,7 +14,7 @@ export function SignalPicker({ value, onChange }: { value: SignalValue; onChange
   const kind = value.kind;
   const [redditNote, setRedditNote] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  const isReddit = /^https:\/\/([a-z]+\.)?reddit\.com\/\S*comments\//i.test((value.proof ?? "").trim());
+  const isReddit = /^https:\/\/(([a-z]+\.)?reddit\.com\/\S*comments\/|news\.ycombinator\.com\/item\?id=\d+|(www\.)?dev\.to\/[\w-]+\/[\w-]+)/i.test((value.proof ?? "").trim());
   async function checkReddit() {
     setChecking(true); setRedditNote(null);
     try {
@@ -23,7 +23,7 @@ export function SignalPicker({ value, onChange }: { value: SignalValue; onChange
       if (!r.ok || !j.ok) setRedditNote(j.error ?? "Could not check that.");
       else if (j.status === "verified") setRedditNote(`Confirmed as your post. ${j.count} other ${j.count === 1 ? "person has" : "people have"} commented. BuildMind will count them when you save.`);
       else if (j.status === "needs_code") setRedditNote(`To prove the post is yours, comment ${j.code} on it from your account, then check again. You can delete the comment afterwards only after saving.`);
-      else setRedditNote("Reddit did not answer from our side. Your link is still saved as proof.");
+      else setRedditNote("That site did not answer from our side. Your link is still saved as proof.");
     } catch { setRedditNote("Could not reach the server."); }
     setChecking(false);
   }
@@ -87,7 +87,7 @@ export function SignalPicker({ value, onChange }: { value: SignalValue; onChange
           {isReddit && (
             <div className="mt-2">
               <button type="button" onClick={checkReddit} disabled={checking} className="min-h-9 rounded-[var(--r-md)] border border-[var(--bm-border)] px-3 text-sm text-[var(--bm-text2)]">
-                {checking ? "Checking..." : "Check this Reddit post"}
+                {checking ? "Checking..." : "Check this post"}
               </button>
               {redditNote && <p role="status" className="mt-1.5 text-xs leading-relaxed text-[var(--bm-text2)]">{redditNote}</p>}
             </div>

@@ -4,6 +4,7 @@ import { classifyAiFailure, type AiFailure } from "@/lib/aiFailure";
 import FollowUpCard from "@/components/today/FollowUpCard";
 import EnergyCheck from "@/components/today/EnergyCheck";
 import TrackedLinks from "@/components/today/TrackedLinks";
+import { inferSource, needsTrackedLink } from "@/lib/linkNudge";
 import PreparedWork from "@/components/today/PreparedWork";
 import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
@@ -2727,7 +2728,7 @@ function TodayContent() {
         <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "10px 0 0", lineHeight: 1.5 }}>
           Your outcome selection will feed into /reflect for learning capture.
         </p>
-        <TrackedLinks projectId={project?.id} />
+        <TrackedLinks projectId={project?.id} suggestedSource={inferSource(actionData?.action)} nudge={needsTrackedLink(actionData?.action)} />
       </motion.div>
       </>)}
       {/* Context — deliberately BELOW the task. Archetype, stage readiness and the
@@ -3048,4 +3049,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-      }
+    }

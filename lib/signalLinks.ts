@@ -76,7 +76,8 @@ export interface SignalLink {
   id: string;
   user_id: string;
   code: string;
-  kind: "link" | "interest" | "confirm";
+  kind: "link" | "interest" | "confirm" | "inbound";
+  source?: string | null;
   claim_kind?: ClaimKind | null;
   target_url: string | null;
   headline: string | null;
@@ -160,6 +161,15 @@ export async function observedSince(admin: SupabaseClient, userId: string, since
     if (!sErr) {
       const n = countSignups((signups ?? []) as Array<{ visitor_hash: string | null; confirmed_at: string | null }>);
       if (n > 0) out.push({ kind: "signup", count: n, source: "page" });
+    }
+
+    // Replies that arrived at the founder's reply-to address from authenticated senders (burst-capped).
+    const { data: replies, error: rErr } = await admin
+      .from("signal_events").select("confirmed_at")
+      .eq("user_id", userId).eq("event", "reply").not("confirmed_at", "is", null).gte("confirmed_at", sinceIso).limit(2000);
+    if (!rErr) {
+      const n = countSignups(((replies ?? []) as Array<{ confirmed_at: string | null }>).map((r) => ({ visitor_hash: null, confirmed_at: r.confirmed_at })));
+      if (n > 0) out.push({ kind: "reply", count: n, source: "inbox", trust: "proof" });
     }
 
     // Confirmations: one per link (a link is one person), grouped by what was claimed.

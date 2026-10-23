@@ -21,7 +21,9 @@ export interface ObservedSignal {
   kind: Exclude<SignalKind, "none">;
   count: number;
   /** Where BuildMind saw it. */
-  source: "stripe" | "link" | "page" | "confirm" | "reddit";
+  source: "stripe" | "link" | "page" | "confirm" | "reddit" | "thread" | "inbox";
+  /** Display name when source is "thread" (Hacker News, dev.to). */
+  platform?: string;
   /** Defaults to "verified". A person's confirmation or a Reddit count can involve friends or alt accounts, so those are "proof". */
   trust?: "verified" | "proof";
 }
@@ -43,6 +45,8 @@ export function strongestObserved(list: ObservedSignal[]): ObservedSignal | null
 export function observedNote(o: ObservedSignal): string {
   const what = o.kind === "payment" ? `payment${o.count === 1 ? "" : "s"}` : o.kind === "signup" ? `signup${o.count === 1 ? "" : "s"}` : `visitor${o.count === 1 ? "" : "s"}`;
   if (o.source === "confirm") return `${o.count} ${o.kind}${o.count === 1 ? " was" : "s were"} confirmed by the other person since this task was shown.`;
+  if (o.source === "thread") return `Your ${o.platform ?? "public"} post shows ${o.count} other ${o.count === 1 ? "person" : "people"} commenting.`;
+  if (o.source === "inbox") return `${o.count} ${o.count === 1 ? "person replied" : "people replied"} to your BuildMind reply address.`;
   if (o.source === "reddit") return `Your Reddit post shows ${o.count} other ${o.count === 1 ? "person" : "people"} commenting.`;
   const where = o.source === "stripe" ? "Stripe shows" : o.source === "page" ? "Your hosted page recorded" : "Your tracked link recorded";
   return `${where} ${o.count} ${what} since this task was shown.`;

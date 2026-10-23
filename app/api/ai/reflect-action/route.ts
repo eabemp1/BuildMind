@@ -23,7 +23,7 @@ import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
 import { detectObservedSignal } from "@/lib/autoSignals";
 import { checkProof } from "@/lib/signalProof";
 import { resolveSignal, strongestObserved } from "@/lib/signalResolve";
-import { verifyRedditProof } from "@/lib/redditProof";
+import { PLATFORM_NAMES, verifyThreadProof } from "@/lib/threadProof";
 import type { ObservedSignal } from "@/lib/signalResolve";
 import { SIGNAL_KINDS, isUnproven, parseOutcomeSignal } from "@/lib/outcomeSignal";
 
@@ -615,13 +615,13 @@ Target users: ${project.target_users ?? "Not specified"}`;
           }
           // A Reddit post link: if the founder proved the post is theirs (code comment), BuildMind counts the
           // distinct commenters itself. Any failure falls back to the plain proof above.
-          if (claimed && claimed.kind !== "none" && typeof body.proof === "string" && /reddit\.com\//i.test(body.proof)) {
+          if (claimed && claimed.kind !== "none" && typeof body.proof === "string" && /^https:\/\/(([a-z]+\.)?reddit\.com|news\.ycombinator\.com|(www\.)?dev\.to)\//i.test(body.proof.trim())) {
             try {
-              const rv = await verifyRedditProof(verifiedUserId, body.proof.trim());
+              const rv = await verifyThreadProof(verifiedUserId, body.proof.trim());
               if (rv.status === "verified" && rv.count > 0) {
-                observed = strongestObserved([...(observed ? [observed] : []), { kind: "reply", count: Math.min(999, rv.count), source: "reddit", trust: "proof" }]);
+                observed = strongestObserved([...(observed ? [observed] : []), { kind: "reply", count: Math.min(999, rv.count), source: "thread", platform: PLATFORM_NAMES[rv.platform], trust: "proof" }]);
               } else if (rv.status === "needs_code" && !signalTrustNote) {
-                signalTrustNote = `To have BuildMind count the Reddit replies itself, post ${rv.code} as a comment on your own post, then save again.`;
+                signalTrustNote = `To have BuildMind count the ${PLATFORM_NAMES[rv.platform]} replies itself, post ${rv.code} as a comment on your own post, then save again.`;
               }
             } catch { /* keep the plain proof */ }
           }
