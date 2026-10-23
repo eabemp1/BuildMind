@@ -77,6 +77,8 @@ export const env = {
 
   // ── Email (optional — skipped when absent, logged) ────────────────────────
   RESEND_API_KEY:            optional("RESEND_API_KEY"),
+  RESEND_WEBHOOK_SECRET:     optional("RESEND_WEBHOOK_SECRET"),
+  INBOUND_EMAIL_DOMAIN:     optional("INBOUND_EMAIL_DOMAIN"),
   EMAIL_FROM:                process.env.EMAIL_FROM?.trim() || "BuildMind <hello@buildmind.live>",
 
   // ── Cron security ─────────────────────────────────────────────────────────
