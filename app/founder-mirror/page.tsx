@@ -34,6 +34,10 @@ type Belief = {
   last_updated: string;
   contradictory_evidence: string[];
   correction_effect: { corrections_applied: number; confidence_before: number; confidence_after: number } | null;
+  correction_check?: { verdict: "holding" | "not_holding" | "mixed" | "too_early"; line: string } | null;
+  observations?: number | null;
+  confidence_basis?: string;
+  early?: boolean;
 };
 
 type MirrorSignal = {
@@ -590,15 +594,16 @@ export default function FounderMirrorPage() {
                     <div className="h-full rounded-full" style={{ width: `${Math.round(belief.confidence * 100)}%`, background: meta.color }} />
                   </div>
                   <div className="mt-1.5 flex justify-between text-[11px] text-[var(--bm-text4)]">
-                    <span>{Math.round(belief.confidence * 100)}% confidence</span>
+                    <span>{Math.round(belief.confidence * 100)}% confidence{belief.early ? " · early reading" : ""}</span>
                     <span>Updated {formatDate(belief.last_updated)}</span>
                   </div>
+                  {belief.confidence_basis && <div className="mt-0.5 text-[11px] text-[var(--bm-text4)]">{belief.confidence_basis}</div>}
                 </div>
 
                 <div>
                   <OpenBesideButton label="Details beside" request={{
                     kind: "reader", eyebrow: `Belief · ${belief.trend}`, title: belief.belief,
-                    facts: [{ label: "Confidence", value: `${Math.round(belief.confidence * 100)}%` }, { label: "Updated", value: formatDate(belief.last_updated) }],
+                    facts: [{ label: "Confidence", value: `${Math.round(belief.confidence * 100)}%` }, ...(belief.confidence_basis ? [{ label: "Based on", value: belief.confidence_basis }] : []), { label: "Updated", value: formatDate(belief.last_updated) }],
                     markdown: [
                       belief.why,
                       belief.evidence.length ? `**Evidence**\n\n${belief.evidence.map((e) => `- ${e}`).join("\n")}` : "",
@@ -611,6 +616,15 @@ export default function FounderMirrorPage() {
                   <div className="flex items-center gap-1.5 rounded-[var(--r-sm)] bg-[var(--bm-amber-dim,rgba(181,131,58,0.08))] px-2 py-1 text-[10.5px] text-[var(--bm-amber)]">
                     <Pencil size={10} />
                     Softened by {belief.correction_effect.corrections_applied} correction{belief.correction_effect.corrections_applied === 1 ? "" : "s"}: {Math.round(belief.correction_effect.confidence_before * 100)}% → {Math.round(belief.correction_effect.confidence_after * 100)}%
+                  </div>
+                )}
+
+                {belief.correction_check && (
+                  <div className="rounded-[var(--r-sm)] border border-[var(--bm-border)] px-2 py-1 text-[10.5px] text-[var(--bm-text3)]">
+                    <span className="font-semibold text-[var(--bm-text2)]">
+                      {belief.correction_check.verdict === "holding" ? "Correction holding" : belief.correction_check.verdict === "not_holding" ? "Correction not holding yet" : belief.correction_check.verdict === "mixed" ? "Correction: mixed" : "Correction: too early"}
+                    </span>
+                    {" · "}{belief.correction_check.line}
                   </div>
                 )}
 

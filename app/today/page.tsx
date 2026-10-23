@@ -1,7 +1,9 @@
 "use client";
 
+import { classifyAiFailure, type AiFailure } from "@/lib/aiFailure";
 import FollowUpCard from "@/components/today/FollowUpCard";
 import EnergyCheck from "@/components/today/EnergyCheck";
+import TrackedLinks from "@/components/today/TrackedLinks";
 import PreparedWork from "@/components/today/PreparedWork";
 import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
@@ -434,6 +436,9 @@ function TodayContent() {
   const [streak, setStreak] = useState(0);
   // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
   const checkInFired = useRef(false);
+  // Opened from the notification's "Done" button: ask once, never mark anything silently.
+  const quickDoneRequested = searchParams.get("quickdone") === "1";
+  const [quickDoneOpen, setQuickDoneOpen] = useState(false);
   const executionScriptRef = useRef<HTMLDivElement | null>(null);
   const actionCardRef = useRef<HTMLDivElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -481,6 +486,13 @@ function TodayContent() {
   // actionData.isAI === false, which also covers the (fine) low-confidence
   // calibration case.
   const [aiFetchFailed, setAiFetchFailed] = useState(false);
+  const [aiFailure, setAiFailure] = useState<AiFailure | null>(null);
+  useEffect(() => {
+    if (!quickDoneRequested || !aiAction?.action) return;
+    let doneToday = false;
+    try { doneToday = Boolean(storage.get(`bm_task_done_${localDayKey()}`)); } catch { /* ask anyway */ }
+    if (!doneToday) setQuickDoneOpen(true);
+  }, [quickDoneRequested, aiAction?.action]);
   // Last real (isAI: true) action this session produced — used only for
   // "Use last recommendation" on the unavailable screen. Not persisted;
   // if nothing has succeeded yet this session, the button doesn't render.
@@ -1064,6 +1076,7 @@ function TodayContent() {
       const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
       let resolved = false;
       const delays = [0, 1500, 3500];
+      let lastFailure: AiFailure | null = null;
       for (let attempt = 0; attempt < delays.length && !resolved; attempt++) {
         if (delays[attempt]) await sleep(delays[attempt]);
         if (signal.aborted) return;
@@ -1088,7 +1101,13 @@ function TodayContent() {
             body: requestBody,
             signal,
           });
-          if (!r.ok) continue;
+          if (!r.ok) {
+            const body = await r.json().catch(() => null);
+            lastFailure = classifyAiFailure({ status: r.status, message: typeof body?.error === "string" ? body.error : null });
+            // A limit or an expired session does not clear by retrying straight away.
+            if (!lastFailure.retryable) break;
+            continue;
+          }
           const json = await r.json();
           if (signal.aborted) return;
           const actionData = unwrapActionPayload(json);
@@ -1103,10 +1122,11 @@ function TodayContent() {
           }
         } catch {
           if (signal.aborted) return;
+          lastFailure = classifyAiFailure({ offline: typeof navigator !== "undefined" && navigator.onLine === false });
         }
       }
       if (signal.aborted) return;
-      if (!resolved) setAiFetchFailed(true);
+      if (!resolved) { setAiFailure(lastFailure); setAiFetchFailed(true); }
       setActionLoading(false);
       return;
     }
@@ -2193,7 +2213,8 @@ function TodayContent() {
             return ts ? Number(ts) : null;
           })() : null}
           hasLastRecommendation={!!lastGoodActionRef.current}
-          onRetry={() => { setAiFetchFailed(false); setForceActionRefresh(v => v + 1); }}
+          failure={aiFailure}
+          onRetry={() => { setAiFetchFailed(false); setAiFailure(null); setForceActionRefresh(v => v + 1); }}
           onUseLastRecommendation={() => {
             if (lastGoodActionRef.current) setAiAction(lastGoodActionRef.current);
             setAiFetchFailed(false);
@@ -2203,6 +2224,29 @@ function TodayContent() {
         />
       ) : (
         <>
+        {quickDoneOpen && actionData && (
+          <div role="group" aria-label="Confirm today's task is done" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 600, marginBottom: 4 }}>Did you finish today&apos;s task?</div>
+            <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.45, marginBottom: 10, overflowWrap: "anywhere" }}>{actionData.action}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => {
+                  if (submitting) return;
+                  setSubmitting(true);
+                  storage.setJSON("bm_today_action", { action: actionData?.action ?? "", outcome: "completed", note: "", confidence: 3, recommendation_id: actionData?.intelligence?.recommendation_id ?? null, date: localDayKey() });
+                  void handleCheckIn("completed").catch(() => { setSubmitting(false); });
+                  router.push("/reflect?outcome=completed");
+                }}
+                style={{ minHeight: 40, padding: "0 14px", borderRadius: 8, border: "none", background: "var(--bm-accent)", color: "#151109", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                {submitting ? "Recording..." : "Yes, done"}
+              </button>
+              <button type="button" onClick={() => setQuickDoneOpen(false)} style={{ minHeight: 40, padding: "0 14px", borderRadius: 8, border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Not yet</button>
+            </div>
+          </div>
+        )}
         <motion.div
         ref={actionCardRef}
         initial={{ opacity: 0, y: 10 }}
@@ -2683,6 +2727,7 @@ function TodayContent() {
         <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "10px 0 0", lineHeight: 1.5 }}>
           Your outcome selection will feed into /reflect for learning capture.
         </p>
+        <TrackedLinks projectId={project?.id} />
       </motion.div>
       </>)}
       {/* Context — deliberately BELOW the task. Archetype, stage readiness and the

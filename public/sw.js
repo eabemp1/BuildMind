@@ -107,10 +107,16 @@ self.addEventListener("push", (event) => {
       silent: false,
       vibrate: [200, 100, 200], // Android only; iOS ignores silently
       data: { url: data.url },
-      actions: [               // Android/desktop; iOS ignores silently
-        { action: "open", title: "Open \u2192" },
-        { action: "dismiss", title: "Later" },
-      ],
+      actions: data.canFinish
+        ? [                    // Android/desktop; iOS ignores silently
+            { action: "open", title: "Open \u2192" },
+            { action: "done", title: "Done \u2713" },
+            { action: "dismiss", title: "Later" },
+          ]
+        : [
+            { action: "open", title: "Open \u2192" },
+            { action: "dismiss", title: "Later" },
+          ],
     })
   );
 });
@@ -120,7 +126,9 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   if (event.action === "dismiss") return;
 
-  const targetUrl = event.notification.data?.url || "/today";
+  // "Done" opens Today with a one-tap confirm. It never marks anything finished by itself.
+  const baseUrl = event.notification.data?.url || "/today";
+  const targetUrl = event.action === "done" ? "/today?quickdone=1" : baseUrl;
 
   event.waitUntil(
     self.clients

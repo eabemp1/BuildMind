@@ -18,7 +18,11 @@
  *     the same static fallback task that was always the safety net
  */
 
+import type { AiFailure } from "@/lib/aiFailure";
+
 interface Props {
+  /** Why it failed, when known. Absent means a generic failure. */
+  failure?: AiFailure | null;
   lastSuccessAt: number | null; // ms epoch, from bm_today_action_cache_ts_* — real, not invented
   hasLastRecommendation: boolean;
   onRetry: () => void;
@@ -45,6 +49,7 @@ export function IntelligenceUnavailableCard({
   onUseLastRecommendation,
   onContinueBaseline,
   projectId,
+  failure,
 }: Props) {
   return (
     <div
@@ -59,11 +64,17 @@ export function IntelligenceUnavailableCard({
     >
       <div style={{ fontSize: 26, marginBottom: 10 }}>⚠️</div>
       <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>
-        Intelligence temporarily unavailable
+        {failure?.title ?? "Intelligence temporarily unavailable"}
       </h3>
       <p style={{ fontSize: 12, color: "var(--bm-text3)", maxWidth: 360, margin: "0 auto 6px", lineHeight: 1.6 }}>
-        BuildMind couldn&apos;t generate today&apos;s recommendation. Your data and progress are safe.
+        {failure?.detail ?? "BuildMind couldn\u2019t generate today\u2019s recommendation. Your data and progress are safe."}
       </p>
+      {failure && (failure.kind === "limit" || failure.kind === "plan" || failure.kind === "budget") && (
+        <p style={{ margin: "0 auto 12px" }}><a href="/upgrade" style={{ fontSize: 12, color: "var(--bm-accent)" }}>See plans</a></p>
+      )}
+      {failure?.kind === "session" && (
+        <p style={{ margin: "0 auto 12px" }}><a href="/auth/login" style={{ fontSize: 12, color: "var(--bm-accent)" }}>Sign in</a></p>
+      )}
       {lastSuccessAt && (
         <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "var(--bm-text4)", margin: "0 0 18px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Last successful recommendation: {timeAgo(lastSuccessAt)}

@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeBeliefKey } from "@/lib/founderMirror";
 import { weighEvidence, verdictMessage } from "@/lib/evidenceWeigh";
+import { loadFounderIntelligence } from "@/lib/founderIntelligence";
+import { beliefSubject, findPatternStat } from "@/lib/beliefCalibration";
 
 export const runtime = "nodejs";
 
@@ -84,8 +86,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, needsMore: true, score: weighed.score, error: verdictMessage(weighed), hints: weighed.hints }, { status: 422 });
   }
 
+  // Save how many related tasks existed now, so the Mirror can later show whether the correction held.
+  let snapshot: { completed: number; total: number } | undefined;
+  try {
+    const state = await loadFounderIntelligence(admin, user.id, undefined, { agentEvidence: null });
+    const stat = findPatternStat(beliefSubject(parsed.data.belief), state.founder.pattern_stats);
+    if (stat && stat.total > 0) snapshot = { completed: stat.completed, total: stat.total };
+  } catch { /* the correction is still saved without it */ }
+
   const correction = {
     ...parsed.data,
+    ...(snapshot ? { snapshot } : {}),
     weight: weighed.weight,
     verified: weighed.corroborated,
     score: weighed.score,

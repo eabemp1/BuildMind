@@ -23,6 +23,7 @@
 
 import { logError } from "@/lib/server/logger";
 import type { DecisionCandidate, IntelligenceSignalType } from "@/lib/founderIntelligence";
+import { describeSignal, isUnproven, UNPROVEN_SCORE, scoreStructuredOutcome, signalProducedEvidence, type OutcomeSignal, type ScoreBasis } from "@/lib/outcomeSignal";
 
 type SupabaseLike = { from: (table: string) => any };
 
@@ -31,6 +32,8 @@ export interface IntelligenceAccuracy {
   average_match_score: number; // 0-1
   last_updated_at: string | null;
   trend: "up" | "down" | "flat" | "unknown";
+  /** How many of the scored recommendations were scored from a structured outcome (a real signal). */
+  structured_count?: number;
 }
 
 const DEFAULT_ACCURACY: IntelligenceAccuracy = {
@@ -38,7 +41,15 @@ const DEFAULT_ACCURACY: IntelligenceAccuracy = {
   average_match_score: 0,
   last_updated_at: null,
   trend: "unknown",
+  structured_count: 0,
 };
+
+/** A database that has not run 20261022020000_outcome_signals.sql yet rejects the new columns. */
+function isMissingSignalColumn(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null;
+  const msg = String(e?.message ?? "");
+  return e?.code === "42703" || e?.code === "PGRST204" || /signal_kind|signal_count|signal_source|score_basis|signal_trust|signal_proof/.test(msg);
+}
 
 function words(text: string): Set<string> {
   return new Set(
@@ -188,6 +199,7 @@ export async function getRecentResolvedPredictions(supabase: SupabaseLike, userI
       .eq("user_id", userId)
       .eq("prediction_source", "founder_intelligence")
       .neq("outcome", "pending")
+      .not("evidence_match_score", "is", null)
       .order("outcome_recorded_at", { ascending: false, nullsFirst: false })
       .limit(limit);
     if (error) throw error;
@@ -225,20 +237,28 @@ export async function compareFounderIntelligenceOutcome(
     reflectionText?: string;
     /** Server-created evidence rows, never browser-supplied references. */
     evidenceReferences?: Array<{ source: "reflection" | "task" | "activity"; recordId: string }>;
+    /** What the task actually produced. When present, the score comes from this, not from word overlap. */
+    signal?: OutcomeSignal | null;
+    signalSource?: "founder" | "auto";
+    /** Evidence the founder attached (already validated by the route): saved for audit and de-duplication. */
+    signalProof?: { text: string; hash: string } | null;
   },
-): Promise<{ matched: boolean; score: number } | null> {
+): Promise<{ matched: boolean; score: number; basis: ScoreBasis } | null> {
   try {
     // Legacy outcomes have no durable recommendation identity. Do not guess
     // with "latest pending": a late reflection or concurrent recommendation
     // can otherwise train the wrong candidate.
-    if (!params.recommendationId || !params.reflectionText?.trim()) return null;
+    const signal = params.signal ?? null;
+    if (!params.recommendationId || (!params.reflectionText?.trim() && !signal)) return null;
     const { data: pending, error: findError } = await supabase
       .from("reflexion_learning_log")
       .select("id, predicted_evidence, action_shown, created_at")
       .eq("id", params.recommendationId)
       .eq("user_id", params.userId)
       .eq("prediction_source", "founder_intelligence")
-      .eq("outcome", "pending")
+      // Unresolved means "no evidence comparison yet". The outcome itself may already be
+      // "completed": task-complete records that on the same row the moment the founder taps done.
+      .is("evidence_match_score", null)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -246,42 +266,77 @@ export async function compareFounderIntelligenceOutcome(
     if (findError) throw findError;
     if (!pending) return null;
 
-    const observedText = `${params.taskTitle} ${params.reflectionText}`.trim();
-    const actionOverlap = keywordOverlapScore(String(pending.action_shown ?? ""), observedText);
-    // Evidence is judged against what the founder WROTE about the outcome only.
-    // Including the task title let the prediction match its own action text.
-    const evidenceOverlap = keywordOverlapScore(String(pending.predicted_evidence ?? ""), params.reflectionText ?? "");
+    const reflectionText = params.reflectionText?.trim() ?? "";
     const completed = mapOutcome(params.outcome) === "completed";
-    // A server-created evidence reference confirms an actual durable outcome
-    // row exists. It improves evidence quality but does not itself claim the
-    // predicted evidence occurred; textual comparison remains the fallback
-    // for semantic match until structured expected-evidence fields exist.
     const hasStructuredEvidence = Boolean(params.evidenceReferences?.length);
-    const score = Math.max(0, Math.min(1, actionOverlap * 0.35 + evidenceOverlap * 0.45 + (completed ? 0.1 : 0) + (hasStructuredEvidence ? 0.1 : 0)));
+    let score: number;
+    let basis: ScoreBasis;
+    if (signal) {
+      // Structured path: what the task actually produced. Deterministic, wording-independent.
+      score = scoreStructuredOutcome(completed, signal);
+      basis = "structured";
+    } else {
+      const observedText = `${params.taskTitle} ${reflectionText}`.trim();
+      const actionOverlap = keywordOverlapScore(String(pending.action_shown ?? ""), observedText);
+      // Evidence is judged against what the founder WROTE about the outcome only.
+      // Including the task title let the prediction match its own action text.
+      const evidenceOverlap = keywordOverlapScore(String(pending.predicted_evidence ?? ""), reflectionText);
+      // A server-created evidence reference confirms an actual durable outcome
+      // row exists. It improves evidence quality but does not itself claim the
+      // predicted evidence occurred; textual comparison remains the fallback
+      // when the founder gave no structured outcome.
+      score = Math.max(0, Math.min(1, actionOverlap * 0.35 + evidenceOverlap * 0.45 + (completed ? 0.1 : 0) + (hasStructuredEvidence ? 0.1 : 0)));
+      basis = "text";
+    }
 
-    const { data: resolvedRows, error: updateError } = await supabase
+    const quality = signal ? (signalProducedEvidence(signal) && !isUnproven(signal) ? "strong" : "useful") : hasStructuredEvidence ? "strong" : "useful";
+    const baseUpdate = {
+      outcome: mapOutcome(params.outcome),
+      outcome_recorded_at: new Date().toISOString(),
+      evidence_match_score: score,
+      outcome_note: reflectionText ? reflectionText.slice(0, 200) : signal ? describeSignal(signal) : null,
+      evidence_produced: reflectionText ? reflectionText.slice(0, 500) : signal ? describeSignal(signal) : null,
+      outcome_quality: quality,
+      evidence_references: params.evidenceReferences ?? [],
+    };
+    const runUpdate = (payload: Record<string, unknown>) => supabase
       .from("reflexion_learning_log")
-      .update({
-        outcome: mapOutcome(params.outcome),
-        outcome_recorded_at: new Date().toISOString(),
-        evidence_match_score: score,
-        outcome_note: params.reflectionText?.trim() ? params.reflectionText.trim().slice(0, 200) : null,
-        evidence_produced: params.reflectionText.trim().slice(0, 500),
-        outcome_quality: hasStructuredEvidence ? "strong" : "useful",
-        evidence_references: params.evidenceReferences ?? [],
-      })
+      .update(payload)
       .eq("id", pending.id)
       .eq("user_id", params.userId)
-      // Exactly-once: only the request that still sees the row pending may resolve it.
-      .eq("outcome", "pending")
+      // Exactly-once: only the request that still sees the row unscored may resolve it.
+      .is("evidence_match_score", null)
       .select("id");
+    const signalColumns = signal ? { signal_kind: signal.kind, signal_count: signal.count, signal_source: params.signalSource ?? "founder" } : {};
+    let { data: resolvedRows, error: updateError } = await runUpdate({
+      ...baseUpdate,
+      score_basis: basis,
+      ...signalColumns,
+      ...(signal ? { signal_trust: signal.trust ?? "self", signal_proof: params.signalProof?.text.slice(0, 500) ?? null, signal_proof_hash: params.signalProof?.hash ?? null } : {}),
+    });
+    // The same proof was claimed twice at once (the route checks first; this is the race): keep the outcome, drop the proof.
+    if (updateError && (updateError as { code?: string }).code === "23505") {
+      score = UNPROVEN_SCORE;
+      ({ data: resolvedRows, error: updateError } = await runUpdate({
+        ...baseUpdate, evidence_match_score: UNPROVEN_SCORE, score_basis: basis, ...signalColumns,
+        signal_trust: "self", signal_proof: null, signal_proof_hash: null,
+      }));
+    }
+    // Database without the trust migration: keep the signal columns, drop the trust ones.
+    if (updateError && isMissingSignalColumn(updateError)) {
+      ({ data: resolvedRows, error: updateError } = await runUpdate({ ...baseUpdate, score_basis: basis, ...signalColumns }));
+    }
+    // Database without the outcome-signal migration: still resolve the row, just without the new columns.
+    if (updateError && isMissingSignalColumn(updateError)) {
+      ({ data: resolvedRows, error: updateError } = await runUpdate(baseUpdate));
+    }
 
     if (updateError) throw updateError;
     if (!Array.isArray(resolvedRows) || resolvedRows.length === 0) return null; // someone else resolved it first
 
     await updateIntelligenceAccuracy(supabase, params.userId);
 
-    return { matched: score >= 0.5, score };
+    return { matched: score >= 0.5, score, basis };
   } catch (err) {
     logError("learningLoop/compareFounderIntelligenceOutcome", err, { userId: params.userId });
     return null;
@@ -295,16 +350,21 @@ export async function compareFounderIntelligenceOutcome(
  */
 export async function updateIntelligenceAccuracy(supabase: SupabaseLike, userId: string): Promise<IntelligenceAccuracy> {
   try {
-    const { data: rows, error } = await supabase
+    const load = (cols: string) => supabase
       .from("reflexion_learning_log")
-      .select("evidence_match_score, outcome_recorded_at")
+      .select(cols)
       .eq("user_id", userId)
       .eq("prediction_source", "founder_intelligence")
       .not("evidence_match_score", "is", null)
       .order("outcome_recorded_at", { ascending: false })
       .limit(20);
+    let { data: rows, error } = await load("evidence_match_score, outcome_recorded_at, score_basis, signal_kind, signal_trust");
+    if (error && isMissingSignalColumn(error)) ({ data: rows, error } = await load("evidence_match_score, outcome_recorded_at, score_basis"));
+    if (error && isMissingSignalColumn(error)) ({ data: rows, error } = await load("evidence_match_score, outcome_recorded_at"));
 
     if (error) throw error;
+    // A claim nothing backs is not evidence either way, so it is left out of accuracy.
+    rows = (rows ?? []).filter((r: any) => !isUnprovenRow(r));
     const scores: number[] = (rows ?? []).map((r: any) => Number(r.evidence_match_score)).filter((n: number) => Number.isFinite(n));
     if (!scores.length) return DEFAULT_ACCURACY;
 
@@ -319,11 +379,13 @@ export async function updateIntelligenceAccuracy(supabase: SupabaseLike, userId:
       trend = recentAvg > olderAvg + 0.05 ? "up" : recentAvg < olderAvg - 0.05 ? "down" : "flat";
     }
 
+    const structured_count = (rows ?? []).filter((r: any) => r?.score_basis === "structured").length;
     const accuracy: IntelligenceAccuracy = {
       sample_size: scores.length,
       average_match_score,
       last_updated_at: new Date().toISOString(),
       trend,
+      structured_count,
     };
 
     await supabase.from("founder_context").update({ intelligence_accuracy: accuracy }).eq("user_id", userId);
@@ -355,8 +417,18 @@ export async function getFounderIntelligenceAccuracy(supabase: SupabaseLike, use
  * outreach no longer count as failures just because the founder phrased the
  * reflection differently from the prediction.
  */
-export function isArchetypeSuccess(row: { outcome: string; evidence_match_score: number | null; outcome_quality?: string | null; evidence_references?: unknown }): boolean {
+/** A row whose only support is the founder typing a real-signal claim. Excluded from learning and accuracy. */
+export function isUnprovenRow(row: { signal_kind?: string | null; signal_trust?: string | null }): boolean {
+  return Boolean(row.signal_kind && row.signal_kind !== "none" && row.signal_trust === "self");
+}
+
+export function isArchetypeSuccess(row: { outcome: string; evidence_match_score: number | null; outcome_quality?: string | null; evidence_references?: unknown; signal_kind?: string | null }): boolean {
   if (row.outcome !== "completed") return false;
+  // A structured outcome is the founder's own report of what the task produced, and it outranks every
+  // proxy below: "none" is a failure even though a reflection (a reference) exists, and any real signal
+  // is a success.
+  if (row.signal_kind === "none") return false;
+  if (row.signal_kind) return true;
   const hasRefs = Array.isArray(row.evidence_references) && row.evidence_references.length > 0;
   // "useful" is the default stamped on EVERY completion without structured
   // evidence, so only "strong" (structured evidence attached) counts.
@@ -389,26 +461,30 @@ export interface ArchetypeStats {
  */
 export async function getCandidateArchetypeStats(supabase: SupabaseLike, userId: string): Promise<ArchetypeStats> {
   try {
-    type Row = { candidate_id: string | null; outcome: string; evidence_match_score: number | null; outcome_quality?: string | null; evidence_references?: unknown };
+    type Row = { candidate_id: string | null; outcome: string; evidence_match_score: number | null; outcome_quality?: string | null; evidence_references?: unknown; signal_kind?: string | null; signal_trust?: string | null };
     const build = (cols: string) => supabase
       .from("reflexion_learning_log")
       .select(cols)
       .eq("user_id", userId)
       .eq("prediction_source", "founder_intelligence")
       .neq("outcome", "pending")
+      .not("evidence_match_score", "is", null)
       .not("candidate_id", "is", null)
       .order("created_at", { ascending: false })
       .limit(200);
     // Real-evidence signal first; if those columns don't exist in this
     // database yet, fall back to the original columns so learning never
     // silently stops (a failed select would otherwise return empty stats).
-    let res = await build("candidate_id, outcome, evidence_match_score, outcome_quality, evidence_references");
+    let res = await build("candidate_id, outcome, evidence_match_score, outcome_quality, evidence_references, signal_kind, signal_trust");
+    if (res.error) res = await build("candidate_id, outcome, evidence_match_score, outcome_quality, evidence_references, signal_kind");
+    if (res.error) res = await build("candidate_id, outcome, evidence_match_score, outcome_quality, evidence_references");
     if (res.error) res = await build("candidate_id, outcome, evidence_match_score");
     if (res.error) throw res.error;
     const stats: ArchetypeStats = {};
     for (const row of (res.data ?? []) as unknown as Row[]) {
       const id = row.candidate_id;
       if (!id) continue;
+      if (isUnprovenRow(row)) continue;
       if (!stats[id]) stats[id] = { successes: 0, failures: 0 };
       stats[id][isArchetypeSuccess(row) ? "successes" : "failures"] += 1;
     }

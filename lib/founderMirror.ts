@@ -33,8 +33,9 @@
  */
 
 import type { FounderIntelligenceState, IntelligenceSignal } from "@/lib/founderIntelligence";
-import { sampleBeta, activeSignals } from "@/lib/founderIntelligence";
+import { activeSignals } from "@/lib/founderIntelligence";
 import type { IntelligenceAccuracy } from "@/lib/learningLoop";
+import { calibrateBelief, checkCorrection, findPatternStat, type BeliefKind, type CorrectionCheck } from "@/lib/beliefCalibration";
 import { buildFounderSkills, type FounderSkill } from "@/lib/founderSkills";
 
 export interface FounderCorrection {
@@ -52,6 +53,8 @@ export interface FounderCorrection {
   /** True when BuildMind's own records backed the correction. */
   verified?: boolean;
   score?: number;
+  /** Related-task counts when the founder corrected this belief; lets the Mirror check later whether it held. */
+  snapshot?: { completed: number; total: number };
 }
 
 export interface CorrectionEffect {
@@ -70,6 +73,14 @@ export interface FounderBelief {
   last_updated: string;
   contradictory_evidence: string[];
   correction_effect: CorrectionEffect | null;
+  /** How many tasks this belief rests on; null when there is no per-area count. */
+  observations: number | null;
+  /** What the confidence number is based on, in one honest line. */
+  confidence_basis: string;
+  /** True when there is too little evidence to call this more than a first reading. */
+  early: boolean;
+  /** Whether the data since the founder corrected this belief agrees with the correction. */
+  correction_check?: CorrectionCheck | null;
 }
 
 export interface MirrorSignal {
@@ -109,7 +120,7 @@ export interface FounderMirror {
   may_be_wrong_about: string[];
   signals: MirrorSignal[];
   decision: { top: MirrorDecisionTop | null; alternatives: MirrorDecisionAlternative[] };
-  suppressed_beliefs: Array<{ belief: string; reason: string }>;
+  suppressed_beliefs: Array<{ belief: string; reason: string; correction_check?: CorrectionCheck | null }>;
   self_reported_accuracy: {
     sample_size: number;
     accuracy_pct: number | null;
@@ -219,7 +230,8 @@ function applyCorrections(
     return { confidence: baseConfidence, correctionsApplied: 0, confidenceBefore: baseConfidence, suppressed: false };
   }
   const successes = Math.max(1, evidenceCount);
-  const learned = sampleBeta(successes + 1, failures + 1);
+  // Posterior mean, not a random draw: the same evidence must show the same number on every reload.
+  const learned = (successes + 1) / (successes + failures + 2);
   const confidence = clamp01((baseConfidence + learned) / 2);
   const suppressed = matchedCount > 0 && confidence < SUPPRESSION_THRESHOLD;
   return { confidence, correctionsApplied: matchedCount, confidenceBefore: baseConfidence, suppressed };
@@ -236,18 +248,26 @@ function correctionTextsFor(beliefKey: string, corrections: FounderCorrection[])
 function beliefsFromState(
   state: FounderIntelligenceState,
   asOf: Date,
-): { beliefs: FounderBelief[]; suppressed: Array<{ belief: string; reason: string }> } {
+): { beliefs: FounderBelief[]; suppressed: Array<{ belief: string; reason: string; correction_check?: CorrectionCheck | null }> } {
   const corrections = state.founder.corrections;
   const beliefs: FounderBelief[] = [];
-  const suppressed: Array<{ belief: string; reason: string }> = [];
+  const suppressed: Array<{ belief: string; reason: string; correction_check?: CorrectionCheck | null }> = [];
 
-  function push(text: string, why: string, evidence: string[], baseConfidence: number, trend: FounderBelief["trend"]) {
+  function push(text: string, why: string, evidence: string[], ceiling: number, trend: FounderBelief["trend"], kind: BeliefKind, subject: string) {
     const beliefKey = normalizeBeliefKey(text);
-    const weighting = applyCorrections(beliefKey, baseConfidence, evidence.length, corrections, asOf);
+    // Confidence is earned per belief from the task counts behind it; the profile-wide number is only a ceiling.
+    const calibrated = calibrateBelief({ kind, ceiling, stat: findPatternStat(subject, state.founder.pattern_stats) });
+    const baseConfidence = calibrated.confidence;
+    const weighting = applyCorrections(beliefKey, baseConfidence, calibrated.observations ?? evidence.length, corrections, asOf);
+    // The latest specific correction that saved a task count lets us check whether it has held since.
+    const stat = findPatternStat(subject, state.founder.pattern_stats);
+    const corrected = [...corrections].reverse().find((c) => correctionScope(c) === beliefKey && c.snapshot);
+    const correctionCheck = corrected && stat ? checkCorrection(kind, corrected.snapshot, { completed: stat.completed, total: stat.total }) : null;
     if (weighting.suppressed) {
       suppressed.push({
         belief: text,
         reason: `Softened out after ${weighting.correctionsApplied} correction${weighting.correctionsApplied === 1 ? "" : "s"} — confidence dropped to ${Math.round(weighting.confidence * 100)}%.`,
+        correction_check: correctionCheck,
       });
       return;
     }
@@ -260,6 +280,10 @@ function beliefsFromState(
       trend,
       last_updated: state.generated_at,
       contradictory_evidence: correctionTextsFor(beliefKey, corrections),
+      observations: calibrated.observations,
+      confidence_basis: calibrated.basis,
+      early: calibrated.early,
+      correction_check: correctionCheck,
       correction_effect:
         weighting.correctionsApplied > 0
           ? {
@@ -278,6 +302,8 @@ function beliefsFromState(
       state.execution.completed_actions.slice(0, 3),
       Math.max(0.3, state.founder.confidence / 100),
       state.temporal.strengthening_patterns.length ? "strengthening" : "persistent",
+      "strength",
+      strength,
     );
   }
 
@@ -288,6 +314,8 @@ function beliefsFromState(
       [...state.execution.skipped_actions.slice(0, 2), ...state.execution.delayed_actions.slice(0, 1)].filter(Boolean),
       Math.max(0.25, (state.founder.confidence / 100) * 0.9),
       state.temporal.weakening_patterns.length ? "weakening" : "persistent",
+      "avoidance",
+      avoidance,
     );
   }
 
@@ -298,6 +326,8 @@ function beliefsFromState(
       [],
       0.5,
       "emerging",
+      "window",
+      window,
     );
   }
 
@@ -336,13 +366,20 @@ function mayBeWrongAbout(state: FounderIntelligenceState, accuracy: Intelligence
 
 function accuracySummary(accuracy: IntelligenceAccuracy): string {
   if (!accuracy.sample_size) return "Not enough resolved recommendations yet to self-score accuracy.";
-  // HONESTY FIX: this number is a keyword-overlap between the predicted
-  // evidence and your reflection text (plus small completion/evidence
-  // bonuses). Different wording scores low even when the advice was right, so
-  // it must not be stated as "matched what you did X% of the time".
   const pct = Math.round(accuracy.average_match_score * 100);
   const trendText = accuracy.trend === "up" ? " (improving)" : accuracy.trend === "down" ? " (slipping)" : "";
-  return `Rough wording-overlap score between what each recommendation predicted and what you wrote afterwards: ${pct}% across ${accuracy.sample_size} resolved recommendations${trendText}. This is a diagnostic, not a measure of whether the advice was right — your completions and the evidence you logged are the real signal.`;
+  const n = accuracy.sample_size;
+  const structured = Math.max(0, Math.min(n, Number(accuracy.structured_count ?? 0)));
+  const small = n < 10 ? ` With only ${n} scored so far, treat it as a first reading, not a verdict.` : "";
+  if (structured === 0) {
+    // HONESTY: with no structured outcomes, this is a keyword overlap between the predicted evidence and
+    // your reflection text. Different wording scores low even when the advice was right.
+    return `Rough wording-overlap score between what each recommendation predicted and what you wrote afterwards: ${pct}% across ${n} resolved recommendations${trendText}. It is a diagnostic, not a measure of whether the advice was right. Tell BuildMind what each task produced (a reply, a signup, a call) when you reflect and this becomes a real measure.${small}`;
+  }
+  if (structured === n) {
+    return `${pct}% of recommendations produced the evidence they predicted, across ${n} resolved recommendations${trendText}. Each one is scored from what the task produced (replies, signups, calls, payments) that BuildMind observed or you backed with proof, not from wording. Claims with no proof are left out.${small}`;
+  }
+  return `Accuracy score ${pct}% across ${n} resolved recommendations${trendText}. ${structured} ${structured === 1 ? "is" : "are"} scored from what the task produced (observed or proven); the other ${n - structured} fall back to wording overlap, which is rougher.${small}`;
 }
 
 function toMirrorSignals(state: FounderIntelligenceState, asOf: Date): MirrorSignal[] {

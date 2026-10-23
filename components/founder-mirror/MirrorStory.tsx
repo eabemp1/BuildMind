@@ -22,6 +22,7 @@ import {
 export type StoryBelief = {
   belief: string; belief_key: string; why: string; evidence: string[]; confidence: number;
   trend: "strengthening" | "weakening" | "persistent" | "emerging"; contradictory_evidence: string[];
+  confidence_basis?: string; early?: boolean;
 };
 export type StorySkill = { id: string; label: string; level: number; progress: number; trend: "up" | "down" | "steady" | "new" };
 export type StorySignal = { id: string; severity: string; title: string; summary: string; recommended_response: string };
@@ -244,6 +245,7 @@ function buildSlides(p: MirrorStoryProps, replay: () => void): Slide[] {
               </div>
               <Bar pct={b.confidence * 100} color={t.color === "var(--bm-text3)" ? "var(--bm-intel)" : t.color} delay={0.7} height={10} />
               <div style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: 30, color: "var(--bm-text)" }}><CountUp to={Math.round(b.confidence * 100)} suffix="%" /></div>
+              {b.confidence_basis && <div style={{ fontSize: 12, color: "var(--bm-text4)" }}>{b.confidence_basis}{b.early ? " · early reading" : ""}</div>}
             </div>
           </Reveal>
           <Reveal i={3}><p style={body}>{clip(b.why, 260)}</p></Reveal>

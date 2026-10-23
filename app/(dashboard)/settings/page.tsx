@@ -34,6 +34,45 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "public",         label: "Public Profile", icon: Globe      },
 ];
 
+function DataControls() {
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const btn: React.CSSProperties = { border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text2)", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, cursor: "pointer", minHeight: 36 };
+  async function requestDelete() {
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch("/api/user/delete-request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: typed }) });
+      const j = await res.json().catch(() => ({}));
+      setMsg(j.message ?? j.error ?? "Something went wrong. Email hello@buildmind.live.");
+      if (res.ok) { setConfirming(false); setTyped(""); }
+    } catch { setMsg("Could not reach the server. Try again."); }
+    setBusy(false);
+  }
+  return (
+    <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--bm-border)" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 4 }}>Your data</div>
+      <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5, marginBottom: 12 }}>Download everything BuildMind holds about your projects, tasks, reflections and learning. Connected-app keys are never included.</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <a href="/api/user/export" download style={{ ...btn, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Download my data</a>
+        {!confirming && <button type="button" style={btn} onClick={() => { setConfirming(true); setMsg(null); }}>Delete my account</button>}
+      </div>
+      {confirming && (
+        <div style={{ marginTop: 12, display: "grid", gap: 8, maxWidth: 360 }}>
+          <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>This removes your account and all data within 7 business days. Type DELETE to confirm.</div>
+          <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8, padding: "8px 10px", color: "var(--bm-text)", fontSize: 13 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" style={{ ...btn, opacity: typed === "DELETE" && !busy ? 1 : 0.5 }} disabled={typed !== "DELETE" || busy} onClick={requestDelete}>{busy ? "Sending..." : "Request deletion"}</button>
+            <button type="button" style={btn} onClick={() => { setConfirming(false); setTyped(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {msg && <div role="status" style={{ marginTop: 10, fontSize: 12, color: "var(--bm-text2)" }}>{msg}</div>}
+    </div>
+  );
+}
+
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <motion.button onClick={() => onChange(!checked)}
@@ -713,6 +752,7 @@ function SettingsContent() {
                   <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 20 }}>Account</div>
                   <div><FieldLabel>Email Address</FieldLabel><SettingsInput value={email} onChange={() => {}} disabled placeholder="you@example.com" /></div>
                   <div style={{ fontSize: 11, color: "var(--bm-text3)", marginTop: 8 }}>Email is managed through your auth provider.</div>
+                  <DataControls />
                 </div>
               )}
 

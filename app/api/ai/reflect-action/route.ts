@@ -20,6 +20,12 @@ import { classifyBlocker, runBlockerIntelligencePipeline } from "@/lib/blockerIn
 import { updateMomentum } from "@/lib/scorecard";
 import { compareFounderIntelligenceOutcome, getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
 import { markRecommendationObserved } from "@/lib/recommendationLifecycle";
+import { detectObservedSignal } from "@/lib/autoSignals";
+import { checkProof } from "@/lib/signalProof";
+import { resolveSignal, strongestObserved } from "@/lib/signalResolve";
+import { verifyRedditProof } from "@/lib/redditProof";
+import type { ObservedSignal } from "@/lib/signalResolve";
+import { SIGNAL_KINDS, isUnproven, parseOutcomeSignal } from "@/lib/outcomeSignal";
 
 import { z } from "zod";
 
@@ -48,6 +54,10 @@ const ReflectActionSchema = z.object({
   recommendationId: z.string().uuid().optional(),
   dayKey:        z.string().max(10).optional(),
   idempotencyKey: z.string().min(8).max(80).optional(),
+  // What the task actually produced (reply / signup / call / payment / nothing). Optional: when absent,
+  // the learning loop falls back to wording overlap.
+  signal:        z.object({ kind: z.enum(SIGNAL_KINDS), count: z.number().int().min(0).max(9999).optional() }).optional(),
+  proof:         z.string().max(2000).optional(),
 });
 
 interface ReflectActionInput {
@@ -67,6 +77,8 @@ interface ReflectActionInput {
   recommendationId?: string;
   dayKey?: string;
   idempotencyKey?: string;
+  signal?: { kind: (typeof SIGNAL_KINDS)[number]; count?: number };
+  proof?: string;
 }
 
 interface ReflectActionOutput {
@@ -81,6 +93,10 @@ interface ReflectActionOutput {
   // something to score. Omitted (not zeroed) when there was nothing to
   // compare, so the UI can tell "no signal yet" apart from "confidence
   // didn't move."
+  /** Set when a verified payment, not the founder, supplied the outcome signal. */
+  autoSignalNote?: string;
+  /** Why a claimed signal was saved as unverified, or why the proof was refused. */
+  signalTrustNote?: string;
   confidenceAdjustment?: {
     before: number; // rolling average_match_score before this reflection, 0-100
     after: number;  // rolling average_match_score after this reflection, 0-100
@@ -279,6 +295,8 @@ export async function POST(request: Request) {
     // Hoisted for the same reason — set only when this reflection actually
     // resolved a pending Founder Intelligence prediction (see call site below).
     let confidenceAdjustment: ReflectActionOutput["confidenceAdjustment"];
+    let autoSignalNote: string | undefined;
+    let signalTrustNote: string | undefined;
 
     // If Supabase is wired, pull project context for deeper personalisation
     if (verifiedUserId && projectId && hasAdminEnv()) {
@@ -562,12 +580,67 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // requires reading accuracy on both sides of the comparison.
         try {
           const accuracyBefore = await getFounderIntelligenceAccuracy(supabase, verifiedUserId);
+          // Reality outranks claims: what BuildMind observed (Stripe, tracked links, hosted pages) beats what the
+          // founder typed. A typed claim only counts with proof; without it, it is saved as unverified.
+          const claimed = parseOutcomeSignal(body.signal);
+          let proofOk = false;
+          let proofForSave: { text: string; hash: string } | null = null;
+          if (claimed && claimed.kind !== "none" && typeof body.proof === "string" && body.proof.trim()) {
+            const pc = checkProof(body.proof, todayAction ?? "");
+            if (!pc.ok) {
+              signalTrustNote = pc.reason;
+            } else {
+              const { data: used } = await supabase
+                .from("reflexion_learning_log")
+                .select("id")
+                .eq("user_id", verifiedUserId)
+                .eq("signal_proof_hash", pc.hash!)
+                .limit(1)
+                .maybeSingle();
+              if (used?.id) signalTrustNote = "That proof was already used for another task.";
+              else { proofOk = true; proofForSave = { text: pc.normalized!, hash: pc.hash! }; }
+            }
+          }
+          let observed: ObservedSignal | null = null;
+          if (effectiveRecommendationId && outcome !== "blocked") {
+            try {
+              const { data: shown } = await supabase
+                .from("reflexion_learning_log")
+                .select("created_at")
+                .eq("id", effectiveRecommendationId)
+                .eq("user_id", verifiedUserId)
+                .maybeSingle();
+              observed = await detectObservedSignal(supabase, verifiedUserId, shown?.created_at);
+            } catch { /* fall back to the founder's claim */ }
+          }
+          // A Reddit post link: if the founder proved the post is theirs (code comment), BuildMind counts the
+          // distinct commenters itself. Any failure falls back to the plain proof above.
+          if (claimed && claimed.kind !== "none" && typeof body.proof === "string" && /reddit\.com\//i.test(body.proof)) {
+            try {
+              const rv = await verifyRedditProof(verifiedUserId, body.proof.trim());
+              if (rv.status === "verified" && rv.count > 0) {
+                observed = strongestObserved([...(observed ? [observed] : []), { kind: "reply", count: Math.min(999, rv.count), source: "reddit", trust: "proof" }]);
+              } else if (rv.status === "needs_code" && !signalTrustNote) {
+                signalTrustNote = `To have BuildMind count the Reddit replies itself, post ${rv.code} as a comment on your own post, then save again.`;
+              }
+            } catch { /* keep the plain proof */ }
+          }
+          const resolvedSignal = resolveSignal({ claimed, proofOk, observed });
+          const outcomeSignal = resolvedSignal?.signal ?? null;
+          const outcomeSignalSource: "founder" | "auto" = resolvedSignal?.source ?? "founder";
+          if (resolvedSignal?.note) autoSignalNote = resolvedSignal.note;
+          if (!signalTrustNote && resolvedSignal?.source === "founder" && isUnproven(resolvedSignal.signal)) {
+            signalTrustNote = "Saved as unverified. Add a link to the reply or paste it, or use a tracked link, so it counts toward your accuracy.";
+          }
           const comparison = await compareFounderIntelligenceOutcome(supabase, {
             userId: verifiedUserId,
             recommendationId: effectiveRecommendationId,
             taskTitle: todayAction ?? note ?? "",
             outcome,
             reflectionText: reflectionEvidenceText,
+            signal: outcomeSignal,
+            signalSource: outcomeSignalSource,
+            signalProof: outcomeSignalSource === "founder" ? proofForSave : null,
             evidenceReferences: reflectionRow?.id ? [{ source: "reflection", recordId: String(reflectionRow.id) }] : undefined,
           });
           if (comparison) {
@@ -726,6 +799,8 @@ ${projectContext}`,
           ? { before: momentumBefore, after: momentumAfter }
           : undefined,
         confidenceAdjustment,
+        autoSignalNote,
+        signalTrustNote,
         outcomeAdjusted: outcomeCheck.adjusted
           ? { from: outcomeCheck.from, to: outcomeCheck.outcome, reason: outcomeCheck.reason }
           : undefined,

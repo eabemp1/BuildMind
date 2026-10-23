@@ -9,6 +9,7 @@
     "lint": "tsc -p tsconfig.typecheck.json --noEmit --incremental false",
     "seed:knowledge-base": "npx tsx scripts/seed-founder-knowledge-base.ts",
     "verify:intelligence": "npx tsx scripts/verify-intelligence-integrity.ts",
+    "eval:calibration": "npx tsx scripts/eval-calibration.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

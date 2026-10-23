@@ -1,5 +1,7 @@
 import type { Mission } from "@/lib/todayMission";
 
+export type EnergyChoice = "fresh" | "ok" | "low" | "wiped";
+
 export type FounderState = {
   level: "fresh" | "low" | "depleted";
   confidence: number;
@@ -11,7 +13,7 @@ export type FounderState = {
 };
 
 export function buildFounderState(input: { cognitiveLoad?: unknown; clientHour?: number | null }): FounderState | null {
-  if (input.cognitiveLoad === "autopilot") {
+  if (input.cognitiveLoad === "autopilot" || input.cognitiveLoad === "wiped") {
     return { level: "depleted", confidence: 0.9, source: "self", reasons: ["Founder reported autopilot-level cognitive load."], effortCap: 1, holdBigDecisions: true, maxMinutes: 15 };
   }
   if (input.cognitiveLoad === "drained" || input.cognitiveLoad === "low") {
@@ -20,7 +22,7 @@ export function buildFounderState(input: { cognitiveLoad?: unknown; clientHour?:
   if (typeof input.clientHour === "number" && (input.clientHour >= 23 || input.clientHour < 5)) {
     return { level: "low", confidence: 0.45, source: "time", reasons: ["It is late in the founder's local day."], effortCap: 2, holdBigDecisions: true, maxMinutes: 25 };
   }
-  if (input.cognitiveLoad === "fresh" || input.cognitiveLoad === "normal" || input.cognitiveLoad === "high") {
+  if (input.cognitiveLoad === "fresh" || input.cognitiveLoad === "normal" || input.cognitiveLoad === "high" || input.cognitiveLoad === "ok") {
     return { level: "fresh", confidence: 0.8, source: "self", reasons: [], effortCap: 5, holdBigDecisions: false, maxMinutes: 90 };
   }
   return null;

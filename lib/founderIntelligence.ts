@@ -10,6 +10,7 @@ import { resolveStrengthsAndAvoidance } from "@/lib/founderPatterns";
 import { deriveLearnedPatterns, type LearnedPatterns, type LearningLogRow } from "@/lib/learning";
 import { logError } from "@/lib/server/logger";
 import { buildTemporalComparison } from "@/lib/temporalCoherence";
+import { agentCandidateTemplates, agentRankingBoost, loadAgentEvidence, type AgentEvidenceItem, type AgentTodayEvidence } from "@/lib/agentToToday";
 import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { computeMomentumTrendFromDelta, type MomentumTrendDirection } from "@/lib/momentum";
 import { effectiveStreak, daysSinceActive } from "@/lib/streak";
@@ -111,10 +112,12 @@ export interface FounderState {
   recommendation_rejection: string[];
   /** Areas that look like both a strength and an avoidance and cannot yet be told apart. */
   mixed_patterns?: string[];
+  /** Per-category task counts behind the strengths and avoidances (completed of total). */
+  pattern_stats?: Array<{ label: string; completed: number; total: number }>;
   behavioral_trends: string[];
   confidence: number;
   recent_changes: string[];
-  corrections: Array<{ belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string; weight?: number; verified?: boolean; score?: number }>;
+  corrections: Array<{ belief: string; correction: string; evidence?: string; created_at?: string; belief_key?: string; weight?: number; verified?: boolean; score?: number; snapshot?: { completed: number; total: number } }>;
 }
 
 export interface StartupState {
@@ -185,6 +188,8 @@ export interface DecisionCandidate {
   };
   supporting_signals: IntelligenceSignalType[];
   why_it_beats_alternatives: string;
+  /** Set when the task comes from a reviewed Agent crew finding: what it rests on, shown to the founder. */
+  evidence?: AgentEvidenceItem;
 }
 
 export interface DecisionState {
@@ -193,6 +198,8 @@ export interface DecisionState {
   decision_basis: string[];
   /** Capacity level this decision was ranked for; a cached decision is only reused at the same level. */
   state_level?: string;
+  /** Fingerprint of the Agent findings this decision used; a cached decision with a different one is rebuilt. */
+  agent_key?: string;
 }
 
 export interface FounderIntelligenceState {
@@ -217,6 +224,8 @@ export interface FounderIntelligenceState {
   archetype_stats: Record<string, { successes: number; failures: number; recent_successes: number; recent_failures: number }>;
   /** How the founder is doing right now. Absent when nothing is known. */
   capacity?: CapacityState | null;
+  /** Reviewed Agent crew findings that can steer Today. */
+  agent_evidence?: AgentTodayEvidence | null;
   source_summary: {
     reflections: number;
     learning_logs: number;
@@ -241,6 +250,8 @@ export interface FounderIntelligenceInput {
   activityEvents?: SessionEvent[];
   actionLogs?: Array<Record<string, any>>;
   now?: Date;
+  /** Reviewed Agent crew findings (see lib/agentToToday.ts). */
+  agentEvidence?: AgentTodayEvidence | null;
   /** FIX (task-repeat bug): a task the founder just explicitly rejected
    *  (e.g. via "Replace this task") to exclude from candidate ranking.
    *  Without this, buildDecisionState()'s candidate pool is a small fixed
@@ -838,6 +849,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
   const founder: FounderState = {
     strengths: resolvedPatterns.strengths,
     avoidance_patterns: resolvedPatterns.avoidance,
+    pattern_stats: [...executionSignature.avoidanceZones, ...executionSignature.strengths].map((c) => ({ label: String(c.category), completed: Math.round(c.completionRate * c.totalTasks), total: c.totalTasks })),
     mixed_patterns: [...resolvedPatterns.mixed.map((m) => `${m.label}: ${m.completed} of ${m.total} finished, not enough to call it a strength or an avoidance`), ...platformMixed],
     execution_patterns: unique([executionSignature.signatureSentence, learnedPatterns.patterns_reliable ? `Recommendation completion rate ${Math.round(learnedPatterns.completion_rate * 100)}%` : null], 5),
     operating_windows: unique([temporalProfile.peakProductivityHour != null ? `Best completion hour around ${temporalProfile.peakProductivityHour}:00` : null, temporalProfile.dropoutHour != null ? `Dropout risk around ${temporalProfile.dropoutHour}:00` : null], 4),
@@ -942,6 +954,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     signals,
     archetype_stats: computeArchetypeStats(learningLogs),
     capacity: input.founderState ?? null,
+    agent_evidence: input.agentEvidence ?? null,
     source_summary: {
       reflections: reflections.length,
       learning_logs: learningLogs.length,
@@ -962,7 +975,8 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
   // A decision ranked for a rested founder is wrong for a depleted one, and the reverse.
   const levelKey = (l?: string | null) => (l === "steady" || !l ? "fresh" : l);
   const sameCapacity = levelKey(input.cachedDecision?.decision?.state_level) === levelKey(input.founderState?.level);
-  const hasFreshCache = !input.excludeAction && input.cachedDecision?.date === todayDateStr && cacheIsCurrentVersion && sameCapacity;
+  const sameAgentEvidence = (input.cachedDecision?.decision?.agent_key ?? "") === (input.agentEvidence?.key ?? "");
+  const hasFreshCache = !input.excludeAction && sameAgentEvidence && input.cachedDecision?.date === todayDateStr && cacheIsCurrentVersion && sameCapacity;
   // A cached decision keeps its ranked candidates, but its basis lines quote the
   // signals as they were when it was cached. Rebuild them from the live signals
   // so the report never shows 63 days beside 64, or 30 rejections beside 14.
@@ -970,7 +984,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     ? refreshDecisionBasis(input.cachedDecision!.decision, stateWithoutDecision.signals, now)
     : buildDecisionState({ ...stateWithoutDecision, decision: { candidates: [], top_candidate: null, decision_basis: [] } }, input.excludeAction);
 
-  return { ...stateWithoutDecision, decision: { ...decision, state_level: input.founderState?.level ?? "fresh" } };
+  return { ...stateWithoutDecision, decision: { ...decision, state_level: input.founderState?.level ?? "fresh", agent_key: input.agentEvidence?.key ?? "" } };
 }
 
 // Same success/failure definition as getCandidateArchetypeStats() in
@@ -983,7 +997,10 @@ function computeArchetypeStats(learningLogs: LearningLogRow[]): Record<string, {
   for (const row of learningLogs as Array<LearningLogRow & { candidate_id?: string | null; prediction_source?: string | null; evidence_match_score?: number | null }>) {
     if (row.prediction_source !== "founder_intelligence") continue;
     const id = row.candidate_id;
-    if (!id || row.outcome === "pending") continue;
+    // Resolved = compared against evidence. A row can be "completed" (task-complete) and still unscored.
+    if (!id || row.outcome === "pending" || row.evidence_match_score == null) continue;
+    // An unbacked claim of a real signal is not evidence either way (see lib/outcomeSignal.ts).
+    if ((row as { signal_kind?: string | null }).signal_kind && (row as { signal_kind?: string | null }).signal_kind !== "none" && (row as { signal_trust?: string | null }).signal_trust === "self") continue;
     const success = row.outcome === "completed" && (row.evidence_match_score ?? 0) >= 0.5;
     const rawAt = row.outcome_recorded_at ?? row.created_at;
     const at = rawAt ? new Date(rawAt).getTime() : 0;
@@ -1139,6 +1156,7 @@ export function refreshDecisionBasis(decision: DecisionState, signals: Intellige
 }
 
 function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">, state: FounderIntelligenceState): DecisionCandidate {
+  const agentItem = candidate.evidence;
   const signalTypes = new Set(candidate.supporting_signals);
   const isExternal = /user|customer|interview|feedback|message|call|revenue|pricing|paid|launch|post|publish/i.test(candidate.action);
   const hasAvoidance = signalTypes.has("REPEATED_AVOIDANCE") || signalTypes.has("RECOMMENDATION_REJECTION_PATTERN");
@@ -1147,17 +1165,19 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   const repeated = state.execution.repeated_actions.some((a) => a && candidate.action.toLowerCase().includes(a.toLowerCase().slice(0, 24)));
   const founderAvoidsExternal = state.founder.avoidance_patterns.some((p) => /outreach|interview|customer|sales|pricing|revenue/i.test(p));
   const isGenericContinuation = candidate.id === "continue_best_next_task";
-  const impact = isGenericContinuation ? 55 : hasEvidenceGap || hasGoalRisk ? 90 : isExternal ? 75 : 55;
-  const urgency = isGenericContinuation ? 45 : signalTypes.has("EVIDENCE_GAP") || signalTypes.has("GOAL_SLIPPAGE") ? 90 : signalTypes.has("MOMENTUM_CHANGE") ? 70 : 55;
-  const goal_relevance = isGenericContinuation ? 60 : candidate.action.toLowerCase().includes(String(state.startup.current_goal ?? "").toLowerCase().slice(0, 12)) ? 85 : hasGoalRisk ? 80 : 60;
+  // A finding the founder verified is as strong a reason to act as an open evidence gap; a thin one to re-check is weaker.
+  const confirmedFinding = agentItem?.kind === "confirmed";
+  const impact = confirmedFinding ? 90 : agentItem ? 70 : isGenericContinuation ? 55 : hasEvidenceGap || hasGoalRisk ? 90 : isExternal ? 75 : 55;
+  const urgency = confirmedFinding ? 80 : agentItem ? 55 : isGenericContinuation ? 45 : signalTypes.has("EVIDENCE_GAP") || signalTypes.has("GOAL_SLIPPAGE") ? 90 : signalTypes.has("MOMENTUM_CHANGE") ? 70 : 55;
+  const goal_relevance = confirmedFinding ? 78 : isGenericContinuation ? 60 : candidate.action.toLowerCase().includes(String(state.startup.current_goal ?? "").toLowerCase().slice(0, 12)) ? 85 : hasGoalRisk ? 80 : 60;
   const evidence_value = isGenericContinuation ? 45 : isExternal ? 90 : hasEvidenceGap ? 75 : 45;
   const founder_fit = hasAvoidance ? 55 : founderAvoidsExternal && isExternal ? 50 : 75;
   const opportunity_cost = isExternal ? 15 : 35;
   const repetition_penalty = repeated ? 40 : 0;
   const behavioral_correction = isGenericContinuation ? 40 : hasAvoidance || signalTypes.has("BEHAVIOR_STRATEGY_CONTRADICTION") ? 80 : 45;
-  const risk_reduction = isGenericContinuation ? 50 : hasGoalRisk || hasEvidenceGap || signalTypes.has("ASSUMPTION_DECAY") ? 85 : 55;
+  const risk_reduction = confirmedFinding ? 85 : agentItem ? 75 : isGenericContinuation ? 50 : hasGoalRisk || hasEvidenceGap || signalTypes.has("ASSUMPTION_DECAY") ? 85 : 55;
   const asOf = new Date(state.generated_at);
-  const confidence = Math.round(candidate.supporting_signals.reduce((sum, type) => {
+  const confidence = agentItem ? Math.round(agentItem.confidence * (agentItem.tier === "decision_grade" ? 100 : agentItem.tier === "supported" ? 90 : 70)) : Math.round(candidate.supporting_signals.reduce((sum, type) => {
     const signal = state.signals.find((s) => s.type === type);
     return sum + (signal ? decayedSignalConfidence(signal, asOf) : 0.5);
   }, 0) / Math.max(1, candidate.supporting_signals.length) * 100);
@@ -1196,16 +1216,17 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   // Capacity: a candidate heavier than the founder can carry right now is ranked down,
   // the small first-slice candidate up. Importance is untouched.
   const cap = state.capacity;
-  const candidateEffort = ({ avoidance_microdose: 1, evidence_probe: 2, unstall_goal: 3, continue_best_next_task: 3 } as Record<string, number>)[candidate.id] ?? 2;
+  const candidateEffort = ({ avoidance_microdose: 1, evidence_probe: 2, unstall_goal: 3, continue_best_next_task: 3, agent_finding: 2, agent_recheck: 1 } as Record<string, number>)[candidate.id] ?? 2;
   const capacity_penalty = cap && (cap.level === "low" || cap.level === "depleted") ? Math.max(0, candidateEffort - cap.effortCap) * 12 + (cap.holdBigDecisions && /pivot|pricing|rewrite|rebuild|shut/i.test(candidate.action) ? 20 : 0) : 0;
   const capacity_boost = cap && (cap.level === "low" || cap.level === "depleted") && candidateEffort === 1 ? 8 : 0;
+  const agent_boost = agentItem ? agentRankingBoost(agentItem) : 0;
   const total = clampScore(
-    capacity_boost - capacity_penalty + impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08 - intervention_penalty,
+    agent_boost + capacity_boost - capacity_penalty + impact * 0.16 + urgency * 0.14 + goal_relevance * 0.13 + evidence_value * 0.15 + founder_fit * 0.1 + execution_probability * 0.1 + behavioral_correction * 0.1 + risk_reduction * 0.1 + confidence * 0.08 + learned_fit * 0.12 - opportunity_cost * 0.08 - repetition_penalty * 0.08 - intervention_penalty,
   );
   return {
     ...candidate,
     scores: { impact, urgency, goal_relevance, evidence_value, founder_fit, execution_probability, opportunity_cost, repetition_penalty, behavioral_correction, risk_reduction, confidence, predicted_success, predicted_success_n: histN, intervention_penalty, total },
-    why_it_beats_alternatives: `${intervention_penalty > 0 ? `Ranked down: this approach has not worked for you (${archetypeHistory?.successes ?? 0} of ${histN} resolved). ` : ""}Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${(archetypeHistory?.successes ?? 0) > 0 ? `, and this approach has worked for you before (${archetypeHistory!.successes} of ${archetypeHistory!.successes + archetypeHistory!.failures} resolved)` : ""} and avoids repeating stale work.`,
+    why_it_beats_alternatives: agentItem ? `${agentItem.kind === "recheck" ? "A thin finding from your Agent crew needs a second look before it shapes decisions." : "Backed by an Agent crew finding you confirmed."} ` + `Rests on: ${agentItem.title}.` : `${intervention_penalty > 0 ? `Ranked down: this approach has not worked for you (${archetypeHistory?.successes ?? 0} of ${histN} resolved). ` : ""}Scores highest because it balances ${hasEvidenceGap ? "fresh evidence" : hasGoalRisk ? "goal recovery" : "execution progress"} with founder fit${(archetypeHistory?.successes ?? 0) > 0 ? `, and this approach has worked for you before (${archetypeHistory!.successes} of ${archetypeHistory!.successes + archetypeHistory!.failures} resolved)` : ""} and avoids repeating stale work.`,
   };
 }
 
@@ -1274,6 +1295,9 @@ function buildDecisionStateInner(state: FounderIntelligenceState, excludeAction?
       supporting_signals: topSignals.filter((s) => s.type === "REPEATED_AVOIDANCE" || s.type === "BEHAVIOR_STRATEGY_CONTRADICTION" || s.type === "RECOMMENDATION_REJECTION_PATTERN").map((s) => s.type),
     });
   }
+
+  // Reviewed Agent crew findings: a verified one can become the task; a thin one becomes a re-check.
+  for (const t of agentCandidateTemplates(state.agent_evidence)) candidates.push(t);
 
   candidates.push({
     id: "continue_best_next_task",
@@ -1435,6 +1459,8 @@ export async function loadFounderIntelligence(
       ? { decision: cachedDecisionRaw as DecisionState, date: String(cachedDecisionDate).slice(0, 10) }
       : null;
 
+    const agentEvidence = preloaded.agentEvidence !== undefined ? preloaded.agentEvidence : await loadAgentEvidence(supabase, userId, projectId, now);
+
     const result = buildFounderIntelligenceState({
       userId,
       projectId: projectId ?? null,
@@ -1448,6 +1474,7 @@ export async function loadFounderIntelligence(
       activityEvents: data(activityRes as PromiseSettledResult<{ data: SessionEvent[] }>, []),
       actionLogs: data(actionLogsRes as PromiseSettledResult<{ data: Array<Record<string, any>> }>, []),
       now,
+      agentEvidence,
       excludeAction: preloaded.excludeAction,
       cachedDecision,
       founderState: preloaded.founderState ?? null,

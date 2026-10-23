@@ -27,7 +27,7 @@ export interface TodayIntelligenceSummary {
   founder_model: { strengths: string[]; avoidance_patterns: string[]; operating_windows: string[]; confidence: number };
   strategy: { stated_priorities: string[]; observed_priorities: string[]; contradictions: string[] };
   decision: {
-    top_candidate: { action?: string; expected_evidence: string; why_it_beats_alternatives: string; scores?: { total: number; confidence?: number } } | null;
+    top_candidate: { action?: string; expected_evidence: string; why_it_beats_alternatives: string; scores?: { total: number; confidence?: number }; evidence?: { kind: "confirmed" | "recheck"; title: string; tier: string; source_count: number } } | null;
     alternatives?: Array<{
       id: string;
       action: string;
@@ -42,6 +42,7 @@ export interface TodayIntelligenceSummary {
     }>;
     basis?: string[];
   };
+  capacity?: { level: string; note: string | null; hold_big_decisions: boolean; max_minutes: number } | null;
   cofounder_judgment?: {
     what_matters_now: string;
     largest_constraint: string;
@@ -156,6 +157,17 @@ export function IntelligencePanel({ data, onSwap, recentOutcomes }: {
             <div>
               <Label>What we noticed</Label>
               <div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>{trimToSentence(reasoning?.observation ?? signal?.summary, 30)}</div>
+            </div>
+          )}
+          {data.decision.top_candidate?.evidence && (
+            <div>
+              <Label>{data.decision.top_candidate.evidence.kind === "recheck" ? "From your Agent crew: needs a re-check" : "From your Agent crew"}</Label>
+              <div style={{ color: "var(--bm-text2)", fontSize: 13, lineHeight: 1.55 }}>
+                {data.decision.top_candidate.evidence.title}
+                <span style={{ display: "block", fontSize: 11.5, color: "var(--bm-text4)" }}>
+                  {data.decision.top_candidate.evidence.tier.replace("_", "-")} · {data.decision.top_candidate.evidence.source_count === 1 ? "1 source" : `${data.decision.top_candidate.evidence.source_count} sources`}
+                </span>
+              </div>
             </div>
           )}
           {data.decision.top_candidate?.why_it_beats_alternatives && (

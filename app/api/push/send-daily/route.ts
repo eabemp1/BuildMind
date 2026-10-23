@@ -38,6 +38,7 @@ import { filterByNotificationPref } from "@/lib/server/notificationPrefs";
 import { planFromUserMetadata } from "@/lib/plan";
 import { logError, logInfo } from "@/lib/server/logger";
 import { claimSendSlots } from "@/lib/cronSendLog";
+import { inSendWindow } from "@/lib/pushWindow";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -343,7 +344,22 @@ export async function POST(req: NextRequest) {
   // every subscriber two daily notifications. Claim each user's slot
   // atomically before sending; only the returned (successfully claimed)
   // subset actually gets a notification.
-  const claimedUserIds = new Set(await claimSendSlots(subs.map((s) => s.user_id), "daily_push"));
+  // Not in the middle of someone's night: a founder whose local time is outside 07:00-21:59 is left
+  // unclaimed, so the later cron window (see vercel.json) can still reach them today.
+  const tzByUser = new Map<string, unknown>();
+  try {
+    for (let i = 0; i < userIds.length; i += 100) {
+      const { data: tzRows } = await supabase
+        .from("user_behavior_state")
+        .select("user_id, value")
+        .eq("key", "tz_offset_minutes")
+        .in("user_id", userIds.slice(i, i + 100));
+      for (const r of (tzRows ?? []) as Array<{ user_id: string; value: unknown }>) tzByUser.set(r.user_id, r.value);
+    }
+  } catch { /* unknown offsets count as in-window */ }
+  const nowUtc = new Date();
+  const awake = subs.filter((s) => inSendWindow(nowUtc, tzByUser.get(s.user_id)));
+  const claimedUserIds = new Set(await claimSendSlots(awake.map((s) => s.user_id), "daily_push"));
   const sendableSubs = subs.filter((s) => claimedUserIds.has(s.user_id));
 
   // Send to all subscribers, using Recovery Mode message when appropriate
@@ -395,6 +411,8 @@ export async function POST(req: NextRequest) {
           badge: "/logo/icon-96.png",
           url,
           tag,
+          // Today's task is waiting: the notification gets a "Done" button (it asks before marking anything).
+          canFinish: url === "/today",
         });
 
         await webpush.sendNotification(row.subscription, payload);
@@ -456,7 +474,8 @@ export async function POST(req: NextRequest) {
     recoveryMode: recoveryCount,
     personalised: personalisedCount,
     total: subs.length,
-    deduped: subs.length - sendableSubs.length, // already claimed for today by an earlier/overlapping run
+    deduped: awake.length - sendableSubs.length, // already claimed for today by an earlier/overlapping run
+    waitingForLocalMorning: subs.length - awake.length,
     message: defaultMessage.title,
     failedDetails,
     processed: sent + skipped,

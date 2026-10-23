@@ -149,3 +149,79 @@ describe("founderMirror: correction feedback loop (Thompson-Sampling-style, same
     }
   });
 });
+
+describe("founderMirror: honest belief confidence", () => {
+  it("never shows a belief with a tiny evidence base at the profile-wide confidence", () => {
+    const state = buildFounderIntelligenceState(input());
+    // Force a high profile-wide number and a small per-area count, the exact case that read as 95%.
+    state.founder.confidence = 95;
+    state.founder.strengths = ["Usability sessions"];
+    state.founder.pattern_stats = [{ label: "Usability sessions", completed: 3, total: 3 }];
+    const mirror = buildFounderMirror(state, NO_ACCURACY);
+    const b = mirror.beliefs.find((x) => /Usability sessions/.test(x.belief));
+    expect(b).toBeDefined();
+    expect(b!.confidence).toBeLessThan(0.75);
+    expect(b!.observations).toBe(3);
+    expect(b!.early).toBe(true);
+    expect(b!.confidence_basis).toBe("3 of 3 related tasks completed");
+  });
+
+  it("a belief with no per-area count is capped and says so", () => {
+    const state = buildFounderIntelligenceState(input());
+    state.founder.confidence = 95;
+    state.founder.strengths = ["Something vague"];
+    state.founder.pattern_stats = [];
+    const b = buildFounderMirror(state, NO_ACCURACY).beliefs.find((x) => /Something vague/.test(x.belief));
+    expect(b!.confidence).toBeLessThanOrEqual(0.55);
+    expect(b!.observations).toBeNull();
+    expect(b!.confidence_basis).toMatch(/no count/);
+  });
+
+  it("every belief reports what its number is based on", () => {
+    const mirror = buildFounderMirror(buildFounderIntelligenceState(input()), NO_ACCURACY);
+    for (const b of mirror.beliefs) expect(b.confidence_basis.length).toBeGreaterThan(0);
+  });
+
+  it("accuracy summary tells the truth about how it was scored", () => {
+    const state = buildFounderIntelligenceState(input());
+    const base = { sample_size: 12, average_match_score: 0.5, last_updated_at: NOW.toISOString(), trend: "flat" as const };
+    expect(buildFounderMirror(state, { ...base, structured_count: 0 }).self_reported_accuracy.summary).toMatch(/wording-overlap/i);
+    expect(buildFounderMirror(state, { ...base, structured_count: 12 }).self_reported_accuracy.summary).toMatch(/observed or you backed with proof/i);
+    expect(buildFounderMirror(state, { ...base, structured_count: 5 }).self_reported_accuracy.summary).toMatch(/5 are scored/);
+    expect(buildFounderMirror(state, { ...base, sample_size: 4, structured_count: 4 }).self_reported_accuracy.summary).toMatch(/first reading/);
+  });
+});
+
+describe("founderMirror: did the correction work", () => {
+  function stateWithCorrection(now: { completed: number; total: number }) {
+    const state = buildFounderIntelligenceState(input());
+    state.founder.confidence = 90;
+    state.founder.avoidance_patterns = ["cold outreach"];
+    state.founder.strengths = [];
+    state.founder.pattern_stats = [{ label: "cold outreach", completed: now.completed, total: now.total }];
+    state.founder.corrections = [{
+      belief: "You tend to avoid cold outreach.", correction: "I do it every week.",
+      belief_key: normalizeBeliefKey("You tend to avoid cold outreach."), created_at: "2026-08-01T00:00:00.000Z",
+      weight: 0.4, snapshot: { completed: 1, total: 6 },
+    }];
+    return state;
+  }
+  it("shows the correction holding when the related work got done afterwards", () => {
+    const b = buildFounderMirror(stateWithCorrection({ completed: 5, total: 10 }), NO_ACCURACY).beliefs.find((x) => /cold outreach/.test(x.belief));
+    expect(b?.correction_check?.verdict).toBe("holding");
+  });
+  it("is deterministic: the same evidence gives the same numbers on every build", () => {
+    const a = buildFounderMirror(stateWithCorrection({ completed: 5, total: 10 }), NO_ACCURACY).beliefs[0];
+    const c = buildFounderMirror(stateWithCorrection({ completed: 5, total: 10 }), NO_ACCURACY).beliefs[0];
+    expect(a.confidence).toBe(c.confidence);
+  });
+  it("says too early with little new data", () => {
+    const b = buildFounderMirror(stateWithCorrection({ completed: 1, total: 7 }), NO_ACCURACY).beliefs.find((x) => /cold outreach/.test(x.belief));
+    expect(b?.correction_check?.verdict).toBe("too_early");
+  });
+  it("has no check without a saved snapshot", () => {
+    const s = stateWithCorrection({ completed: 5, total: 10 });
+    delete s.founder.corrections[0].snapshot;
+    expect(buildFounderMirror(s, NO_ACCURACY).beliefs.find((x) => /cold outreach/.test(x.belief))?.correction_check ?? null).toBeNull();
+  });
+});

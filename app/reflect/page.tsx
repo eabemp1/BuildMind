@@ -24,6 +24,7 @@ import { ReflectionField } from "./components/ReflectionField";
 import { ConfidenceSelector } from "./components/ConfidenceSelector";
 import { OutcomePicker, type ReflectionOutcome } from "./components/OutcomePicker";
 import { FollowUpPicker, type FollowUpValue } from "./components/FollowUpPicker";
+import { SignalPicker, type SignalValue } from "./components/SignalPicker";
 import { ReflectionCompletion } from "./components/ReflectionCompletion";
 import { effectiveStreak } from "@/lib/streak";
 
@@ -89,6 +90,7 @@ export default function ReflectPage() {
   const [whatLearned, setWhatLearned] = useState("");
   const [blocker, setBlocker] = useState("");
   const [followUp, setFollowUp] = useState<FollowUpValue>({ choice: null, measure: "" });
+  const [signal, setSignal] = useState<SignalValue>({ kind: null, count: 1 });
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [confidence, setConfidence] = useState(3);
@@ -322,6 +324,8 @@ export default function ReflectPage() {
             streak,
             projectId: activeProjectId,
             idempotencyKey: reflectKeyRef.current,
+            signal: signal.kind && outcome !== "blocked" ? { kind: signal.kind, count: signal.kind === "none" ? 0 : signal.count } : undefined,
+            proof: signal.kind && signal.kind !== "none" && outcome !== "blocked" && signal.proof?.trim() ? signal.proof.trim() : undefined,
             dayKey: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(),
           }),
         });
@@ -344,6 +348,8 @@ export default function ReflectPage() {
           setCelebrationStreak(newStreak);
           setStreak(newStreak);
           if (payload.momentum) setCelebrationMomentum(payload.momentum);
+          if (payload.autoSignalNote) witness = `${payload.autoSignalNote} ${witness}`;
+          if (payload.signalTrustNote) witness = `${payload.signalTrustNote} ${witness}`;
           if (payload.confidenceAdjustment) setConfidenceAdjustment(payload.confidenceAdjustment);
         }
       } catch {}
@@ -506,6 +512,8 @@ export default function ReflectPage() {
         if (!cfg) return null;
         return <ReflectionField key={field} label={cfg.label} required={cfg.required} placeholder={cfg.placeholder} value={cfg.value} onChange={cfg.set} />;
       })}
+
+      {outcome !== "blocked" && <SignalPicker value={signal} onChange={setSignal} />}
 
       <FollowUpPicker task={todayAction || whatTried} texts={[whatTried, whatHappened, blocker]} value={followUp} onChange={setFollowUp} />
 

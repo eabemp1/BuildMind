@@ -221,7 +221,11 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/ventures/") ||
     pathname === "/quiz" ||
     pathname.startsWith("/quiz/") ||
-    pathname.startsWith("/promote/");
+    pathname.startsWith("/promote/") ||
+    // Tracked links and hosted signup pages are opened by the founder's audience, who have no account.
+    pathname.startsWith("/r/") ||
+    pathname.startsWith("/i/") ||
+    pathname.startsWith("/v/");
   const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
   const isFounderRoute = pathname.startsWith("/founder/");
   const isStudentRoute = pathname === "/students";
@@ -335,7 +339,9 @@ export async function middleware(request: NextRequest) {
       });
     }
 
-    if (!onboardingCompleted && !isOnboardingRoute) {
+    // A tracked link or hosted page opened by someone mid-onboarding must still open.
+    const isSignalPublic = pathname.startsWith("/r/") || pathname.startsWith("/i/") || pathname.startsWith("/v/");
+    if (!onboardingCompleted && !isOnboardingRoute && !isSignalPublic) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/onboarding";
       return NextResponse.redirect(redirectUrl);

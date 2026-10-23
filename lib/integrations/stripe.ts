@@ -32,7 +32,7 @@ export const toMajor = (amount: number, currency: string) => (ZERO_DECIMAL.has(c
 interface Price { unit_amount?: number | null; currency?: string; recurring?: { interval?: string; interval_count?: number } | null }
 interface SubItem { quantity?: number | null; price?: Price | null }
 export interface StripeSub { customer?: string | { id?: string } | null; status?: string; items?: { data?: SubItem[] } }
-export interface StripeCharge { amount?: number; amount_refunded?: number; currency?: string; paid?: boolean; refunded?: boolean; status?: string }
+export interface StripeCharge { created?: number; amount?: number; amount_refunded?: number; currency?: string; paid?: boolean; refunded?: boolean; status?: string }
 
 /** Monthly value of one subscription item, in minor units. */
 export function monthlyMinor(p: Price, quantity = 1): number {
@@ -120,4 +120,33 @@ export async function fetchStripeSummary(rawKey: string): Promise<StripeFetch> {
     }
   }
   return { ok: true, summary: summariseStripe(subs, charges, kc.mode, new Date(), truncated) };
+}
+
+/** Successful, not fully refunded charges created at or after `sinceMs`. Pure. */
+export function countPaymentsSince(charges: StripeCharge[], sinceMs: number): number {
+  let n = 0;
+  for (const c of charges) {
+    if (!c.paid || c.status !== "succeeded") continue;
+    if ((c.amount ?? 0) - (c.amount_refunded ?? 0) <= 0) continue;
+    if (typeof c.created !== "number" || c.created * 1000 < sinceMs) continue;
+    n++;
+  }
+  return n;
+}
+
+/** Charges created since a moment, newest first, up to 300. `null` when Stripe cannot be read. */
+export async function fetchStripeChargesSince(rawKey: string, sinceMs: number): Promise<{ charges: StripeCharge[]; truncated: boolean } | null> {
+  if (!checkStripeKey(rawKey).ok) return null;
+  const key = rawKey.trim();
+  const base = `/v1/charges?created[gte]=${Math.floor(sinceMs / 1000)}&limit=100`;
+  const charges: StripeCharge[] = [];
+  let url = base;
+  for (let page = 0; page < 3; page++) {
+    const r = await get<{ data: Array<StripeCharge & { id: string }>; has_more: boolean }>(url, key);
+    if (!r.ok) return null;
+    charges.push(...r.data.data);
+    if (!r.data.has_more) return { charges, truncated: false };
+    url = `${base}&starting_after=${r.data.data[r.data.data.length - 1].id}`;
+  }
+  return { charges, truncated: true };
 }
