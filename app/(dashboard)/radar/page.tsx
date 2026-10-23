@@ -16,11 +16,19 @@ export default function RadarPage() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [finding, setFinding] = useState(false);
+  const [auto, setAuto] = useState<{ enabled: boolean; lastRunAt: string | null; lastAdded: number } | null>(null);
   const [feed, setFeed] = useState<{ url: string; webcal: string } | null>(null);
   const [feedNote, setFeedNote] = useState("");
   const [ask, setAsk] = useState<{ id: string; options: RadarKind[]; why: string } | null>(null);
 
   useEffect(() => { try { setWhere(localStorage.getItem("bm_radar_where") ?? ""); } catch { /* ignore */ } }, []);
+  useEffect(() => {
+    fetch("/api/radar/settings").then((r) => r.json()).then((b) => { if (b?.ok) setAuto({ enabled: b.auto !== false, lastRunAt: b.lastRunAt ?? null, lastAdded: b.lastAdded ?? 0 }); }).catch(() => undefined);
+  }, []);
+  async function setAutoSearch(enabled: boolean) {
+    setAuto((a) => ({ enabled, lastRunAt: a?.lastRunAt ?? null, lastAdded: a?.lastAdded ?? 0 }));
+    try { await fetch("/api/radar/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto: enabled, where: where.trim() }) }); } catch { /* shown state may be stale until reload */ }
+  }
   const load = useCallback(() => {
     const q = new URLSearchParams(where.trim() ? { where: where.trim() } : {});
     fetch(`/api/radar?${q}`).then((r) => r.json()).then((b) => { setItems(b.items ?? []); setSetup(b.reason === "setup"); }).catch(() => setItems([]));
@@ -85,6 +93,15 @@ export default function RadarPage() {
           <button type="button" onClick={add} disabled={busy || (!link.trim() && text.trim().length < 6)} style={{ ...btn, opacity: busy || (!link.trim() && text.trim().length < 6) ? 0.5 : 1 }}>{busy ? "Reading…" : "Add to Radar"}</button>
           <input value={where} onChange={(e) => { setWhere(e.target.value); try { localStorage.setItem("bm_radar_where", e.target.value); } catch { /* ignore */ } }} placeholder="Where are you? (e.g. Accra)" style={{ ...field, flex: "1 1 180px", width: "auto" }} aria-label="Where are you" />
         </div>
+        {auto && (
+          <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "var(--text-sm)", color: "var(--bm-text2)", lineHeight: 1.5 }}>
+            <input type="checkbox" checked={auto.enabled} onChange={(e) => setAutoSearch(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>
+              Search for me automatically, twice a week. New finds appear here marked "new" and you get a notification.
+              {auto.lastRunAt ? ` Last searched ${new Date(auto.lastRunAt).toLocaleDateString()}${auto.lastAdded ? `, found ${auto.lastAdded}` : ", nothing new that fit"}.` : ""}
+            </span>
+          </label>
+        )}
         {note && <p role="status" style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text2)" }}>{note}</p>}
         {ask && (
           <div role="group" aria-label="Confirm what this is" style={{ display: "grid", gap: 6 }}>

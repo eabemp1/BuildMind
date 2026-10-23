@@ -2148,7 +2148,7 @@ function TodayContent() {
         onLighten={() => handlePreTaskReplace({ reason: "no_motivation", mode: "shrink" })}
       />
       <div style={{ marginBottom: 12 }}>
-        <RadarBar signal={radar.signal} setup={radar.setup} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} />
+        <RadarBar signal={radar.signal} setup={radar.setup} auto={radar.auto} onAutoChange={radar.reload} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} />
       </div>
       <div className="mood-dim"><TomorrowCarry /></div>
       <div className="mood-dim"><FollowUpCard /></div>

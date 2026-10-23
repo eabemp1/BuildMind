@@ -62,6 +62,9 @@
     },
     "app/api/cron/maintain-founder-memory/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/radar-discover/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -132,6 +135,10 @@
     {
       "path": "/api/cron/milestone-stall",
       "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/radar-discover",
+      "schedule": "0 6 * * 2,3,5,6"
     }
   ]
 }

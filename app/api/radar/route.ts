@@ -44,7 +44,13 @@ export async function GET(request: Request) {
   const u = new URL(request.url);
   const { items, setup } = await listRadar(createAdminClient(), user.userId, { projectId: u.searchParams.get("projectId"), where: u.searchParams.get("where") ?? undefined });
   if (setup) return NextResponse.json({ ok: true, items: [], reason: "setup" });
-  return NextResponse.json({ ok: true, items: u.searchParams.get("today") ? todayPicks(items) : items });
+  let auto: { enabled: boolean; lastRunAt: string | null; lastAdded: number } = { enabled: true, lastRunAt: null, lastAdded: 0 };
+  try {
+    const { data } = await createAdminClient().from("radar_settings").select("auto_discover, last_auto_run_at, last_auto_added").eq("user_id", user.userId).maybeSingle();
+    const d = data as { auto_discover: boolean; last_auto_run_at: string | null; last_auto_added: number } | null;
+    if (d) auto = { enabled: d.auto_discover, lastRunAt: d.last_auto_run_at, lastAdded: d.last_auto_added };
+  } catch { /* defaults */ }
+  return NextResponse.json({ ok: true, items: u.searchParams.get("today") ? todayPicks(items) : items, auto });
 }
 
 export async function POST(request: Request) {
