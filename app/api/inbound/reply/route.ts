@@ -155,7 +155,13 @@ export async function POST(req: Request) {
     if (!same(req.headers.get("x-inbound-secret") ?? "", secret)) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
-    const parsed = Body.safeParse(JSON.parse(rawBody));
+    let legacyBody: unknown;
+    try {
+      legacyBody = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid payload." }, { status: 400 });
+    }
+    const parsed = Body.safeParse(legacyBody);
     if (!parsed.success) return NextResponse.json({ ok: true, counted: false, reason: "unreadable" });
     payload = parsed.data;
   }
