@@ -53,7 +53,7 @@ function privateHost(host: string): boolean {
   return false;
 }
 
-/** A tracked link may only point at a public https page that is not BuildMind itself (no redirect loops). */
+/** A tracked link may only point at a public https page. BuildMind's own pages are fine (founders promote BuildMind itself), except its tracking and API paths, which would loop or act. */
 export function validateTarget(raw: unknown): { ok: true; url: string } | { ok: false; reason: string } {
   const text = typeof raw === "string" ? raw.trim() : "";
   let u: URL;
@@ -61,7 +61,7 @@ export function validateTarget(raw: unknown): { ok: true; url: string } | { ok: 
   if (u.protocol !== "https:") return { ok: false, reason: "Use an https link." };
   if (u.username || u.password) return { ok: false, reason: "Remove the login details from that link." };
   if (privateHost(u.hostname)) return { ok: false, reason: "That link is not a public page." };
-  if (/(^|\.)buildmind\.live$/i.test(u.hostname)) return { ok: false, reason: "Link to your own page, not BuildMind." };
+  if (/(^|\.)buildmind\.live$/i.test(u.hostname) && /^\/(r|v|i|api)(\/|$)/i.test(u.pathname)) return { ok: false, reason: "That BuildMind address is a tracking or system link. Link to a page like your homepage instead." };
   if (text.length > 2000) return { ok: false, reason: "That link is too long." };
   return { ok: true, url: u.toString() };
 }

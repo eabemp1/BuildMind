@@ -32,7 +32,9 @@ describe("bots and visitors", () => {
 describe("validateTarget / validEmail", () => {
   it("allows only public https pages that are not BuildMind", () => {
     expect(validateTarget("https://my-startup.com/launch").ok).toBe(true);
-    for (const bad of ["http://a.com/x", "https://localhost/x", "https://10.0.0.1/x", "https://buildmind.live/today", "javascript:alert(1)", "not a url", "https://u:p@a.com/x"]) expect(validateTarget(bad).ok).toBe(false);
+    for (const own of ["https://buildmind.live", "https://www.buildmind.live/", "https://buildmind.live/try?utm_source=x"]) expect(validateTarget(own).ok).toBe(true);
+    for (const loop of ["https://buildmind.live/r/abcd2345", "https://buildmind.live/api/user/export", "https://www.buildmind.live/v/abcd2345", "https://buildmind.live/i/abcd2345"]) expect(validateTarget(loop).ok).toBe(false);
+    for (const bad of ["http://a.com/x", "https://localhost/x", "https://10.0.0.1/x", "javascript:alert(1)", "not a url", "https://u:p@a.com/x"]) expect(validateTarget(bad).ok).toBe(false);
   });
   it("validates emails", () => {
     expect(validEmail(" Kwame@Example.com ")).toBe("kwame@example.com");
@@ -75,3 +77,4 @@ describe("recordVisit", () => {
     expect(await recordVisit(fakeAdmin({ insertError: { code: "23505" } }), link, { ip: "1.1.1.1", ua: REAL_UA })).toBe(false);
   });
 });
+

@@ -18,11 +18,11 @@ const WAYS: Array<{ kind: Kind; title: string; when: string; counts: string }> =
   { kind: "inbound", title: "An email address for replies", when: "You are sending emails. Use this as the Reply-To, so replies are counted and forwarded to you.", counts: "Each different person who replies." },
 ];
 
-const card: React.CSSProperties = { background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: 18 };
-const box: React.CSSProperties = { background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8, padding: "10px 12px", color: "var(--bm-text)", fontSize: 14, width: "100%", minHeight: 42, fontFamily: "inherit" };
-const btn: React.CSSProperties = { minHeight: 40, padding: "0 14px", borderRadius: 8, border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)", fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" };
-const label: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 6 };
-const hint: React.CSSProperties = { fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.55, margin: "6px 0 0" };
+const card: React.CSSProperties = { background: "var(--bm-bg2)", borderRadius: 14, padding: "clamp(18px, 4vw, 28px)" };
+const box: React.CSSProperties = { background: "var(--bm-bg3)", border: "none", borderRadius: 10, padding: "12px 14px", color: "var(--bm-text)", fontSize: 15, width: "100%", minHeight: 46, fontFamily: "inherit" };
+const btn: React.CSSProperties = { minHeight: 42, padding: "0 16px", borderRadius: 10, border: "none", background: "var(--bm-bg3)", color: "var(--bm-text2)", fontSize: 14, cursor: "pointer", fontFamily: "inherit" };
+const label: React.CSSProperties = { display: "block", fontSize: 14, fontWeight: 600, color: "var(--bm-text)", marginBottom: 10 };
+const hint: React.CSSProperties = { fontSize: 13.5, color: "var(--bm-text3)", lineHeight: 1.6, margin: "10px 0 0" };
 
 function resultLine(l: LinkRow): string {
   if (l.kind === "link") return `${l.visits} ${l.visits === 1 ? "person has" : "people have"} opened it`;
@@ -100,7 +100,7 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
 
   if (!open) {
     return (
-      <div style={{ ...card, marginTop: 14 }}>
+      <div style={{ ...card, marginTop: 18 }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)" }}>{nudge ? "This task is about reaching people. Count what really happens." : "Count real responses instead of typing them"}</div>
         <p style={{ ...hint, marginTop: 6, fontSize: 13.5 }}>
           Put a BuildMind link in your message or post. BuildMind counts who actually opens it, signs up or replies, and fills in the result for you. Real numbers make your accuracy score trustworthy.
@@ -113,7 +113,7 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
   }
 
   return (
-    <div style={{ ...card, marginTop: 14, display: "grid", gap: 20 }}>
+    <div style={{ ...card, marginTop: 18, display: "grid", gap: 32 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)" }}>Count real responses</div>
@@ -122,7 +122,7 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
         <button type="button" onClick={() => setOpen(false)} style={{ ...btn, minHeight: 36, padding: "0 10px", border: "none" }}>Close</button>
       </div>
 
-      <ol style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 6, fontSize: 13.5, color: "var(--bm-text2)", lineHeight: 1.55 }}>
+      <ol style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 8, fontSize: 14, color: "var(--bm-text2)", lineHeight: 1.55 }}>
         <li><strong style={{ color: "var(--bm-text)" }}>Choose</strong> what you want to count.</li>
         <li><strong style={{ color: "var(--bm-text)" }}>Copy</strong> the link or address and put it in your message or post.</li>
         <li><strong style={{ color: "var(--bm-text)" }}>Come back</strong> later and write your reflection. BuildMind fills in the real numbers.</li>
@@ -130,12 +130,12 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
 
       <section aria-label="Choose what to count">
         <div style={label}>1. What do you want to count?</div>
-        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }} role="radiogroup">
+        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))" }} role="radiogroup">
           {WAYS.map((w) => {
             const on = mode === w.kind;
             return (
               <button key={w.kind} type="button" role="radio" aria-checked={on} onClick={() => setMode(w.kind)}
-                style={{ textAlign: "left", padding: 14, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: `1px solid ${on ? "var(--bm-accent)" : "var(--bm-border)"}`, background: on ? "var(--bm-accent-dim)" : "var(--bm-bg3)", color: "var(--bm-text)", display: "grid", gap: 6 }}>
+                style={{ textAlign: "left", padding: 18, borderRadius: 12, cursor: "pointer", fontFamily: "inherit", border: "none", background: on ? "var(--bm-accent-dim)" : "var(--bm-bg3)", color: "var(--bm-text)", display: "grid", gap: 8, boxShadow: on ? "inset 3px 0 0 var(--bm-accent)" : "none" }}>
                 <span style={{ fontSize: 14, fontWeight: 700 }}>{w.title}</span>
                 <span style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>{w.when}</span>
                 <span style={{ fontSize: 12.5, color: "var(--bm-text3)" }}>Counts: {w.counts}</span>
@@ -145,7 +145,7 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
         </div>
       </section>
 
-      <section aria-label="Details" style={{ display: "grid", gap: 14 }}>
+      <section aria-label="Details" style={{ display: "grid", gap: 22 }}>
         <div style={label}>2. {way.title}</div>
         {mode === "link" && (
           <div>
@@ -191,7 +191,7 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
               const on = sources.includes(src);
               return (
                 <button key={src} type="button" aria-pressed={on} onClick={() => setSources(mode === "confirm" ? (on ? [] : [src]) : on ? sources.filter((x) => x !== src) : [...sources, src])}
-                  style={{ ...btn, borderColor: on ? "var(--bm-accent)" : "var(--bm-border2)", color: on ? "var(--bm-accent)" : "var(--bm-text2)", background: on ? "var(--bm-accent-dim)" : "transparent" }}>
+                  style={{ ...btn, color: on ? "var(--bm-accent)" : "var(--bm-text2)", background: on ? "var(--bm-accent-dim)" : "var(--bm-bg3)", fontWeight: on ? 700 : 400 }}>
                   {SOURCE_LABELS[src]}
                 </button>
               );
@@ -212,9 +212,9 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
       {channels.length > 1 && (
         <section aria-label="Results by channel">
           <div style={label}>Which channel is working</div>
-          <div style={{ display: "grid", gap: 6 }}>
+          <div style={{ display: "grid", gap: 4 }}>
             {channels.map((c) => (
-              <div key={c.source} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5, color: "var(--bm-text2)", padding: "8px 0", borderTop: "1px solid var(--bm-border)" }}>
+              <div key={c.source} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 14, color: "var(--bm-text2)", padding: "10px 14px", background: "var(--bm-bg3)", borderRadius: 10 }}>
                 <span style={{ color: "var(--bm-text)", fontWeight: 600 }}>{c.source === "untagged" ? "No channel chosen" : SOURCE_LABELS[c.source]}</span>
                 <span style={{ textAlign: "right" }}>
                   {c.visits} opened · {c.signups} signed up{c.confirmations ? ` · ${c.confirmations} confirmed` : ""}{c.replies ? ` · ${c.replies} replied` : ""}
@@ -230,9 +230,9 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
         {!links && <p style={hint}>Loading...</p>}
         {links && links.length === 0 && <p style={hint}>Nothing yet. Make your first one above.</p>}
         {links && links.length > 0 && (
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 12 }}>
             {links.map((l) => (
-              <div key={l.code} style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: 14, display: "grid", gap: 8 }}>
+              <div key={l.code} style={{ background: "var(--bm-bg3)", borderRadius: 12, padding: 18, display: "grid", gap: 10 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: "var(--bm-accent)" }}>{KIND_NAME[l.kind]}{l.source ? ` · ${SOURCE_LABELS[l.source]}` : ""}</span>
                 </div>
@@ -241,8 +241,8 @@ export default function TrackedLinks({ projectId, suggestedSource, nudge }: { pr
                 </div>
                 <div style={{ fontSize: 13.5, color: "var(--bm-text2)" }}>{resultLine(l)}</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {(l.kind !== "inbound" || l.address) && <button type="button" style={btn} onClick={() => copy(l.path, l.address)}>{l.kind === "inbound" ? "Copy address" : "Copy link"}</button>}
-                  {l.kind === "interest" && l.signups > 0 && <button type="button" style={btn} onClick={() => showEmails(l.code)}>See the emails</button>}
+                  {(l.kind !== "inbound" || l.address) && <button type="button" style={{ ...btn, background: "var(--bm-bg2)" }} onClick={() => copy(l.path, l.address)}>{l.kind === "inbound" ? "Copy address" : "Copy link"}</button>}
+                  {l.kind === "interest" && l.signups > 0 && <button type="button" style={{ ...btn, background: "var(--bm-bg2)" }} onClick={() => showEmails(l.code)}>See the emails</button>}
                 </div>
                 {emails?.code === l.code && (
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--bm-text2)", overflowWrap: "anywhere", lineHeight: 1.6 }}>

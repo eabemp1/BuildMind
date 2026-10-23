@@ -12,7 +12,7 @@
   --bm-bg3:  #17171A;
   --bm-bg4:  #1E1E22;
   --bm-bg5:  #26262C;
-  --bm-border:  rgba(255,255,255,0.06);
+  --bm-border:  rgba(255,255,255,0.035);
   --bm-border2: rgba(255,255,255,0.10);
   --bm-border3: rgba(255,255,255,0.16);
   --bm-text:     #F0F0EE;
@@ -108,7 +108,7 @@
   --bm-bg3:  #EDEDEA;
   --bm-bg4:  #E3E3DF;
   --bm-bg5:  #D8D8D4;
-  --bm-border:  rgba(0,0,0,0.09);
+  --bm-border:  rgba(0,0,0,0.055);
   --bm-border2: rgba(0,0,0,0.14);
   --bm-border3: rgba(0,0,0,0.20);
   --bm-text:     #0D0D0C;
