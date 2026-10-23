@@ -10,6 +10,25 @@ export const MIN_GAP_DAYS = 2;
 export const MAX_USERS_PER_RUN = 30;
 export const RUN_BUDGET_MS = 100_000;
 
+export interface SubscriptionRow { user_id?: string; plan?: string | null; status?: string | null; current_period_end?: string | null; grace_period_ends_at?: string | null }
+
+/**
+ * Automatic searches cost search and AI credits, so they are for paying founders only: a Builder
+ * subscription that is active (or in its grace period) and not past its period end. Free users and
+ * trials are not included. Mirrors the rules in lib/server/plan.ts without its extra lookups.
+ */
+export function isPaidSubscription(row: SubscriptionRow | null | undefined, now: Date = new Date()): boolean {
+  if (!row || row.plan !== "builder") return false;
+  const status = String(row.status ?? "").toLowerCase();
+  if (status === "grace") {
+    const g = Date.parse(row.grace_period_ends_at ?? "");
+    return Number.isFinite(g) && g > now.getTime();
+  }
+  if (status !== "active") return false;
+  const end = Date.parse(row.current_period_end ?? "");
+  return !(Number.isFinite(end) && end <= now.getTime());
+}
+
 export interface AutoCandidate { user_id: string; auto_discover?: boolean | null; last_auto_run_at?: string | null }
 
 /** Oldest-searched first; never-searched founders go first; opted-out and recently searched founders are skipped. */

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isPaidSubscription } from "@/lib/radar/autoRun";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,8 @@ export async function GET() {
   if (!hasAdminEnv()) return NextResponse.json({ ok: true, auto: true, lastRunAt: null, lastAdded: 0 });
   const { data } = await createAdminClient().from("radar_settings").select("auto_discover, where_text, last_auto_run_at, last_auto_added").eq("user_id", user.userId).maybeSingle();
   const d = data as { auto_discover: boolean; where_text: string | null; last_auto_run_at: string | null; last_auto_added: number } | null;
-  return NextResponse.json({ ok: true, auto: d?.auto_discover ?? true, where: d?.where_text ?? "", lastRunAt: d?.last_auto_run_at ?? null, lastAdded: d?.last_auto_added ?? 0 });
+  const { data: sub } = await createAdminClient().from("subscriptions").select("plan, status, current_period_end, grace_period_ends_at").eq("user_id", user.userId).maybeSingle();
+  return NextResponse.json({ ok: true, paid: isPaidSubscription(sub), auto: d?.auto_discover ?? true, where: d?.where_text ?? "", lastRunAt: d?.last_auto_run_at ?? null, lastAdded: d?.last_auto_added ?? 0 });
 }
 
 export async function POST(request: Request) {

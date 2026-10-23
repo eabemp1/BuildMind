@@ -2,13 +2,14 @@
  * GET /api/cron/radar-discover - Radar looks for opportunities on its own, about twice a week.
  * Scheduled Tue/Wed/Fri/Sat (vercel.json); each founder is searched at most once every 2 days, opted-out
  * founders are skipped, and the run stops when its time budget is used (the next run continues).
- * Runs for founders who use Radar: those with at least one Radar item or a settings row.
+ * Runs for paying founders only (active Builder subscription) who use Radar: those with at least one
+ * Radar item or a settings row.
  */
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { runDiscovery } from "@/lib/radar/discoverRun";
-import { pickAutoRunUsers, MAX_USERS_PER_RUN, RUN_BUDGET_MS } from "@/lib/radar/autoRun";
+import { isPaidSubscription, pickAutoRunUsers, MAX_USERS_PER_RUN, RUN_BUDGET_MS } from "@/lib/radar/autoRun";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,14 +27,19 @@ export async function GET(request: Request) {
   const started = Date.now();
   const admin = createAdminClient();
 
-  const [itemsRes, settingsRes] = await Promise.all([
+  const [itemsRes, settingsRes, subsRes] = await Promise.all([
     admin.from("radar_items").select("user_id").order("created_at", { ascending: false }).limit(3000),
     admin.from("radar_settings").select("user_id, auto_discover, where_text, last_auto_run_at").limit(5000),
+    admin.from("subscriptions").select("user_id, plan, status, current_period_end, grace_period_ends_at").eq("plan", "builder").limit(10000),
   ]);
+  // Fail closed: if paid status cannot be read, search for nobody rather than for everybody.
+  if (subsRes.error) return NextResponse.json({ success: false, error: "Could not read subscriptions." }, { status: 503 });
+  const nowDate = new Date();
+  const paid = new Set(((subsRes.data ?? []) as Array<{ user_id: string; plan: string; status: string; current_period_end: string | null; grace_period_ends_at: string | null }>).filter((r) => isPaidSubscription(r, nowDate)).map((r) => r.user_id));
   if (settingsRes.error) return NextResponse.json({ success: false, error: "Radar settings table is missing. Run migration 20261023020000_radar_auto.sql." }, { status: 503 });
   type S = { user_id: string; auto_discover: boolean | null; where_text: string | null; last_auto_run_at: string | null };
   const settings = new Map(((settingsRes.data ?? []) as S[]).map((s) => [s.user_id, s]));
-  const ids = new Set<string>([...((itemsRes.data ?? []) as Array<{ user_id: string }>).map((r) => r.user_id), ...settings.keys()]);
+  const ids = new Set<string>([...((itemsRes.data ?? []) as Array<{ user_id: string }>).map((r) => r.user_id), ...settings.keys()].filter((id) => paid.has(id)));
   const due = pickAutoRunUsers([...ids].map((id) => ({ user_id: id, auto_discover: settings.get(id)?.auto_discover, last_auto_run_at: settings.get(id)?.last_auto_run_at })), new Date(), MAX_USERS_PER_RUN);
 
   let searched = 0, withNew = 0, added = 0, failed = 0;
@@ -59,5 +65,5 @@ export async function GET(request: Request) {
       }
     } catch { failed++; }
   }
-  return NextResponse.json({ success: true, due: due.length, searched, withNew, added, failed, ms: Date.now() - started });
+  return NextResponse.json({ success: true, paid: paid.size, due: due.length, searched, withNew, added, failed, ms: Date.now() - started });
 }

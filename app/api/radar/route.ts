@@ -11,6 +11,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitAsync } from "@/lib/server/rateLimit";
+import { isPaidSubscription } from "@/lib/radar/autoRun";
 import { extractDraft } from "@/lib/radar/extract";
 import { listRadar, todayPicks } from "@/lib/radar/store";
 import { typeOfKind, type RadarKind } from "@/lib/radar/types";
@@ -44,11 +45,13 @@ export async function GET(request: Request) {
   const u = new URL(request.url);
   const { items, setup } = await listRadar(createAdminClient(), user.userId, { projectId: u.searchParams.get("projectId"), where: u.searchParams.get("where") ?? undefined });
   if (setup) return NextResponse.json({ ok: true, items: [], reason: "setup" });
-  let auto: { enabled: boolean; lastRunAt: string | null; lastAdded: number } = { enabled: true, lastRunAt: null, lastAdded: 0 };
+  let auto: { enabled: boolean; lastRunAt: string | null; lastAdded: number; paid: boolean } = { enabled: true, lastRunAt: null, lastAdded: 0, paid: false };
   try {
     const { data } = await createAdminClient().from("radar_settings").select("auto_discover, last_auto_run_at, last_auto_added").eq("user_id", user.userId).maybeSingle();
     const d = data as { auto_discover: boolean; last_auto_run_at: string | null; last_auto_added: number } | null;
-    if (d) auto = { enabled: d.auto_discover, lastRunAt: d.last_auto_run_at, lastAdded: d.last_auto_added };
+    if (d) auto = { ...auto, enabled: d.auto_discover, lastRunAt: d.last_auto_run_at, lastAdded: d.last_auto_added };
+    const { data: sub } = await createAdminClient().from("subscriptions").select("plan, status, current_period_end, grace_period_ends_at").eq("user_id", user.userId).maybeSingle();
+    auto.paid = isPaidSubscription(sub);
   } catch { /* defaults */ }
   return NextResponse.json({ ok: true, items: u.searchParams.get("today") ? todayPicks(items) : items, auto });
 }

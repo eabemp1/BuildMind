@@ -16,17 +16,17 @@ export default function RadarPage() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [finding, setFinding] = useState(false);
-  const [auto, setAuto] = useState<{ enabled: boolean; lastRunAt: string | null; lastAdded: number } | null>(null);
+  const [auto, setAuto] = useState<{ enabled: boolean; lastRunAt: string | null; lastAdded: number; paid: boolean } | null>(null);
   const [feed, setFeed] = useState<{ url: string; webcal: string } | null>(null);
   const [feedNote, setFeedNote] = useState("");
   const [ask, setAsk] = useState<{ id: string; options: RadarKind[]; why: string } | null>(null);
 
   useEffect(() => { try { setWhere(localStorage.getItem("bm_radar_where") ?? ""); } catch { /* ignore */ } }, []);
   useEffect(() => {
-    fetch("/api/radar/settings").then((r) => r.json()).then((b) => { if (b?.ok) setAuto({ enabled: b.auto !== false, lastRunAt: b.lastRunAt ?? null, lastAdded: b.lastAdded ?? 0 }); }).catch(() => undefined);
+    fetch("/api/radar/settings").then((r) => r.json()).then((b) => { if (b?.ok) setAuto({ enabled: b.auto !== false, lastRunAt: b.lastRunAt ?? null, lastAdded: b.lastAdded ?? 0, paid: b.paid === true }); }).catch(() => undefined);
   }, []);
   async function setAutoSearch(enabled: boolean) {
-    setAuto((a) => ({ enabled, lastRunAt: a?.lastRunAt ?? null, lastAdded: a?.lastAdded ?? 0 }));
+    setAuto((a) => ({ enabled, lastRunAt: a?.lastRunAt ?? null, lastAdded: a?.lastAdded ?? 0, paid: a?.paid ?? false }));
     try { await fetch("/api/radar/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto: enabled, where: where.trim() }) }); } catch { /* shown state may be stale until reload */ }
   }
   const load = useCallback(() => {
@@ -95,9 +95,10 @@ export default function RadarPage() {
         </div>
         {auto && (
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "var(--text-sm)", color: "var(--bm-text2)", lineHeight: 1.5 }}>
-            <input type="checkbox" checked={auto.enabled} onChange={(e) => setAutoSearch(e.target.checked)} style={{ marginTop: 3 }} />
+            <input type="checkbox" checked={auto.paid && auto.enabled} disabled={!auto.paid} onChange={(e) => setAutoSearch(e.target.checked)} style={{ marginTop: 3 }} />
             <span>
               Search for me automatically, twice a week. New finds appear here marked "new" and you get a notification.
+              {!auto.paid ? " This is part of the paid plan." : ""}
               {auto.lastRunAt ? ` Last searched ${new Date(auto.lastRunAt).toLocaleDateString()}${auto.lastAdded ? `, found ${auto.lastAdded}` : ", nothing new that fit"}.` : ""}
             </span>
           </label>

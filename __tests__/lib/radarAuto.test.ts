@@ -43,3 +43,20 @@ describe("sinceLabel", () => {
     expect(sinceLabel("nope", now)).toBeNull();
   });
 });
+
+import { isPaidSubscription } from "@/lib/radar/autoRun";
+describe("isPaidSubscription", () => {
+  const future = new Date(now.getTime() + 5 * 86_400_000).toISOString();
+  const past = new Date(now.getTime() - 86_400_000).toISOString();
+  it("only an active builder subscription (or one in grace) counts", () => {
+    expect(isPaidSubscription({ plan: "builder", status: "active", current_period_end: future }, now)).toBe(true);
+    expect(isPaidSubscription({ plan: "builder", status: "active" }, now)).toBe(true); // legacy row without a period end
+    expect(isPaidSubscription({ plan: "builder", status: "active", current_period_end: past }, now)).toBe(false);
+    expect(isPaidSubscription({ plan: "builder", status: "grace", grace_period_ends_at: future }, now)).toBe(true);
+    expect(isPaidSubscription({ plan: "builder", status: "grace", grace_period_ends_at: past }, now)).toBe(false);
+    expect(isPaidSubscription({ plan: "builder", status: "trialing" }, now)).toBe(false);
+    expect(isPaidSubscription({ plan: "builder", status: "canceled" }, now)).toBe(false);
+    expect(isPaidSubscription({ plan: "free", status: "active" }, now)).toBe(false);
+    expect(isPaidSubscription(null, now)).toBe(false);
+  });
+});
