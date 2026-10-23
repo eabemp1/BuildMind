@@ -28,7 +28,7 @@ function same(a: string, b: string): boolean {
 const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
 
 export async function POST(req: Request) {
-  const secret = process.env.INBOUND_EMAIL_SECRET;
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) return NextResponse.json({ ok: false, error: "Inbound email is not set up." }, { status: 503 });
   if (!same(req.headers.get("x-inbound-secret") ?? "", secret)) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   const parsed = Body.safeParse(await req.json().catch(() => null));
