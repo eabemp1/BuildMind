@@ -7,7 +7,7 @@ Founders use `reply+<code>@YOUR_INBOUND_DOMAIN` as the Reply-To address on outre
 1. In Resend, open **Receiving Emails** and use a Resend-provided inbound address for a quick test, or configure a custom inbound domain such as `in.buildmind.live`. Add the DNS records Resend displays.
 2. In **Webhooks**, create an endpoint at `https://buildmind.live/api/inbound/reply` and select the `email.received` event.
 3. Add these production environment variables to the BuildMind deployment:
-   - `INBOUND_EMAIL_DOMAIN`: just the domain part of the receiving address, such as `in.buildmind.live` or `onte amyroi.resend.app` (without spaces; copy the exact Resend domain).
+   - `INBOUND_EMAIL_DOMAIN`: just the domain part of the receiving address, such as `in.buildmind.live` or `onteamvroi.resend.app` (copy the exact Resend domain).
    - `RESEND_WEBHOOK_SECRET`: the signing secret shown on the Resend webhook.
    - `RESEND_API_KEY`: a Resend API key. The webhook contains message metadata, so BuildMind uses this key to retrieve the received message, including its body and trusted SPF/DKIM results.
 4. Redeploy BuildMind. Send a new email to a generated `reply+<code>@INBOUND_EMAIL_DOMAIN` address and check the webhook attempt in Resend.
