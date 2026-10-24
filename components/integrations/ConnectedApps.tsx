@@ -5,6 +5,17 @@ import ConnectCard, { type KeyApp } from "@/components/integrations/ConnectCard"
 
 interface Status { searchConsole?: boolean; searchConsoleSite?: string | null; searchConsoleSites?: string[]; stripe?: boolean; github?: boolean; githubRepo?: string | null; needsReconnect?: { stripe?: boolean; github?: boolean; search_console?: boolean } }
 
+interface SeeRow { query: string; clicks: number; impressions: number; position: number }
+interface SeeState { state: string; site?: string; note?: string; summary?: { range: { start: string; end: string; }; asOf: string; topQueries: SeeRow[]; nearMisses: SeeRow[]; unclicked: SeeRow[] } }
+const SEE_MESSAGES: Record<string, string> = {
+  reconnect: "Google stopped accepting the saved access. Reconnect above.",
+  site_denied: "Google would not let BuildMind read this site. Pick another site above, or reconnect.",
+  no_site: "No site is selected yet.",
+  error: "Could not read Search Console just now. Try again in a minute.",
+  not_connected: "Search Console is not connected.",
+};
+const rowLine = (r: SeeRow) => `${r.query} · position ${r.position} · ${r.impressions} shown, ${r.clicks} clicked`;
+
 const NAMES: Record<KeyApp, { name: string; line: string }> = {
   stripe: { name: "Stripe", line: "Real revenue and subscribers for investor updates." },
   github: { name: "GitHub", line: "What you actually shipped, for updates, posts and demo scripts." },
@@ -27,6 +38,13 @@ export default function ConnectedApps() {
     load();
   }
   const scBad = Boolean(s.needsReconnect?.search_console);
+  const [seeOpen, setSeeOpen] = React.useState(false);
+  const [see, setSee] = React.useState<SeeState | null>(null);
+  React.useEffect(() => {
+    if (!seeOpen || !s.searchConsole) return;
+    setSee(null);
+    fetch("/api/integrations/search-console/summary").then((r) => (r.ok ? r.json() : null)).then((d) => setSee(d ?? { state: "error" })).catch(() => setSee({ state: "error" }));
+  }, [seeOpen, s.searchConsole, s.searchConsoleSite]);
   const flat: React.CSSProperties = { fontSize: "var(--text-xs)", fontWeight: 600, fontFamily: "inherit", cursor: "pointer", borderRadius: 8, padding: "6px 12px", border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)", textDecoration: "none", display: "inline-block" };
 
   return (
@@ -42,6 +60,33 @@ export default function ConnectedApps() {
             {s.searchConsole && <button type="button" onClick={() => remove("search_console" as KeyApp)} style={{ ...flat, border: "none", color: "var(--bm-text3)" }}>Disconnect</button>}
           </div>
         </div>
+        {s.searchConsole && s.searchConsoleSite && (
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)" }}>Reading: <span style={{ color: "var(--bm-text2)" }}>{s.searchConsoleSite}</span>{(s.searchConsoleSites?.length ?? 0) > 1 ? "" : " (the only site on this Google account)"}</div>
+        )}
+        {s.searchConsole && !scBad && (
+          <div>
+            <button type="button" aria-expanded={seeOpen} onClick={() => setSeeOpen(!seeOpen)} style={{ ...flat, border: "none", padding: "4px 0", color: "var(--bm-text3)" }}>{seeOpen ? "Hide" : "What BuildMind sees"} {seeOpen ? "▴" : "▾"}</button>
+            {seeOpen && (
+              <div style={{ display: "grid", gap: 8, marginTop: 6, fontSize: "var(--text-xs)", color: "var(--bm-text2)", lineHeight: 1.5 }}>
+                {!see && <div style={{ color: "var(--bm-text3)" }}>Reading your Search Console...</div>}
+                {see && !see.summary && <div>{SEE_MESSAGES[see.state] ?? SEE_MESSAGES.error}</div>}
+                {see?.summary && (
+                  <>
+                    <div style={{ color: "var(--bm-text3)" }}>{see.summary.range.start} to {see.summary.range.end}{see.state === "cached" ? ` · saved copy from ${see.summary.asOf.slice(0, 10)}, Google did not answer just now` : ""}</div>
+                    {see.note && <div>{see.note}</div>}
+                    {([["Almost ranking", see.summary.nearMisses], ["Seen but never clicked", see.summary.unclicked], ["Already getting clicks", see.summary.topQueries.filter((r) => r.clicks > 0).slice(0, 4)]] as Array<[string, SeeRow[]]>).filter(([, rows]) => rows.length).map(([title, rows]) => (
+                      <div key={title}>
+                        <div style={{ fontWeight: 600, color: "var(--bm-text)" }}>{title}</div>
+                        {rows.slice(0, 5).map((r) => <div key={r.query} style={{ color: "var(--bm-text3)" }}>{rowLine(r)}</div>)}
+                      </div>
+                    ))}
+                    <div style={{ color: "var(--bm-text3)" }}>These are used when today's task is an SEO task. They do not change which task you are given.</div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {s.searchConsole && (s.searchConsoleSites?.length ?? 0) > 1 && (
           <select value={s.searchConsoleSite ?? ""} onChange={(e) => chooseSite(e.target.value)} aria-label="Search Console site" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 8, padding: "6px 8px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-xs)" }}>
             {s.searchConsoleSites!.map((u) => <option key={u} value={u}>{u}</option>)}
