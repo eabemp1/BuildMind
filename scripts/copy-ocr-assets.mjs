@@ -8,7 +8,8 @@ const require = createRequire(import.meta.url);
 const out = path.resolve("public/ocr");
 try {
   const tess = path.dirname(require.resolve("tesseract.js/package.json"));
-  const core = path.dirname(require.resolve("tesseract.js-core/package.json"));
+  // tesseract.js-core is a dependency OF tesseract.js, so resolve it from there (works with npm, pnpm and yarn).
+  const core = path.dirname(createRequire(path.join(tess, "package.json")).resolve("tesseract.js-core/package.json"));
   const lang = path.join(path.dirname(require.resolve("@tesseract.js-data/eng/package.json")), "4.0.0_best_int");
   mkdirSync(path.join(out, "lang"), { recursive: true });
   cpSync(path.join(tess, "dist/worker.min.js"), path.join(out, "worker.min.js"));
