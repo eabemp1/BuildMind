@@ -61,6 +61,7 @@ import { shouldTriggerRiskInterrupt, type ChurnRiskAssessment } from "@/lib/risk
 import { ContextAlignmentCard } from "./components/ContextAlignmentCard";
 import { IntelligenceUnavailableCard } from "./components/IntelligenceUnavailableCard";
 import { useUIMode } from "@/lib/uiMode";
+import Fold from "@/components/today/Fold";
 import { WhyThisPanel } from "./components/WhyThisPanel";
 import { UIModeToggle } from "@/components/ui/UIModeToggle";
 import { RadialGauge } from "@/components/charts/RadialGauge";
@@ -2142,16 +2143,31 @@ function TodayContent() {
           recommendation is tucked behind the evening pill. */}
       {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
 
-      <div className="mood-secondary"><CompanionBrief /></div>
       <EnergyCheck
         inferredNote={actionData?.intelligence?.capacity?.note ?? null}
         onLighten={() => handlePreTaskReplace({ reason: "no_motivation", mode: "shrink" })}
       />
+      {/* Last night's own first move stays visible in both modes. */}
+      {uiMode === "pro" ? null : <div className="mood-dim"><TomorrowCarry /></div>}
+      {/* Lite (the default) keeps the task first: the other daily cards sit behind one quiet row. Pro shows them in place. */}
+      {uiMode === "pro" ? (
+        <>
+      <div className="mood-secondary"><CompanionBrief /></div>
       <div style={{ marginBottom: 12 }}>
         <RadarBar signal={radar.signal} setup={radar.setup} auto={radar.auto} onAutoChange={radar.reload} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} />
       </div>
       <div className="mood-dim"><TomorrowCarry /></div>
       <div className="mood-dim"><FollowUpCard /></div>
+        </>
+      ) : (
+        <Fold label="Also today" storageKey="bm_today_also_open">
+      <div className="mood-secondary"><CompanionBrief /></div>
+      <div style={{ marginBottom: 12 }}>
+        <RadarBar signal={radar.signal} setup={radar.setup} auto={radar.auto} onAutoChange={radar.reload} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} />
+      </div>
+      <div className="mood-dim"><FollowUpCard /></div>
+        </Fold>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════
           ACTION CARD — first real content block (task-first layout)
