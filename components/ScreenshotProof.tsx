@@ -49,7 +49,8 @@ export default function ScreenshotProof({ onUse }: { onUse: (r: ScreenshotResult
       } finally {
         await worker.terminate().catch(() => undefined);
       }
-    } catch {
+    } catch (err) {
+      console.error("[ocr] screenshot reading failed:", err);
       setState("error");
       setMsg("Reading screenshots is not available right now. Paste the link or the text instead.");
     }
