@@ -31,7 +31,8 @@
  * with founder_context, so they cannot drift.
  */
 
-import { streakStatus } from "@/lib/streak";
+import { streakStatus, streakDayKey } from "@/lib/streak";
+import { loadQuietDays } from "@/lib/server/quietDaysStore";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { momentumLabel, isMomentumDecaying, computeMomentumTrendFromDelta } from "@/lib/momentum";
 // computeStartupScore is no longer imported here — see the FIX comment
@@ -100,7 +101,9 @@ export async function getFounderScorecard(
     .limit(1)
     .maybeSingle();
 
-  const streakInfo = streakStatus(ctx?.streak, ctx?.last_checkin_date);
+  // Quiet days (a chosen rest day) do not break the streak; tolerant of the column not existing yet.
+  const quietDays = await loadQuietDays(admin, userId, streakDayKey());
+  const streakInfo = streakStatus(ctx?.streak, ctx?.last_checkin_date, undefined, quietDays);
   const raw = {
     momentum:             ctx?.momentum_score ?? DEFAULT_SCORECARD.momentum,
     streak:               streakInfo.count,

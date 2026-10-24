@@ -51,7 +51,7 @@ function KitResult({ result, blurred = false }: { result: typeof SAMPLE_RESULT; 
         <div style={label}>Name suggestions</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {result.names.map(n => (
-            <div key={n} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border2)", background: "var(--bm-bg3)", fontSize: 13, fontWeight: 500, color: "var(--bm-text)" }}>{n}</div>
+            <div key={n} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", fontSize: 13, fontWeight: 500, color: "var(--bm-text)" }}>{n}</div>
           ))}
         </div>
       </div>
@@ -121,7 +121,7 @@ function FreeTeaserView({ onUpgrade }: { onUpgrade: () => void }) {
       {/* Locked input */}
       <div style={{ ...card, opacity: 0.5, position: "relative", pointerEvents: "none" }}>
         <div style={label}>Your idea</div>
-        <div style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "10px 12px", fontSize: 13, color: "var(--bm-text4)", fontFamily: "monospace", minHeight: 64, display: "flex", alignItems: "center" }}>
+        <div style={{ width: "100%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 12px", fontSize: 13, color: "var(--bm-text4)", fontFamily: "monospace", minHeight: 64, display: "flex", alignItems: "center" }}>
           e.g. AI tool that gives solo founders one clear task every morning
         </div>
       </div>

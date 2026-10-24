@@ -1,3 +1,5 @@
+import { usersQuietToday } from "@/lib/server/quietDaysStore";
+import { shouldSendNudge } from "@/lib/nudgeBackoff";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
@@ -149,6 +151,7 @@ export async function GET(req: NextRequest) {
   let eligible = 0;
   let skippedFree = 0;
   let skippedReflected = 0;
+  let skippedBackoff = 0;
   let sent = 0;
   let failed = 0;
   const failedDetails: Array<{ userId: string; error: string }> = [];
@@ -218,7 +221,9 @@ export async function GET(req: NextRequest) {
     (contexts ?? []).forEach((row: { user_id: string }) => activeUserIds.add(row.user_id));
     (projects ?? []).forEach((row: { user_id: string }) => usersWithProjects.add(row.user_id));
   }
-  const actionableUserIds = uniqueUserIds.filter((userId) => activeUserIds.has(userId) && usersWithProjects.has(userId));
+  // A founder resting today (a chosen quiet day) gets no nudge.
+  const restingToday = await usersQuietToday(supabase, uniqueUserIds, new Date().toISOString().slice(0, 10));
+  const actionableUserIds = uniqueUserIds.filter((userId) => activeUserIds.has(userId) && usersWithProjects.has(userId) && !restingToday.has(userId));
 
   if (actionableUserIds.length === 0) {
     return NextResponse.json({ skipped: true, reason: "no records", processed: 0, total: totalRows, durationMs: Date.now() - start });
@@ -409,6 +414,12 @@ export async function GET(req: NextRequest) {
 
     // Derived from real activity dates; the stored counter is only a fallback.
     const daysInactive = Math.max(1, daysSinceLastActivity(ctx) ?? (ctx?.days_inactive ?? 0) + 1);
+    // The longer someone has been quiet, the less often we nudge (lib/nudgeBackoff.ts).
+    if (!shouldSendNudge(daysInactive)) {
+      skippedBackoff += 1;
+      await supabase.from("founder_context").update({ days_inactive: daysInactive }).eq("user_id", row.user_id);
+      continue;
+    }
     const cleanAvoidance = sanitizeAvoidanceZones(memory?.avoidance_zones, 5);
 
     // Pattern Detection — Playbook §3.2: fires automatically every evening
@@ -552,6 +563,7 @@ export async function GET(req: NextRequest) {
     eligible,
     skippedFree,
     skippedReflected,
+    skippedBackoff,
     sent,
     failed,
     processed: eligible,

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
+import ScreenshotProof from "@/components/ScreenshotProof";
 import { SIGNAL_KINDS, SIGNAL_LABELS, type SignalKind } from "@/lib/outcomeSignal";
 
 export type SignalValue = { kind: SignalKind | null; count: number; proof?: string };
@@ -84,6 +85,7 @@ export function SignalPicker({ value, onChange }: { value: SignalValue; onChange
             placeholder="https://... or the text of the reply"
             className="mt-1.5 w-full rounded-[var(--r-md)] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-2.5 py-2 text-sm text-[var(--bm-text)]"
           />
+          <ScreenshotProof onUse={(r) => onChange({ kind: r.kind && (!value.kind || value.kind === "none" || value.kind === r.kind || value.kind === "other") ? r.kind : value.kind, count: r.kind && r.count && (!value.kind || value.kind === "none" || value.kind === r.kind) ? r.count : value.count, proof: r.proof })} />
           {isReddit && (
             <div className="mt-2">
               <button type="button" onClick={checkReddit} disabled={checking} className="min-h-9 rounded-[var(--r-md)] border border-[var(--bm-border)] px-3 text-sm text-[var(--bm-text2)]">

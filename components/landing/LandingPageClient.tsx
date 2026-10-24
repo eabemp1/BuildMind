@@ -169,7 +169,7 @@ function ReflexionPipelineDemo() {
       className="html-soft-panel"
       style={{
         background: "var(--bm-bg2)",
-        border: "1px solid var(--bm-border2)",
+        border: "1px solid var(--bm-border)",
         borderRadius: 18,
         overflow: "hidden",
       }}
@@ -558,7 +558,7 @@ function HeroMockup() {
         {/* View toggle */}
         <div
           className="flex h-6 overflow-hidden rounded-md mx-auto sm:mx-4"
-          style={{ border: "1px solid var(--bm-border2)", background: "var(--bm-bg3)" }}
+          style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}
         >
           {(["before", "after"] as const).map((v) => (
             <button
@@ -716,7 +716,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center px-3 py-5 sm:px-6" style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)" }}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-[var(--r-xl)]" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-[var(--r-xl)]" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)" }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--bm-border)" }}>
           <div>
             <div className="text-xs font-bold uppercase tracking-widest text-[var(--bm-accent)]">2-minute demo</div>

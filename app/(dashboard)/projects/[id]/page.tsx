@@ -419,7 +419,7 @@ function EditProjectModal({
         exit={{ opacity: 0, scale: 0.96 }}
         transition={{ duration: 0.18 }}
         className="w-full max-w-md rounded-[var(--r-xl)] p-5 sm:p-7 flex flex-col gap-5"
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)" }}
       >
         <div className="flex items-start justify-between">
           <div>
@@ -1257,7 +1257,7 @@ export default function ProjectDetailPage() {
             {stagePickerOpen && (
               <div style={{
                 position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
-                background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)",
+                background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
                 borderRadius: 10, padding: "6px 0", minWidth: 160,
                 boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
               }}>

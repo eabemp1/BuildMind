@@ -15,7 +15,8 @@
  * SERVER-SIDE ONLY — imports server-only libs (admin client, cognition).
  */
 
-import { buildFounderState, stateNote, type EnergyChoice, type FounderState as CapacityState } from "@/lib/founderState";
+import { founderStatePromptBlock, type FounderState as CapacityState } from "@/lib/founderState";
+import { loadFounderState } from "@/lib/server/founderStateLoad";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
@@ -93,6 +94,8 @@ export interface TodayActionContext {
     activeGoals: string[];
     ledger?: import("@/lib/today/facts").Ledger;
     factsBlock?: string;
+    recovery?: import("@/lib/recommendationRecovery").RecoveryAssessment;
+    recoveryBlock?: string;
   };
   founderIntelligence: FounderIntelligenceState | null;
   intelligenceSummary: (ReturnType<typeof summarizeFounderIntelligenceForClient> & { recommendation_id?: string | null }) | undefined;
@@ -464,23 +467,9 @@ export async function loadTodayActionContext(params: {
 
   // ── 7b. Founder state: how they're doing right now ─────────────────────
   try {
-    const { data: energyRow } = await supabase
-      .from("user_behavior_state")
-      .select("value")
-      .eq("user_id", userId)
-      .eq("key", "founder_energy")
-      .maybeSingle();
-    const storedEnergy = energyRow?.value as { level?: EnergyChoice; at?: string } | null;
-    const age = storedEnergy?.at ? Date.now() - Date.parse(storedEnergy.at) : Number.POSITIVE_INFINITY;
-    const currentEnergy = age >= 0 && age <= 6 * 60 * 60 * 1000 ? storedEnergy?.level : undefined;
-    const energyLoad = currentEnergy === "wiped" ? "autopilot"
-      : currentEnergy === "low" ? "drained"
-      : currentEnergy === "fresh" || currentEnergy === "ok" ? "fresh"
-      : ctx.cognitionCognitiveLoad;
-    ctx.founderState = buildFounderState({ cognitiveLoad: energyLoad, clientHour });
-    // Keep the strongest capacity signal aligned with Reflexion's vocabulary.
-    if (ctx.founderState?.level === "low") ctx.cognitionCognitiveLoad = "drained";
-    else if (ctx.founderState?.level === "depleted") ctx.cognitionCognitiveLoad = "autopilot";
+    ctx.founderState = await loadFounderState(supabase, userId, { clientHour });
+    // The worse of the stored value and the live state wins.
+    if (ctx.founderState.load !== "fresh") ctx.cognitionCognitiveLoad = ctx.founderState.load;
   } catch (err) {
     logError("todayActionContext/founderState", err, { userId });
   }
@@ -491,7 +480,7 @@ export async function loadTodayActionContext(params: {
     ctx.founderIntelligencePromptBlock = buildFounderIntelligencePromptBlock(ctx.founderIntelligence);
     const agentBlock = agentPromptBlock(ctx.founderIntelligence.agent_evidence);
     if (agentBlock) ctx.founderIntelligencePromptBlock += `\n\n${agentBlock}`;
-    const stateBlock = stateNote(ctx.founderState);
+    const stateBlock = founderStatePromptBlock(ctx.founderState);
     if (stateBlock) ctx.founderIntelligencePromptBlock += `\n\n${stateBlock}`;
     ctx.founderIntelligencePromptBlock += `\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(ctx.founderIntelligence))}`;
     ctx.intelligenceSummary = summarizeFounderIntelligenceForClient(ctx.founderIntelligence);

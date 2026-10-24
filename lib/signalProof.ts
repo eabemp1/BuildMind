@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 
 export interface ProofCheck {
   ok: boolean;
-  kind?: "url" | "text";
+  kind?: "url" | "text" | "image";
   /** Stored for audit. URLs have tracking parameters and fragments removed. */
   normalized?: string;
   /** Same evidence, same hash: used to refuse reusing one proof for several tasks. */
@@ -52,6 +52,14 @@ export function checkProof(raw: unknown, taskText = ""): ProofCheck {
     for (const k of [...u.searchParams.keys()]) if (/^(utm_|fbclid|gclid|ref$)/i.test(k)) u.searchParams.delete(k);
     const normalized = u.toString();
     return { ok: true, kind: "url", normalized, hash: sha(`url:${normalized.toLowerCase()}`) };
+  }
+
+  // A screenshot read on the founder's device: "Screenshot <16 hex>: ...". The picture's fingerprint is the identity,
+  // so the same picture cannot back two tasks even if the words read from it differ slightly.
+  const shot = text.match(/^Screenshot ([a-f0-9]{16}): ([\s\S]+)$/);
+  if (shot) {
+    if (shot[2].replace(/[^a-z0-9]/gi, "").length < 25) return { ok: false, reason: "That screenshot could not be read well enough. Try a clearer one or paste the link." };
+    return { ok: true, kind: "image", normalized: text.slice(0, 500), hash: sha(`img:${shot[1]}`) };
   }
 
   if (text.length < MIN_TEXT) return { ok: false, reason: `Paste the reply itself (at least ${MIN_TEXT} characters) or a link to it.` };

@@ -70,7 +70,7 @@ export default function CoachPane({ req }: { req: CoachReq }) {
     try {
       const res = await fetch("/api/ai/coach", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, projectId: project.id, message: msg, project, overview, memory: [], personality: "direct", messages: history, action: opts?.action }),
+        body: JSON.stringify({ userId, projectId: project.id, clientHour: new Date().getHours(), message: msg, project, overview, memory: [], personality: "direct", messages: history, action: opts?.action }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Coach unavailable");
@@ -123,7 +123,7 @@ export default function CoachPane({ req }: { req: CoachReq }) {
         )}
         {messages.map((m) => {
           if (m.role === "user") {
-            return <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "88%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "16px 16px 4px 16px", padding: "8px 12px", fontSize: 13.5, lineHeight: 1.5, color: "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.content}</div>;
+            return <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "88%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "16px 16px 4px 16px", padding: "8px 12px", fontSize: 13.5, lineHeight: 1.5, color: "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.content}</div>;
           }
           const parsed = m.pending || m.error ? { text: m.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] } : parseReplyLinks(m.content);
           return (

@@ -101,7 +101,9 @@ export async function middleware(request: NextRequest) {
   const devConnectSources = isDev ? " http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*" : "";
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${devScriptSources}`,
+    // 'wasm-unsafe-eval' lets the on-device screenshot reader (WebAssembly) run. It does not allow eval() of strings.
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${devScriptSources}`,
+    "worker-src 'self' blob:",
     // This app intentionally uses React style attributes throughout the UI.
     // Do not pair a style nonce with 'unsafe-inline': CSP3 browsers ignore
     // 'unsafe-inline' when a nonce is present, which breaks those style attrs.
@@ -399,6 +401,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|monitoring|favicon.ico|sw.js|manifest.json|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|webp|ico|mp4|webm|mov|m4v)$).*)",
+    "/((?!_next/static|_next/image|monitoring|ocr/|favicon.ico|sw.js|manifest.json|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|webp|ico|mp4|webm|mov|m4v)$).*)",
   ],
 };

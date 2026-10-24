@@ -3,10 +3,15 @@ import { distinctByAction, isShownTaskRow } from "@/lib/recommendationRows";
 import { buildLedger, factsPromptBlock, type Ledger } from "@/lib/today/facts";
 import { loopsPromptBlock, partitionLoops, type Loop } from "@/lib/today/loops";
 import { radarPromptBlock } from "@/lib/radar/store";
+import { assessRecovery, shownFromLog, recoveryPromptBlock, type RecoveryAssessment, type LogRow } from "@/lib/recommendationRecovery";
 
 export interface TodayPersonalisationContext {
   /** Last 7 actions shown (from reflexion_learning_log), formatted for prompt injection */
   recentActionsBlock: string;
+  /** Repeat history of tasks shown on Today (a task that keeps coming back is one task with many days). */
+  recovery?: RecoveryAssessment;
+  /** Prompt text telling the generator how to recover a stalled task ("" when nothing is stalled). */
+  recoveryBlock?: string;
   /** Last 5 reflections with rich fields, formatted for prompt injection */
   recentReflectionsBlock: string;
   /** Recurring blockers extracted from reflections.blocker column */
@@ -52,7 +57,7 @@ export async function buildTodayPersonalisationContext(
     const [actionsResult, reflectionsResult, milestonesResult, ledgerResult, feedbackResult, loopsResult] = await Promise.allSettled([
       supabase
         .from("reflexion_learning_log")
-        .select("action_shown, stage, created_at, outcome, session_id, critic_persona, prediction_source")
+        .select("action_shown, stage, created_at, outcome, session_id, critic_persona, prediction_source, blocked_at, blocked_reason, skipped_at, replaced_by")
         .eq("user_id", userId)
         .or(`project_id.eq.${projectId},project_id.is.null`)
         .order("created_at", { ascending: false })
@@ -61,7 +66,7 @@ export async function buildTodayPersonalisationContext(
         // below. Taking the newest 7 raw rows meant the "recent tasks" window
         // (and the mission planner's fatigue + outcome logic built on it) was
         // mostly not Today tasks at all.
-        .limit(60),
+        .limit(150),
 
       supabase
         .from("reflections")
@@ -113,7 +118,11 @@ export async function buildTodayPersonalisationContext(
       actionsResult.status === "fulfilled" ? (actionsResult.value.data ?? []) : [];
     // Only tasks the founder was actually shown on Today, one entry per distinct
     // task (a task regenerated several times is still one task), newest first.
-    const actions = distinctByAction(rawActions.filter((r) => isShownTaskRow(r))).slice(0, 7);
+    const shownRows = rawActions.filter((r) => isShownTaskRow(r));
+    // The list below collapses repeats on purpose; recovery reads the same rows BEFORE that, so a task that
+    // came back on many different days is still seen as one task with a long history.
+    const recovery = assessRecovery(shownFromLog(shownRows as LogRow[]));
+    const actions = distinctByAction(shownRows).slice(0, 7);
     const recentActionsBlock =
       actions.length === 0
         ? ""
@@ -176,6 +185,8 @@ export async function buildTodayPersonalisationContext(
 
     return {
       recentActionsBlock,
+      recovery,
+      recoveryBlock: recoveryPromptBlock(recovery),
       recentReflectionsBlock,
       recurringBlockers,
       activeGoals,

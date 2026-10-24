@@ -2096,7 +2096,7 @@ function TodayContent() {
           animate={{ opacity: 1, y: 0 }}
           style={{
             background: "var(--bm-bg2)",
-            border: "1px solid var(--bm-border2)",
+            border: "1px solid var(--bm-border)",
             borderRadius: 12,
             padding: isMobile ? 18 : 22,
             marginBottom: 14,
@@ -2201,7 +2201,7 @@ function TodayContent() {
             </div>
 
             {/* Draft skeleton */}
-            <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px" }}>
               <div style={{ height: 10, width: 110, borderRadius: 4, background: "var(--bm-bg4)", marginBottom: 12, animation: "bm-pulse 1.4s ease-in-out infinite" }} />
               <div style={{ height: 80, borderRadius: 9, background: "var(--bm-bg4)", animation: "bm-pulse 1.4s ease-in-out infinite 0.1s" }} />
             </div>
@@ -2432,7 +2432,7 @@ function TodayContent() {
 
           {/* ── Message template — pre-filled with real project values ── */}
           {hideLegacy ? null : noDraft ? (
-            <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: "var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
+            <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-xl)", padding: "var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
               {actionData.missionLabel && (
                 <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>
                   Today is a {actionData.missionLabel.toLowerCase()} day{actionData.missionReasons?.[0] ? `: ${actionData.missionReasons[0]}` : ""}
@@ -2452,7 +2452,7 @@ function TodayContent() {
               )}
             </div>
           ) : (
-          <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
+          <div ref={executionScriptRef} style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-xl)", padding: isMobile ? "var(--space-4)" : "var(--space-4) var(--space-4)" }}>
             <div style={{ display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", marginBottom: "var(--space-2)", gap: "var(--space-2)", flexDirection: isMobile ? "column" : "row" }}>
               <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 {isOutreachAction ? "Execution draft" : "Execution script"}

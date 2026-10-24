@@ -52,6 +52,8 @@ export interface MissionSignals {
   /** Decision-layer candidate id (lib/founderIntelligence.ts), used as a nudge, not an override. */
   candidateId?: string | null;
   excludeAction?: string;
+  /** How a task that keeps coming back should be recovered (lib/recommendationRecovery.ts). */
+  recoveryMode?: "continue" | "shrink" | "clarify" | "unblock" | "alternative" | "reconsider" | null;
 }
 
 export interface MissionRequires {
@@ -250,6 +252,11 @@ export function planTodayMission(s: MissionSignals): Mission {
     reasons.push("No recent task put you in front of a real person.");
   }
 
+  // 2b. A task that keeps returning: shrink it, name the blocker, or turn it into a decision.
+  if (s.recoveryMode === "shrink" || s.recoveryMode === "clarify") { bump("unblock", 3); reasons.push("A task has come back several days running, so today's version is smaller and clearer."); }
+  else if (s.recoveryMode === "unblock") { bump("unblock", 4); reasons.push("Something you named is in the way of a repeated task, so that comes first."); }
+  else if (s.recoveryMode === "reconsider") { bump("analyze", 3); reasons.push("A task has returned for days without moving, so today is a quick decision about whether it still matters."); }
+
   // 3. What happened last time.
   const last = recent[0];
   const lastKind = recentKinds[0];
@@ -383,6 +390,8 @@ export interface QualityContext {
   avoidance?: string[];
   activeGoals?: string[];
   recentTasks: RecentTask[];
+  /** Tasks that keep coming back (lib/recommendationRecovery.ts). A restated repeat of one is a hard fail. */
+  stalled?: Array<Pick<import("@/lib/recommendationRecovery").TaskCluster, "action" | "mode">>;
 }
 
 export interface QualityResult {
@@ -420,10 +429,16 @@ export function assessTaskQuality(c: CandidateTask, mission: Mission, ctx: Quali
   if (GENERIC_RE.test(task)) hard.push("generic");
   if (PLACEHOLDER_RE.test(task) || PLACEHOLDER_RE.test(c.draft ?? "")) hard.push("placeholder");
   if (!c.done_when || c.done_when.trim().length < 8) hard.push("no_done_when");
-  for (const rule of guardRules(task, ctx.ledger, c.draft)) hard.push(rule);
+  for (const rule of guardRules(task, ctx.ledger, c.draft, ctx.stalled)) hard.push(rule);
 
   for (const r of ctx.recentTasks.slice(0, 8)) {
-    if (similarity(task, r.text) >= 0.55) { hard.push("repeat"); break; }
+    if (similarity(task, r.text) >= 0.55) {
+      // A deliberate recovery version of a stalled task (smaller, clearer, unblocked) is allowed to resemble it;
+      // the stalled-task guard above already rejects an unchanged restatement.
+      const recovering = (ctx.stalled ?? []).some((st) => st.mode && st.mode !== "continue" && similarity(r.text, st.action) >= 0.55);
+      if (recovering && !hard.includes("repeats_stalled_task")) continue;
+      hard.push("repeat"); break;
+    }
   }
 
   const req = mission.requires;
@@ -463,6 +478,7 @@ const REASON_TEXT: Record<string, string> = {
   placeholder: "Contains a [placeholder] that the founder would have to fill in.",
   no_done_when: "Missing a clear 'done when' condition.",
   repeat: "Too similar to a recent task.",
+  repeats_stalled_task: "Repeats a task that has already been on Today for days. Make it smaller, clearer, unblock it, or turn it into a decision.",
   template_leak: "Contains template text (e.g. 'Not specified yet', 'No confirmed evidence', '(Myself)') instead of a real value.",
   open_ended_search: "Asks the founder to find a community/group without naming one. Name a specific place and the exact message.",
   contradicts_fact: "Contradicts something the founder said in a reflection (e.g. assumes users they said they don't have).",

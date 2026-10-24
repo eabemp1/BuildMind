@@ -30,6 +30,8 @@
  * Reject any request that fails verification.
  */
 
+import { usersQuietToday } from "@/lib/server/quietDaysStore";
+import { shouldSendNudge } from "@/lib/nudgeBackoff";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
@@ -153,6 +155,13 @@ export async function POST(req: NextRequest) {
 
   const daysInactive = Math.max(1, daysSinceLastActivity(ctx) ?? (ctx?.days_inactive ?? 0) + 1);
 
+  // Same quiet-day and back-off rules as the inline path (lib/quietDays.ts, lib/nudgeBackoff.ts).
+  const resting = await usersQuietToday(supabase, [userId], new Date().toISOString().slice(0, 10));
+  if (resting.has(userId)) return NextResponse.json({ ok: true, userId, skipped: "quiet_day", processed: 1, durationMs: Date.now() - start });
+  if (!shouldSendNudge(daysInactive)) {
+    await supabase.from("founder_context").update({ days_inactive: daysInactive }).eq("user_id", userId);
+    return NextResponse.json({ ok: true, userId, skipped: "backoff", processed: 1, durationMs: Date.now() - start });
+  }
   const body = eveningNudge(daysInactive);
 
   await supabase.from("founder_context").update({ days_inactive: daysInactive }).eq("user_id", userId);

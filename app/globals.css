@@ -272,7 +272,7 @@ body {
 .bm-hero-window {
   position: relative;
   z-index: 1;
-  border: 1px solid var(--bm-border2);
+  border: 1px solid var(--bm-border);
   border-radius: var(--r-xl);
   /* Was solid var(--bm-bg2), which fully occluded the fixed WorldCanvas
      sitting behind it — the hero rendered as a flat opaque card with the

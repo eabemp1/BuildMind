@@ -553,6 +553,7 @@ export async function POST(request: Request) {
           isLowConfidence,
           candidateId: founderIntelligence?.decision.top_candidate?.id ?? null,
           excludeAction,
+          recoveryMode: personalisationCtx.recovery?.top?.mode ?? null,
         });
         // Importance-preserving swap (lib/today/swap.ts).
         const swapHistory = excludeAction ? await loadSwapHistory(hasAdminEnv() ? createAdminClient() : null, userId) : [];
@@ -566,6 +567,7 @@ export async function POST(request: Request) {
         const missionBlock = [
           missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers }),
           swapPlan ? [swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n") : "",
+          personalisationCtx.recoveryBlock ?? "",
         ].filter(Boolean).join("\n\n");
         const kindFallback = fallbackForKind(
           mission.kind,
@@ -580,6 +582,7 @@ export async function POST(request: Request) {
           avoidance: cognitionAvoidanceSignals,
           activeGoals: personalisationCtx.activeGoals,
           recentTasks,
+          stalled: personalisationCtx.recovery?.stalled ?? [],
         };
         emit("mission", { kind: mission.kind, label: mission.label, minutes: mission.minutes, reasons: mission.reasons, grounded: grounding.length });
 

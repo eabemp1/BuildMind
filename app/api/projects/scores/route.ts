@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { computeStartupScore } from "@/lib/buildmind";
 import { getCanonicalStage } from "@/lib/stages";
-import { effectiveStreak } from "@/lib/streak";
+import { effectiveStreak, streakDayKey } from "@/lib/streak";
+import { loadQuietDays } from "@/lib/server/quietDaysStore";
 
 /**
  * app/api/projects/scores/route.ts — NEW
@@ -80,6 +81,8 @@ export async function GET(request: Request) {
       founderContext = founderContextWithXp.data ?? null;
     }
 
+    const quietDays = await loadQuietDays(admin, user.id, streakDayKey());
+
     for (const project of projects ?? []) {
       const pMilestones = milestones.filter((m) => m.project_id === project.id);
       const pTasks = tasks.filter((t) =>
@@ -96,7 +99,7 @@ export async function GET(request: Request) {
         execution_score: project.execution_score ?? 0,
         momentum_score: founderContext?.momentum_score ?? project.momentum_score ?? 50,
         xp: founderContext?.xp ?? 0,
-        streak: effectiveStreak(founderContext?.streak, founderContext?.last_checkin_date),
+        streak: effectiveStreak(founderContext?.streak, founderContext?.last_checkin_date, undefined, quietDays),
       });
 
       // Fix #15: canonical stage — always use startup_stage from DB first

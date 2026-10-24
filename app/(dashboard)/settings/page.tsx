@@ -34,12 +34,54 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "public",         label: "Public Profile", icon: Globe      },
 ];
 
+type ExportFormat = "json" | "report" | "csv";
+interface ExportPreview { categories: Array<{ table: string; label: string; group: string; third_party: boolean; ai_generated: boolean }>; excluded: Array<{ table: string; reason: string }> }
+const GROUP_LABEL: Record<string, string> = { profile: "Profile and settings", work: "Projects, milestones and tasks", history: "Reflections and activity", intelligence: "AI-generated analysis", growth: "Outreach, links and opportunities", account: "Account and usage" };
+const CSV_CHOICES: Array<[string, string]> = [["tasks", "Tasks"], ["milestones", "Milestones"], ["reflections", "Reflections"], ["projects", "Projects"], ["score_history", "Score history"], ["activity_log", "Activity log"], ["radar_items", "Radar items"]];
+
 function DataControls() {
   const [confirming, setConfirming] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const btn: React.CSSProperties = { border: "1px solid var(--bm-border)", background: "var(--bm-bg3)", color: "var(--bm-text2)", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, cursor: "pointer", minHeight: 36 };
+  const [format, setFormat] = useState<ExportFormat>("json");
+  const [csvTable, setCsvTable] = useState("tasks");
+  const [preview, setPreview] = useState<ExportPreview | null>(null);
+  const [showList, setShowList] = useState(false);
+  const [dl, setDl] = useState<{ ok: boolean; text: string } | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const btn: React.CSSProperties = { border: "none", background: "var(--bm-bg3)", color: "var(--bm-text2)", borderRadius: 10, padding: "10px 16px", fontSize: 14, cursor: "pointer", minHeight: 42, fontFamily: "inherit" };
+  const small: React.CSSProperties = { fontSize: 13.5, color: "var(--bm-text3)", lineHeight: 1.6, margin: 0 };
+
+  async function loadPreview() {
+    if (preview) return;
+    try { const r = await fetch("/api/user/export?format=manifest", { cache: "no-store" }); const j = await r.json(); if (j?.ok) setPreview(j); } catch { /* the list is optional */ }
+  }
+  async function download() {
+    setDownloading(true); setDl(null);
+    try {
+      const q = new URLSearchParams({ format, ...(format === "csv" ? { table: csvTable } : {}) });
+      const res = await fetch(`/api/user/export?${q}`, { cache: "no-store" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setDl({ ok: false, text: res.status === 401 ? "Please sign in again, then retry." : j.error ?? "The download failed. Try again in a moment." });
+        return;
+      }
+      const blob = await res.blob();
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `buildmind-data.${format === "report" ? "html" : format}`;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      const complete = res.headers.get("X-Export-Complete") === "true";
+      const omitted = (res.headers.get("X-Export-Omitted-Columns") ?? "").split(",").filter(Boolean);
+      const rows = res.headers.get("X-Export-Rows");
+      setDl({
+        ok: true,
+        text: `Downloaded ${name} on ${new Date().toLocaleDateString()}${rows ? `, ${Number(rows).toLocaleString()} rows` : ""}. ${complete ? "Everything in your account was included." : "Some categories failed or were cut short. Open the file and read its manifest before relying on it."}${omitted.length ? ` Nested columns left out of the CSV: ${omitted.join(", ")}. Use the complete data download for those.` : ""}`,
+      });
+    } catch { setDl({ ok: false, text: "Could not reach the server. Check your connection and try again." }); }
+    finally { setDownloading(false); }
+  }
   async function requestDelete() {
     setBusy(true); setMsg(null);
     try {
@@ -50,25 +92,78 @@ function DataControls() {
     } catch { setMsg("Could not reach the server. Try again."); }
     setBusy(false);
   }
+  const grouped = preview ? Object.entries(GROUP_LABEL).map(([g, label]) => [label, preview.categories.filter((c) => c.group === g)] as const).filter(([, items]) => items.length) : [];
+  const choice = (id: ExportFormat, title: string, text: string) => (
+    <button type="button" role="radio" aria-checked={format === id} onClick={() => setFormat(id)}
+      style={{ ...btn, textAlign: "left", display: "grid", gap: 4, padding: 16, background: format === id ? "var(--bm-accent-dim)" : "var(--bm-bg3)", boxShadow: format === id ? "inset 3px 0 0 var(--bm-accent)" : "none" }}>
+      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)" }}>{title}</span>
+      <span style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.5 }}>{text}</span>
+    </button>
+  );
   return (
-    <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--bm-border)" }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 4 }}>Your data</div>
-      <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5, marginBottom: 12 }}>Download everything BuildMind holds about your projects, tasks, reflections and learning. Connected-app keys are never included.</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <a href="/api/user/export" download style={{ ...btn, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Download my data</a>
-        {!confirming && <button type="button" style={btn} onClick={() => { setConfirming(true); setMsg(null); }}>Delete my account</button>}
+    <div style={{ marginTop: 36, display: "grid", gap: 20 }}>
+      <div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>Your data</div>
+        <p style={small}>Download what BuildMind holds about you. The file is made when you press the button, sent straight to you and not kept on our servers. Connected-app keys, device push keys and private links are never included.</p>
       </div>
-      {confirming && (
-        <div style={{ marginTop: 12, display: "grid", gap: 8, maxWidth: 360 }}>
-          <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>This removes your account and all data within 7 business days. Type DELETE to confirm.</div>
-          <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm" style={{ background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: 8, padding: "8px 10px", color: "var(--bm-text)", fontSize: 13 }} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" style={{ ...btn, opacity: typed === "DELETE" && !busy ? 1 : 0.5 }} disabled={typed !== "DELETE" || busy} onClick={requestDelete}>{busy ? "Sending..." : "Request deletion"}</button>
-            <button type="button" style={btn} onClick={() => { setConfirming(false); setTyped(""); }}>Cancel</button>
-          </div>
+      <div role="radiogroup" aria-label="Download format" style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))" }}>
+        {choice("json", "Complete data (JSON)", "Everything, with a manifest listing every category and anything missing. Best for backups and moving to another tool.")}
+        {choice("report", "Readable report", "A summary you can read or print to PDF. Your own records and AI interpretations are kept apart and labelled.")}
+        {choice("csv", "One table (CSV)", "A spreadsheet of a single flat table. Nested details are left out and named after download.")}
+      </div>
+      {format === "csv" && (
+        <div>
+          <label htmlFor="csv-table" style={{ display: "block", fontSize: 14, fontWeight: 600, color: "var(--bm-text)", marginBottom: 8 }}>Which table?</label>
+          <select id="csv-table" value={csvTable} onChange={(e) => setCsvTable(e.target.value)} style={{ ...btn, minWidth: 220 }}>
+            {CSV_CHOICES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
         </div>
       )}
-      {msg && <div role="status" style={{ marginTop: 10, fontSize: 12, color: "var(--bm-text2)" }}>{msg}</div>}
+      <div>
+        <button type="button" style={{ ...btn, background: "var(--bm-accent)", color: "#151109", fontWeight: 700, opacity: downloading ? 0.6 : 1 }} disabled={downloading} onClick={download}>
+          {downloading ? "Preparing your file..." : "Download"}
+        </button>
+        {dl && <p role="status" style={{ ...small, marginTop: 12, color: dl.ok ? "var(--bm-text2)" : "var(--bm-red)" }}>{dl.text}</p>}
+      </div>
+      <div>
+        <button type="button" style={{ ...btn, background: "transparent", padding: "0", minHeight: 32, color: "var(--bm-accent)" }} onClick={() => { setShowList(!showList); void loadPreview(); }}>
+          {showList ? "Hide what is included" : "See what is included"}
+        </button>
+        {showList && (
+          <div style={{ marginTop: 12, display: "grid", gap: 16 }}>
+            {!preview && <p style={small}>Loading...</p>}
+            {grouped.map(([label, items]) => (
+              <div key={label}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)", marginBottom: 6 }}>{label}</div>
+                <ul style={{ margin: 0, paddingLeft: 18, ...small }}>
+                  {items.map((c) => <li key={c.table}>{c.label}{c.ai_generated ? " (AI-written interpretation)" : ""}{c.third_party ? " (includes emails typed by other people)" : ""}</li>)}
+                </ul>
+              </div>
+            ))}
+            {preview && (
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--bm-text)", marginBottom: 6 }}>Left out on purpose</div>
+                <ul style={{ margin: 0, paddingLeft: 18, ...small }}>{preview.excluded.map((e) => <li key={e.table}>{e.reason}</li>)}</ul>
+              </div>
+            )}
+            <p style={small}>AI-written items are model interpretations of your data. They can be wrong and are not facts about you.</p>
+          </div>
+        )}
+      </div>
+      <div style={{ paddingTop: 8 }}>
+        {!confirming && <button type="button" style={{ ...btn, background: "transparent", padding: 0, minHeight: 32 }} onClick={() => { setConfirming(true); setMsg(null); }}>Delete my account</button>}
+        {confirming && (
+          <div style={{ display: "grid", gap: 10, maxWidth: 380 }}>
+            <p style={small}>This removes your account and all data within 7 business days. Type DELETE to confirm.</p>
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm" style={{ background: "var(--bm-bg3)", border: "none", borderRadius: 10, padding: "12px 14px", color: "var(--bm-text)", fontSize: 15 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" style={{ ...btn, opacity: typed === "DELETE" && !busy ? 1 : 0.5 }} disabled={typed !== "DELETE" || busy} onClick={requestDelete}>{busy ? "Sending..." : "Request deletion"}</button>
+              <button type="button" style={btn} onClick={() => { setConfirming(false); setTyped(""); }}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {msg && <p role="status" style={{ ...small, marginTop: 10, color: "var(--bm-text2)" }}>{msg}</p>}
+      </div>
     </div>
   );
 }

@@ -30,6 +30,8 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
   const [hidden, setHidden] = React.useState(false);
   const [changing, setChanging] = React.useState(false);
   const [lightened, setLightened] = React.useState(false);
+  const [quiet, setQuiet] = React.useState<{ available: boolean; quietToday: boolean; canTakeToday: boolean; nextAllowed: string | null } | null>(null);
+  const [quietMsg, setQuietMsg] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let live = true;
@@ -40,8 +42,22 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
       if (e?.level && e.at && Date.now() - Date.parse(e.at) <= SIX_HOURS) setLevel(e.level);
       setLoaded(true);
     });
+    void fetch("/api/today/quiet-day", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (live && j?.ok) setQuiet({ available: Boolean(j.available), quietToday: Boolean(j.quietToday), canTakeToday: Boolean(j.canTakeToday), nextAllowed: j.nextAllowed ?? null }); })
+      .catch(() => { /* optional */ });
     return () => { live = false; };
   }, []);
+
+  async function takeQuietDay() {
+    setQuietMsg("Saving...");
+    try {
+      const r = await fetch("/api/today/quiet-day", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ day: "today" }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j?.ok) { setQuiet((q) => (q ? { ...q, quietToday: true, canTakeToday: false } : q)); setQuietMsg(null); }
+      else setQuietMsg(j?.error ?? "Could not save that. Try again.");
+    } catch { setQuietMsg("Could not save that. Try again."); }
+  }
 
   async function pick(l: EnergyChoice) {
     setLevel(l); setChanging(false); setLightened(false);
@@ -53,6 +69,14 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
   }
 
   if (!loaded) return null;
+  // Resting today: say so once, calmly, and stop asking for anything.
+  if (quiet?.quietToday) {
+    return (
+      <div style={{ padding: "6px 2px", marginBottom: 12, fontSize: 12.5, color: "var(--bm-text3)", lineHeight: 1.5 }}>
+        Quiet day. Your streak is safe and there are no reminders today. Today's task is here when you want it.
+      </div>
+    );
+  }
   const hour = new Date().getHours();
   const late = hour >= 23 || hour <= 4;
   const low = level === "low" || level === "wiped";
@@ -85,6 +109,13 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
           </button>
         )}
         {lightened && <div style={{ ...small, marginTop: 6 }}>Finding a smaller version of the same work.</div>}
+        {low && quiet?.canTakeToday && (
+          <div style={{ ...small, marginTop: 8 }}>
+            Or rest today without losing your streak.{" "}
+            <button type="button" style={{ ...chip(false), border: "none", padding: "2px 6px", minHeight: 24, textDecoration: "underline" }} onClick={() => void takeQuietDay()}>Take a quiet day</button>
+            {quietMsg ? <span> {quietMsg}</span> : null}
+          </div>
+        )}
       </div>
     );
   }
@@ -101,6 +132,13 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
         {!changing && <button type="button" style={{ ...chip(false), border: "none", color: "var(--bm-text3)" }} onClick={dismiss}>Not now</button>}
       </div>
       {note && <div style={{ ...small, marginTop: 6 }}>{note}</div>}
+      {quiet?.canTakeToday && (
+        <div style={{ ...small, marginTop: 6 }}>
+          Need a rest day? It will not break your streak.{" "}
+          <button type="button" style={{ ...chip(false), border: "none", padding: "2px 6px", minHeight: 24, textDecoration: "underline" }} onClick={() => void takeQuietDay()}>Take a quiet day</button>
+          {quietMsg ? <span> {quietMsg}</span> : null}
+        </div>
+      )}
     </div>
   );
 }

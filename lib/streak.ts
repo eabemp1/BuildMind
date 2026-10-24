@@ -14,6 +14,8 @@
  * else in the app should compute a streak of its own.
  */
 
+import { isQuietDay, gapIsBridged } from "@/lib/quietDays";
+
 const DAY_MS = 86_400_000;
 
 /** YYYY-MM-DD in UTC — the same clock `update_streak_atomic` is given. */
@@ -46,6 +48,8 @@ export function streakStatus(
   stored: number | null | undefined,
   lastCheckinDate: string | null | undefined,
   today: string = streakDayKey(),
+  /** Days the founder chose to rest (lib/quietDays.ts). A gap made only of these does not break the streak. */
+  quietDays?: readonly string[] | null,
 ): StreakStatus {
   const raw = typeof stored === "number" && Number.isFinite(stored) && stored > 0 ? Math.floor(stored) : 0;
   const last = lastCheckinDate ? lastCheckinDate.slice(0, 10) : null;
@@ -59,7 +63,11 @@ export function streakStatus(
 
   const gap = t - l;
   if (gap <= 0) return { ...base, count: raw, doneToday: true, atRisk: false, lapsed: false };
-  if (gap === 1) return { ...base, count: raw, doneToday: false, atRisk: true, lapsed: false };
+  const quietToday = quietDays ? isQuietDay(quietDays, today) : false;
+  // Alive when there is no fully missed day: either it is the day after the last one, or every day in between was a chosen quiet day.
+  if (gap === 1 || (quietDays && last && gapIsBridged(last, today, quietDays))) {
+    return { ...base, count: raw, doneToday: false, atRisk: !quietToday, lapsed: false };
+  }
   return { ...base, count: 0, doneToday: false, atRisk: false, lapsed: true };
 }
 
@@ -68,8 +76,9 @@ export function effectiveStreak(
   stored: number | null | undefined,
   lastCheckinDate: string | null | undefined,
   today?: string,
+  quietDays?: readonly string[] | null,
 ): number {
-  return streakStatus(stored, lastCheckinDate, today).count;
+  return streakStatus(stored, lastCheckinDate, today, quietDays).count;
 }
 
 /**

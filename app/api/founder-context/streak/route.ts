@@ -31,15 +31,20 @@ export async function GET() {
   if (error || !user) return NextResponse.json({ ok: false }, { status: 401 });
 
   const admin = createAdminClient();
-  const { data } = await admin
+  let { data, error: readErr } = await admin
     .from("founder_context")
-    .select("streak, last_checkin_date")
+    .select("streak, last_checkin_date, quiet_days")
     .eq("user_id", user.id)
     .maybeSingle();
+  if (readErr) {
+    // quiet_days arrives with migration 20261024000000; until then read the original columns.
+    ({ data } = await admin.from("founder_context").select("streak, last_checkin_date").eq("user_id", user.id).maybeSingle());
+  }
 
   // Lapsed streaks read 0 here, so every screen that syncs from this route
-  // agrees with the scorecard (see lib/streak.ts).
-  const status = streakStatus(data?.streak, data?.last_checkin_date);
+  // agrees with the scorecard (see lib/streak.ts). Quiet days (lib/quietDays.ts) bridge a rest day.
+  const quietDays = (data as { quiet_days?: string[] } | null)?.quiet_days ?? null;
+  const status = streakStatus(data?.streak, data?.last_checkin_date, undefined, quietDays);
   return NextResponse.json({
     ok: true,
     streak: status.count,
