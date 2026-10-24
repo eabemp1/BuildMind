@@ -16,6 +16,48 @@ const SEE_MESSAGES: Record<string, string> = {
 };
 const rowLine = (r: SeeRow) => `${r.query} · position ${r.position} · ${r.impressions} shown, ${r.clicks} clicked`;
 
+interface KeySee { state: string; asOf?: string; used?: string; facts?: Array<{ label: string; value: string }>; shipped?: string[] }
+const KEY_MESSAGES: Record<string, string> = {
+  reconnect: "This app stopped accepting the saved key. Disconnect and connect it again with a new key.",
+  error: "Could not read this app just now. Try again in a minute.",
+  not_connected: "Not connected.",
+};
+
+/** "What BuildMind sees" for Stripe and GitHub. Loads only when opened, so Settings stays fast. */
+function KeyAppSees({ app, flat }: { app: "stripe" | "github"; flat: React.CSSProperties }) {
+  const [open, setOpen] = React.useState(false);
+  const [see, setSee] = React.useState<KeySee | null>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    setSee(null);
+    fetch(`/api/integrations/summary?provider=${app}`).then((r) => (r.ok ? r.json() : null)).then((d) => setSee(d ?? { state: "error" })).catch(() => setSee({ state: "error" }));
+  }, [open, app]);
+  return (
+    <div>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} style={{ ...flat, border: "none", padding: "4px 0", color: "var(--bm-text3)" }}>{open ? "Hide" : "What BuildMind sees"} {open ? "▴" : "▾"}</button>
+      {open && (
+        <div style={{ display: "grid", gap: 6, marginTop: 6, fontSize: "var(--text-xs)", color: "var(--bm-text2)", lineHeight: 1.5 }}>
+          {!see && <div style={{ color: "var(--bm-text3)" }}>Reading...</div>}
+          {see && !see.facts && <div>{KEY_MESSAGES[see.state] ?? KEY_MESSAGES.error}</div>}
+          {see?.facts && (
+            <>
+              {see.state === "cached" && see.asOf && <div style={{ color: "var(--bm-text3)" }}>Saved copy from {see.asOf.slice(0, 10)}. The app did not answer just now.</div>}
+              {see.facts.map((f) => <div key={f.label}><span style={{ color: "var(--bm-text3)" }}>{f.label}:</span> {f.value}</div>)}
+              {(see.shipped?.length ?? 0) > 0 && (
+                <div>
+                  <div style={{ fontWeight: 600, color: "var(--bm-text)" }}>Recently shipped</div>
+                  {see.shipped!.map((t) => <div key={t} style={{ color: "var(--bm-text3)" }}>{t}</div>)}
+                </div>
+              )}
+              {see.used && <div style={{ color: "var(--bm-text3)" }}>{see.used}</div>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NAMES: Record<KeyApp, { name: string; line: string }> = {
   stripe: { name: "Stripe", line: "Real revenue and subscribers for investor updates." },
   github: { name: "GitHub", line: "What you actually shipped, for updates, posts and demo scripts." },
@@ -107,10 +149,11 @@ export default function ConnectedApps() {
                 {on && <button type="button" onClick={() => remove(app)} style={{ fontSize: "var(--text-xs)", fontFamily: "inherit", cursor: "pointer", borderRadius: 8, padding: "6px 12px", border: "none", background: "transparent", color: "var(--bm-text3)" }}>Disconnect</button>}
               </div>
             </div>
+            {on && !bad && <KeyAppSees app={app as "stripe" | "github"} flat={flat} />}
             {open === app && <ConnectCard app={app} onCancel={() => setOpen(null)} onConnected={() => { setOpen(null); load(); }} />}
           </div>
         );
       })}
     </div>
   );
-}
+        }
