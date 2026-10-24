@@ -1,4 +1,5 @@
 {
+  "buildCommand": "node scripts/copy-ocr-assets.mjs && node -r ./scripts/disable-next-trace.js node_modules/next/dist/bin/next build",
   "regions": [
     "dub1"
   ],
