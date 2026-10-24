@@ -104,3 +104,12 @@ export async function fetchSearchSummary(refreshToken: string, site: string): Pr
     return { ok: true, summary: summariseSearch(rows, site, { start: ymd(start), end: ymd(end) }) };
   } catch { return { ok: false, kind: "network" }; }
 }
+
+/** One plain sentence about what the numbers mean, decided in code so the card never over-reads thin data. */
+export function describeSearch(s: SearchSummary): string {
+  if (s.impressions === 0) return "Google has not shown this site in search results in this period. A new site, or one not indexed yet, looks like this. Nothing to act on yet.";
+  if (s.clicks === 0) return `Shown ${s.impressions} times, never clicked. Titles and descriptions are the first thing to look at.`;
+  const ctr = Math.round((s.clicks / s.impressions) * 1000) / 10;
+  if (s.impressions < 100) return `${s.clicks} click${s.clicks === 1 ? "" : "s"} from ${s.impressions} impressions (${ctr}%). Too little data to draw conclusions yet.`;
+  return `${s.clicks} clicks from ${s.impressions} impressions (${ctr}%).`;
+}
