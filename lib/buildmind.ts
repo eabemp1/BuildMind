@@ -135,6 +135,8 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
   const { error } = await supabase
     .from("tasks").update({
       is_completed: isCompleted,
+      status: isCompleted ? "completed" : "pending",
+      completed_at: isCompleted ? new Date().toISOString() : null,
       notes: notes ?? null,
       // Explicitly set updated_at so reports can use it as completion_date.
       // Supabase doesn't auto-update this column unless a DB trigger exists.

@@ -714,6 +714,8 @@ export default function ProjectDetailPage() {
                 milestoneTasks.map(t =>
                   supabase.from("tasks").update({
                     is_completed: true,
+                    status: "completed",
+                    completed_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                   }).eq("id", t.id)
                 )

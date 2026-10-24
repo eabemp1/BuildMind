@@ -412,7 +412,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           if (taskStatus) {
             await supabase
               .from("tasks")
-              .update({ status: taskStatus, is_completed: taskStatus === "completed" })
+              .update({ status: taskStatus, is_completed: taskStatus === "completed", completed_at: taskStatus === "completed" ? new Date().toISOString() : null })
               .eq("id", taskId)
               .eq("user_id", verifiedUserId)
               .then(() => {}, (err) => logError("reflect-action/task-status-update", err, { taskId, verifiedUserId }));

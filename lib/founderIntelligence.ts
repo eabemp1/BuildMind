@@ -1,4 +1,5 @@
 import { buildSwapOptions } from "@/lib/today/swap";
+import { isStaleOpenTask, completionTime } from "@/lib/staleTasks";
 import { stateNote, type FounderState as CapacityState } from "@/lib/founderState";
 import { buildExecutionSignature, type ExecutionSignature, type TaskRecord } from "@/lib/outcomeCorrelation";
 import { buildTemporalProfile, type SessionEvent, type TemporalProfile } from "@/lib/temporalPatterns";
@@ -748,7 +749,8 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
   const scopedMilestones = splitMilestones(milestones, stage);
   const activeMilestones = scopedMilestones.inPlay;
   const stalledMilestones = activeMilestones.filter((m) => daysBetween(now, m.updated_at ?? m.created_at) >= 7);
-  const tasksNowInPlay = tasksInPlay(tasks, milestones, stage);
+  // Open tasks untouched for 30+ days are history, not pending work (lib/staleTasks.ts).
+  const tasksNowInPlay = tasksInPlay(tasks, milestones, stage).filter((t) => !isStaleOpenTask(t, now));
   // FIX (stale placeholder milestone bug): the roadmap seeder
   // (app/api/ai/generate-roadmap/route.ts) creates one milestone per
   // roadmap stage, titled literally "Idea", "Validation", "MVP", "Launch",
@@ -776,7 +778,7 @@ export function buildFounderIntelligenceState(rawInput: FounderIntelligenceInput
     const category = actionCategory(String(reflection.today_action ?? reflection.note ?? ""));
     focusCounts.set(category, (focusCounts.get(category) ?? 0) + 1);
   }
-  const completedTaskRows7d = tasks.filter((task) => task.is_completed && Boolean(task.updated_at ?? task.completed_at ?? task.created_at) && daysBetween(now, task.updated_at ?? task.completed_at ?? task.created_at) <= 7);
+  const completedTaskRows7d = tasks.filter((task) => { const done = completionTime(task); return task.is_completed && done !== null && (now.getTime() - done) / 86_400_000 <= 7; });
   const taskTimestampCoverage = tasks.some((task) => Boolean(task.updated_at ?? task.completed_at ?? task.created_at));
   const milestoneTimestampCoverage = milestones.some((milestone) => Boolean(milestone.updated_at ?? milestone.created_at));
   const activeMilestoneTimestamp = activeMilestone?.updated_at ?? activeMilestone?.created_at ?? null;

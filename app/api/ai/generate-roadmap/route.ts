@@ -328,7 +328,11 @@ Generate a specific roadmap for THIS founder's current and immediate-next stage 
             // Lower number = higher priority, matching the schema default's
             // convention (DEFAULT 5, so 1 is more urgent than 5).
             const stageDistance = Math.max(0, i - Math.max(0, currentStageIdx));
-            const taskRows = (milestone.tasks ?? []).map((t, taskIdx) => ({
+            // The phase right before the founder's current stage is marked completed below ("I'm already past
+            // this"). It must not also get open tasks, or the database holds a completed milestone with pending
+            // children.
+            const isPassedPhase = currentStageIdx > 0 && i === currentStageIdx - 1;
+            const taskRows = (isPassedPhase ? [] : (milestone.tasks ?? [])).map((t, taskIdx) => ({
               milestone_id: createdMilestone.id,
               user_id: userId,
               title: t,
