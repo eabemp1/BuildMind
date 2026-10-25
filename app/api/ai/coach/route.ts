@@ -1,3 +1,6 @@
+import { founderStatePromptBlock } from "@/lib/founderState";
+import { cleanThread, buildThreadBlock, refersBack } from "@/lib/coachThread";
+import { loadFounderState } from "@/lib/server/founderStateLoad";
 import { needsWebResearch, planResearch, gatherResearch, formatResearchBlock, publicSources, type ResearchResult } from "@/lib/webResearch";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -168,6 +171,7 @@ const CoachBodySchema = z.object({
   // Coach Actions chip payload — validated for real by parseActionRequest();
   // declared here only because z.object() strips undeclared keys.
   action:       z.unknown().optional(),
+  clientHour:   z.number().int().min(0).max(23).optional(),
 });
 
 export async function POST(request: Request) {
@@ -195,12 +199,9 @@ export async function POST(request: Request) {
     // Founder Intelligence + Cofounder Judgment blocks below). Halved on
     // both axes — this compounds with every follow-up message, unlike the
     // other context blocks which are roughly constant per request.
-    const history = Array.isArray(body?.messages)
-      ? (body.messages as { role?: string; content?: string }[])
-          .map((m) => ({ role: (m?.role === "assistant" ? "assistant" : "user") as "user" | "assistant", content: String(m?.content ?? "").trim().slice(0, 500) }))
-          .filter((m) => m.content)
-          .slice(-4)
-      : [];
+    // Conversation memory: see lib/coachThread.ts. The old window (last 4 messages, 500 characters each) cut the
+    // coach's own answers mid-sentence and lost the founder's original question after a couple of turns.
+    const history = Array.isArray(body?.messages) ? cleanThread((body.messages as { role?: string; content?: string }[]).slice(-40)) : [];
 
     if (userId !== routeUser.userId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -267,6 +268,15 @@ export async function POST(request: Request) {
 
     // supabase client is needed outside the hasAdminEnv block for recordInteractionServer
     const supabase = hasAdminEnv() ? createAdminClient() : null;
+
+    // How the founder is doing right now: shapes the advice, and holds irreversible
+    // decisions (pivot, quit, reprice) until they are rested.
+    let stateBlock = "";
+    try {
+      const clientHour = Number.isInteger(body?.clientHour) ? Number(body.clientHour) : null;
+      const founderState = await loadFounderState(supabase, userId, { clientHour });
+      stateBlock = founderStatePromptBlock(founderState, { message });
+    } catch { /* best-effort */ }
 
     if (hasAdminEnv() && supabase) {
       try {
@@ -380,9 +390,7 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
     const domainContext = domain
       ? `\n\nDomain/context they're focused on: ${domain}`
       : "";
-    const historyContext = history.length
-      ? "\n\nConversation so far:\n" + history.map((m) => `${m.role === "user" ? "Founder" : "Coach"}: ${m.content}`).join("\n")
-      : "";
+    const historyContext = buildThreadBlock(history, message);
 
     // ── Spiral instruction injected into system prompt when detected ─────────
     const spiralInstruction = buildSpiralInstruction(spiralSignal, message);
@@ -418,9 +426,12 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
     // and read pages in parallel. Any failure degrades to a normal reply.
     // A spiral gets the coach, not a research dump.
     let research: ResearchResult = { sources: [], queries: [], attempted: false };
-    if (!spiralDetected && needsWebResearch(message)) {
+    // A follow-up like "what about in Ghana?" has no searchable meaning alone: attach the founder's previous question.
+    const prevFounderQuestion = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+    const researchMessage = refersBack(message) && prevFounderQuestion ? `${prevFounderQuestion.slice(0, 300)} (follow-up: ${message})` : message;
+    if (!spiralDetected && needsWebResearch(researchMessage)) {
       try {
-        const plan = await planResearch(message, {
+        const plan = await planResearch(researchMessage, {
           title: (body?.project as { title?: string } | undefined)?.title,
           stage,
           targetUsers: body?.targetUsers as string | undefined,
@@ -454,7 +465,7 @@ Validation gaps: ${valWeaknesses || "None recorded"}`;
 
 ${knowledgeClaim}
 
-The difference between you and every other AI: you notice things he did not ask about, and you say them. Not to be clever — because that is what a real co-founder does. If he asks about X but the actual problem is Y, you name Y first, briefly, then answer X.
+The difference between you and every other AI: you notice things he did not ask about, and you say them. Not to be clever — because that is what a real co-founder does. He asked a question: answer THAT question first and directly. If you also see a bigger problem he did not ask about, say it in one short line AFTER the answer, never instead of it.
 
 WHAT YOU NEVER DO:
 - Never say "great question", "certainly", "absolutely", "happy to help", or any filler
@@ -465,7 +476,7 @@ WHAT YOU NEVER DO:
 - Never recommend something you know he consistently skips without naming that pattern directly
 
 WHAT YOU ALWAYS DO:
-- Lead with the most important thing, even if he did not ask for it
+- Answer the question he actually asked, in the first sentence. Stay on his topic and follow the conversation above; never switch topic on your own
 - Name the real pattern when you see it: "You keep listing visibility as a blocker but you skip content tasks 80% of the time. The fix is not more content."
 - Be honest when the data suggests he is avoiding something — name it without judgment
 - When confidence is low on a claim, say so: "I am not certain, but my read is..."
@@ -479,6 +490,8 @@ Only when your answer converges on one concrete, time-boxed action — not for o
 
 THINGS THE FOUNDER CAN ASK YOU TO PULL UP (handled instantly outside this conversation, not by you): their open tasks or backlog (e.g. "show my open tasks", optionally "on the X milestone") and a download of their full Founder Intelligence data (e.g. "export my intelligence data"). If they ask for something like that and it reached you, tell them the exact phrase to type. Never invent task lists, counts, or file contents yourself.
 
+WHAT YOU CANNOT DO (say so in one plain sentence, then give the manual step or where in the app to do it; never pretend you did it): you cannot create, edit, complete or delete tasks, milestones or projects, change settings, send messages or emails, or post anywhere. You can advise, draft text for him to send, and pull up the read-only views above. If he asks for something you cannot do, say that first, then offer the closest thing you can do right now (for example, drafting the message so he can send it).
+
 You must return ONLY valid JSON:
 {
   "reasoning": ["what I noticed about his situation", "what pattern this connects to", "what matters most to say first"],
@@ -490,7 +503,7 @@ ${spiralInstruction}${proactiveObservation}
 
 ${buildAppKnowledgeBlock(message, routeUser.plan === "builder" ? "builder" : "free")}
 
-${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}${researchBlock}
+${projectContext ? `FOUNDER CONTEXT (real data):\n${projectContext}` : ""}${founderMemoryContext}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}${stateBlock ? `\n\n${stateBlock}` : ""}${morningNoteContext}${blockerContext}${domainContext}${historyContext}${researchBlock}
 
 Message: ${message}
 
@@ -584,4 +597,4 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       },
     }, { status });
   }
-                                                                            }
+  }
