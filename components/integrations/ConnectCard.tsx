@@ -1,16 +1,19 @@
 "use client";
 
 import React from "react";
+import { parseRepo } from "@/lib/integrations/github";
 
 export type KeyApp = "stripe" | "github";
 
-const COPY: Record<KeyApp, { name: string; reads: string[]; never: string; steps: string[]; placeholder: string }> = {
+const COPY: Record<KeyApp, { name: string; who: string; link: { href: string; text: string }; reads: string[]; never: string; steps: string[]; placeholder: string }> = {
   stripe: {
     name: "Stripe",
+    who: "Only if you take payments with Stripe. If you do not, skip this.",
+    link: { href: "https://dashboard.stripe.com/apikeys/create", text: "Open Stripe's key page" },
     reads: ["Monthly recurring revenue", "Paying subscribers", "Payments in the last 30 days"],
     never: "BuildMind cannot charge, refund or change anything. It accepts only a read-only restricted key.",
     steps: [
-      "In Stripe, open Developers, then API keys, then Create restricted key.",
+      "Open the Stripe page below, and name the key BuildMind.",
       "Set Subscriptions to Read and Charges to Read. Leave everything else as None.",
       "Copy the key. It starts with rk_live_ (or rk_test_ for test mode).",
     ],
@@ -18,12 +21,14 @@ const COPY: Record<KeyApp, { name: string; reads: string[]; never: string; steps
   },
   github: {
     name: "GitHub",
+    who: "Only if your project's code is on GitHub. If you do not code, skip this.",
+    link: { href: "https://github.com/settings/personal-access-tokens/new", text: "Open GitHub's token page" },
     reads: ["Commits in the last 30 days", "Titles of merged pull requests"],
     never: "BuildMind cannot write code, open pull requests or see any other repository.",
     steps: [
-      "In GitHub, open Settings, Developer settings, Fine-grained tokens, Generate new token.",
-      "Choose Only select repositories and pick the one repository.",
-      "Set Contents to Read and Pull requests to Read. Copy the token (starts with github_pat_).",
+      "Open the GitHub page below, and name the token BuildMind. Pick an expiry (90 days is fine).",
+      "Under Repository access choose Only select repositories, then pick your project.",
+      "Under Permissions set Contents to Read-only and Pull requests to Read-only. Click Generate token, copy it, and paste it below.",
     ],
     placeholder: "github_pat_...",
   },
@@ -73,15 +78,17 @@ export default function ConnectCard({ app, onConnected, onCancel }: Props) {
   return (
     <div style={{ display: "grid", gap: 8, border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 12px" }}>
       <div style={label}>Connect {c.name}, read-only</div>
+      <p style={small}>{c.who}</p>
       <p style={small}>BuildMind reads: {c.reads.join(", ")}. {c.never}</p>
       <ol style={{ margin: 0, paddingLeft: 18, listStyleType: "decimal" }}>{c.steps.map((s) => <li key={s} style={{ ...small, marginBottom: 2 }}>{s}</li>)}</ol>
-      {app === "github" && <input style={input} value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repository" aria-label="Repository" autoComplete="off" spellCheck={false} />}
+      <a href={c.link.href} target="_blank" rel="noopener noreferrer" style={{ ...small, color: "var(--bm-accent)", fontWeight: 600, textDecoration: "none" }}>{c.link.text} ↗</a>
+      {app === "github" && <input style={input} value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="Address of your project, e.g. https://github.com/you/project" aria-label="Repository address" autoComplete="off" spellCheck={false} />}
       <input style={input} type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={c.placeholder} aria-label={`${c.name} key`} autoComplete="off" spellCheck={false} />
       <p style={small}>The key is tested first, then stored encrypted. You can remove it any time in Settings.</p>
       {error && <p style={{ ...small, color: "var(--bm-text)" }} role="alert">{error}</p>}
       <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" style={btn(true)} disabled={busy || key.trim().length < 10 || (app === "github" && !repo.includes("/"))} onClick={test}>{busy ? "Testing…" : "Test and connect"}</button>
-        {onCancel && <button type="button" style={btn()} onClick={onCancel}>Not now</button>}
+        <button type="button" style={btn(true)} disabled={busy || key.trim().length < 10 || (app === "github" && !parseRepo(repo))} onClick={test}>{busy ? "Testing…" : "Test and connect"}</button>
+        {onCancel && <button type="button" style={btn()} onClick={onCancel}>Skip for now</button>}
       </div>
     </div>
   );
