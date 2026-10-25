@@ -15,6 +15,22 @@ export interface GithubSummary {
 
 export const REPO_RE = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
 
+/**
+ * Accepts what a non-developer actually has: the address bar ("https://github.com/owner/name", with or without a
+ * trailing path, .git or query), "github.com/owner/name", or "owner/name". Returns "owner/name" or null.
+ */
+export function parseRepo(input: string): string | null {
+  let t = input.trim();
+  if (!t) return null;
+  t = t.replace(/^git@github\.com:/i, "").replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "");
+  t = t.split(/[?#]/)[0].replace(/\/+$/, "");
+  const parts = t.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const name = parts[1].replace(/\.git$/i, "");
+  const out = `${parts[0]}/${name}`;
+  return REPO_RE.test(out) ? out : null;
+}
+
 export function checkGithubInput(token: string, repo: string): { ok: true } | { ok: false; reason: string } {
   if (!/^(github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{20,})$/.test(token.trim())) return { ok: false, reason: "That does not look like a GitHub token. Fine-grained tokens start with github_pat_." };
   if (!REPO_RE.test(repo.trim())) return { ok: false, reason: "Enter the repository as owner/name, for example Shinobi7Kami/BuildMind." };
