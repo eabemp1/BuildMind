@@ -135,6 +135,7 @@ export default function ConnectedApps() {
           </select>
         )}
       </div>
+      <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginTop: 4 }}>Optional. Only if you take payments with Stripe or keep your project's code on GitHub. BuildMind works fully without them.</div>
       {(["stripe", "github"] as KeyApp[]).map((app) => {
         const on = Boolean(s[app]); const bad = Boolean(s.needsReconnect?.[app]);
         return (
@@ -156,4 +157,4 @@ export default function ConnectedApps() {
       })}
     </div>
   );
-        }
+                }
