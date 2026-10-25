@@ -13,7 +13,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret } from "@/lib/integrations/crypto";
 import { fetchStripeSummary, stripeFacts } from "@/lib/integrations/stripe";
-import { fetchGithubSummary, githubFacts } from "@/lib/integrations/github";
+import { fetchGithubSummary, githubFacts, parseRepo } from "@/lib/integrations/github";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,9 +35,11 @@ export async function POST(request: Request) {
     if (!r.ok) return NextResponse.json({ ok: false, error: r.message }, { status: r.kind === "network" ? 502 : 400 });
     summary = r.summary; facts = stripeFacts(r.summary);
   } else {
-    const r = await fetchGithubSummary(key, repo ?? "");
+    const parsed = parseRepo(repo ?? "");
+    if (!parsed) return NextResponse.json({ ok: false, error: "Paste the address of the repository from your browser, for example https://github.com/yourname/yourproject." }, { status: 400 });
+    const r = await fetchGithubSummary(key, parsed);
     if (!r.ok) return NextResponse.json({ ok: false, error: r.message }, { status: r.kind === "network" ? 502 : 400 });
-    summary = r.summary; facts = githubFacts(r.summary); databaseId = repo!.trim();
+    summary = r.summary; facts = githubFacts(r.summary); databaseId = parsed;
   }
 
   let stored: string;
@@ -59,4 +61,4 @@ export async function DELETE(request: Request) {
   if (!hasAdminEnv()) return NextResponse.json({ ok: false, error: "Not available." }, { status: 503 });
   await createAdminClient().from("integrations").delete().eq("user_id", user.userId).eq("provider", provider);
   return NextResponse.json({ ok: true });
-}
+    }
