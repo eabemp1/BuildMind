@@ -84,7 +84,7 @@ export function recordInteraction(
  * Upserts to founder_context.recent_interactions JSONB column.
  */
 export async function recordInteractionServer(
-  supabase: { from: (t: string) => { select: (...a: unknown[]) => unknown; upsert: (...a: unknown[]) => unknown } },
+  supabase: unknown,
   userId: string,
   feature: AIFeature,
   summary: string,
@@ -96,22 +96,30 @@ export async function recordInteractionServer(
     timestamp: new Date().toISOString(),
     ...(emotional ? { emotionalSignal: emotional } : {}),
   };
+  // Minimal structural type for the supabase-js chain used here (keeps this file free of a server-only import).
+  type Q = {
+    select: (c: string) => { eq: (k: string, v: string) => { maybeSingle: () => Promise<{ data: { recent_interactions?: RecentInteraction[] } | null; error: { message: string } | null }> } };
+    update: (v: Record<string, unknown>) => { eq: (k: string, v: string) => Promise<{ error: { message: string } | null }> };
+    insert: (v: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+  };
+  const table = (supabase as { from: (t: string) => Q }).from("founder_context");
 
-  // Read existing then prepend — keeps last MAX_STORED
+  // FIX: the old code read EVERY founder's row (no user filter, so `data` was an array and "existing" was always
+  // empty) and wrote with upsert on the primary key `id`, which this table's user_id is not. For a founder who
+  // already had a row, that insert hit the unique user_id and failed silently, so nothing was ever saved.
+  // Now: read this founder's row, prepend, and update it (or insert the first one). Failures are logged.
   try {
-    const { data } = await (supabase
-      .from("founder_context")
-      .select("recent_interactions") as unknown as Promise<{ data: { recent_interactions?: RecentInteraction[] } | null }>);
-
-    const existing = (data as { recent_interactions?: RecentInteraction[] } | null)
-      ?.recent_interactions ?? [];
-    const updated  = [now, ...existing].slice(0, MAX_STORED);
-
-    await (supabase
-      .from("founder_context")
-      .upsert({ user_id: userId, recent_interactions: updated }) as unknown as Promise<void>);
-  } catch {
-    // non-critical — don't fail the AI response for a continuity write
+    const { data, error: readError } = await table.select("recent_interactions").eq("user_id", userId).maybeSingle();
+    if (readError) throw new Error(readError.message);
+    const existing = Array.isArray(data?.recent_interactions) ? data!.recent_interactions! : [];
+    const updated = [now, ...existing].slice(0, MAX_STORED);
+    const write = data
+      ? await table.update({ recent_interactions: updated }).eq("user_id", userId)
+      : await table.insert({ user_id: userId, recent_interactions: updated });
+    if (write.error) throw new Error(write.error.message);
+  } catch (err) {
+    // Non-critical for the founder's reply, but never silent again.
+    try { (await import("@/lib/server/logger")).logError("conversationContinuity/record", err, { userId, feature }); } catch { /* logger unavailable */ }
   }
 }
 
