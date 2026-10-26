@@ -1,5 +1,6 @@
 "use client";
 
+import PublishPage from "@/components/today/PublishPage";
 import React from "react";
 import { PREP_META, prepKindFor, type PrepKind, type Prepared } from "@/lib/prep/kinds";
 import type { Diagnosis } from "@/lib/distribution/diagnose";
@@ -259,6 +260,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
             {meta.doneVerb && !done && <button type="button" onClick={markDone} style={btn(true)}>{meta.doneVerb}</button>}
             {done && <span style={{ ...muted, color: "var(--bm-text2)" }}>Recorded.</span>}
           </div>
+          {kind === "landing" && text.trim() && <PublishPage draft={text} task={task} projectId={projectId} />}
         </div>
       )}
 

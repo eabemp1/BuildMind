@@ -22,6 +22,7 @@ import { getPromptForRequest, loadActivePrompts } from "@/lib/promptRegistry";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 import { buildCofounderJudgmentPromptBlock, buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { matchCoachAction } from "@/lib/coachActions/matcher";
+import { proposeWrite } from "@/lib/coachWrites/server";
 import { runCoachAction, parseActionRequest, isCoachActionsEnabled } from "@/lib/coachActions/registry";
 import { buildAppKnowledgeBlock } from "@/lib/coachAppKnowledge";
 
@@ -250,6 +251,19 @@ export async function POST(request: Request) {
         }
         if (requested) return NextResponse.json({ success: false, error: outcome.error }, { status: outcome.status });
       }
+    }
+
+    // ── Coach writes: add a task, mark done/blocked, log outreach. Propose only; the founder confirms on the card. ──
+    if (hasAdminEnv() && message && !detectSpiralSignal(message).detected) {
+      try {
+        const proposed = await proposeWrite(createAdminClient(), userId, projectId, message);
+        if (proposed?.ok) {
+          return NextResponse.json({ success: true, data: { kind: "proposal", reply: proposed.card.heading, card: proposed.card, reasoning: [], spiralDetected: false } });
+        }
+        if (proposed && !proposed.ok) {
+          return NextResponse.json({ success: true, data: { kind: "proposal_error", reply: proposed.reply, reasoning: [], spiralDetected: false } });
+        }
+      } catch { /* fall through to normal coaching */ }
     }
 
     // (usage already counted above — covers actions and coached replies alike)
@@ -490,7 +504,7 @@ Only when your answer converges on one concrete, time-boxed action — not for o
 
 THINGS THE FOUNDER CAN ASK YOU TO PULL UP (handled instantly outside this conversation, not by you): their open tasks or backlog (e.g. "show my open tasks", optionally "on the X milestone") and a download of their full Founder Intelligence data (e.g. "export my intelligence data"). If they ask for something like that and it reached you, tell them the exact phrase to type. Never invent task lists, counts, or file contents yourself.
 
-WHAT YOU CANNOT DO (say so in one plain sentence, then give the manual step or where in the app to do it; never pretend you did it): you cannot create, edit, complete or delete tasks, milestones or projects, change settings, send messages or emails, or post anywhere. You can advise, draft text for him to send, and pull up the read-only views above. If he asks for something you cannot do, say that first, then offer the closest thing you can do right now (for example, drafting the message so he can send it).
+WHAT YOU CANNOT DO (say so in one plain sentence, then give the manual step or where in the app to do it; never pretend you did it): you cannot edit or delete tasks, milestones or projects, change settings, send messages or emails, or post anywhere. You can advise, draft text for him to send, and pull up the read-only views above. He can also ask you in one short line to: add a task (\"add task: …\"), mark a task done or blocked (\"mark the pricing task as done\"), or log an outreach result (\"log that Sam replied …\"); each shows a confirm card and only changes anything after he taps it. Never claim you made such a change yourself in prose; if he asks in a longer or unclear way, tell him the short phrasing above. If he asks for something you cannot do, say that first, then offer the closest thing you can do right now (for example, drafting the message so he can send it).
 
 You must return ONLY valid JSON:
 {

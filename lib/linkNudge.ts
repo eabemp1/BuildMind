@@ -4,12 +4,12 @@
  * post or message before it goes out, and should make one per channel to see which channel works.
  */
 
-export const SOURCES = ["x", "linkedin", "reddit", "whatsapp", "indiehackers", "hn", "devto", "email", "other"] as const;
+export const SOURCES = ["x", "linkedin", "reddit", "whatsapp", "indiehackers", "hn", "devto", "email", "tiktok", "instagram", "youtube", "other"] as const;
 export type LinkSource = (typeof SOURCES)[number];
 
 export const SOURCE_LABELS: Record<LinkSource, string> = {
   x: "X", linkedin: "LinkedIn", reddit: "Reddit", whatsapp: "WhatsApp", indiehackers: "Indie Hackers",
-  hn: "Hacker News", devto: "dev.to", email: "Email", other: "Other",
+  hn: "Hacker News", devto: "dev.to", email: "Email", tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube", other: "Other",
 };
 
 export function isLinkSource(v: unknown): v is LinkSource {
@@ -24,6 +24,9 @@ const RULES: Array<[LinkSource, RegExp]> = [
   ["whatsapp", /\bwhats\s?app\b/i],
   ["reddit", /\breddit\b|\br\/[a-z0-9_]{2,}/i],
   ["x", /\btwitter\b|\btweet\b|\bx\.com\b|\bon x\b|\bx thread\b|\bx post\b/i],
+  ["tiktok", /\btik\s?tok\b/i],
+  ["instagram", /\binstagram\b|\binsta\b|\breels?\b/i],
+  ["youtube", /\byou\s?tube\b|\byt shorts?\b/i],
   ["email", /\be-?mail\b|\bcold email\b|\binbox\b/i],
 ];
 
@@ -59,4 +62,12 @@ export function channelSummary(rows: ChannelRow[]): ChannelStat[] {
   }
   const weight = (s: ChannelStat) => s.signups * 15 + s.confirmations * 12 + s.replies * 12 + s.visits;
   return [...m.values()].filter((s) => s.visits + s.signups + s.confirmations + s.replies > 0).sort((a, b) => weight(b) - weight(a));
+}
+
+/** Every channel a task text names (a task can say "post on TikTok and X"), in a stable order. */
+export function inferSources(text: string | null | undefined): LinkSource[] {
+  const t = String(text ?? "");
+  const out: LinkSource[] = [];
+  for (const [src, re] of RULES) if (re.test(t) && !out.includes(src)) out.push(src);
+  return out;
 }

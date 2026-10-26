@@ -15,7 +15,8 @@ describe("channel tags and nudge", () => {
     expect(inferSource("Post on Indie Hackers")).toBe("indiehackers");
     expect(inferSource("Show HN: submit it")).toBe("hn");
     expect(inferSource("Write the pricing page")).toBeNull();
-    expect(isLinkSource("tiktok")).toBe(false);
+    expect(isLinkSource("tiktok")).toBe(true);
+    expect(isLinkSource("myspace")).toBe(false);
   });
   it("nudges on outreach tasks only", () => {
     expect(needsTrackedLink("Send your idea to 5 target customers and ask what they use today.")).toBe(true);

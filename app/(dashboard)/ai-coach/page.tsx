@@ -23,6 +23,8 @@ import { matchCoachAction } from "@/lib/coachActions/matcher";
 import { COACH_ACTION_CHIPS, type CoachActionChip } from "@/lib/coachActions/chips";
 import { matchNavigation, parseReplyLinks } from "@/lib/coachNavigation";
 import type { CoachActionResult } from "@/lib/coachActions/types";
+import { ProposalCard } from "@/components/coach/ProposalCard";
+import type { ProposalCard as ProposalCardData } from "@/lib/coachWrites/server";
 
 type ChatMessage = {
   id: string;
@@ -40,6 +42,8 @@ type ChatMessage = {
   /** Present when the reply was a Coach Action (lib/coachActions) rather
    *  than model-written coaching — rendered as a data card, not prose. */
   actionResult?: CoachActionResult;
+  /** A change the coach proposes (add task, mark done/blocked, log outreach). Applied only after the founder confirms. */
+  proposal?: ProposalCardData;
   /** Web pages the coach actually retrieved for this reply (numbered to match [n] in the text). */
   sources?: Array<{ n: number; title: string; url: string; host: string; read: boolean }>;
 };
@@ -120,7 +124,7 @@ function useIsMobile() {
   return isMobile;
 }
 
-function MessageBubble({ msg, onDraft, onOpen, onRunChip }: { msg: ChatMessage; onDraft: (what: string) => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
+function MessageBubble({ msg, projectId, onDraft, onOpen, onRunChip }: { msg: ChatMessage; projectId: string; onDraft: (what: string) => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
   const isUser = msg.role === "user";
   // Buttons the Coach attached ([[open:...]] / [[run:...]]) are validated against closed allow-lists.
   const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
@@ -174,6 +178,7 @@ function MessageBubble({ msg, onDraft, onOpen, onRunChip }: { msg: ChatMessage; 
         )}
 
         {msg.phase === "done" && msg.actionResult && <CoachActionResultCard result={msg.actionResult} />}
+        {msg.phase === "done" && msg.proposal && <ProposalCard card={msg.proposal} projectId={projectId} />}
 
         {msg.phase === "done" && msg.sources && msg.sources.length > 0 && (
           <div>
@@ -382,6 +387,14 @@ function AICoachPageInner() {
           : m));
         return;
       }
+      // A proposed change (add task, mark done/blocked, log outreach): show the confirm card; nothing is written yet.
+      if ((payload?.data?.kind === "proposal" && payload.data.card) || payload?.data?.kind === "proposal_error") {
+        const card = payload.data.kind === "proposal" ? (payload.data.card as ProposalCardData) : undefined;
+        setMessages(prev => prev.map(m => m.id === thinkingMsg.id
+          ? { ...m, content: card ? "Here's the change. Confirm to apply it." : String(payload.data.reply ?? ""), reasoning: undefined, phase: "done", proposal: card }
+          : m));
+        return;
+      }
       const reply = payload?.data?.reply ?? payload?.data?.answer ?? "I'm having trouble responding right now. Please try again.";
       const confidence_score = typeof payload?.data?.confidence_score === "number" ? payload.data.confidence_score : null;
       const ra = payload?.data?.recommended_action;
@@ -555,7 +568,7 @@ function AICoachPageInner() {
           </motion.div>
         ) : (
           <div className="mx-auto flex max-w-[760px] flex-col gap-8 py-4 pb-6">
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onDraft={(what) => sendMessage(`Help me do this now: ${what}. Break it into the first two concrete moves, and draft any message or text I need.`)} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
+            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} projectId={activeProject?.id ?? ""} onDraft={(what) => sendMessage(`Help me do this now: ${what}. Break it into the first two concrete moves, and draft any message or text I need.`)} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
           </div>
         )}
         <div ref={bottomRef} />

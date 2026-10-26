@@ -9,7 +9,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { makeCode, validateTarget } from "@/lib/signalLinks";
-import { isLinkSource } from "@/lib/linkNudge";
+import { isLinkSource, SOURCES } from "@/lib/linkNudge";
 import { countSignups } from "@/lib/signupGuard";
 
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ const MAX_LINKS = 25;
 const pathFor = (kind: string, code: string) => (kind === "link" ? `/r/${code}` : kind === "confirm" ? `/v/${code}` : kind === "inbound" ? "" : `/i/${code}`);
 const addressFor = (kind: string, code: string) => (kind === "inbound" && process.env.INBOUND_EMAIL_DOMAIN ? `reply+${code}@${process.env.INBOUND_EMAIL_DOMAIN}` : null);
 
-const src = z.enum(["x", "linkedin", "reddit", "whatsapp", "indiehackers", "hn", "devto", "email", "other"]).optional();
+const src = z.enum(SOURCES).optional();
 const Body = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("inbound"), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
   z.object({ kind: z.literal("link"), targetUrl: z.string().max(2000), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
