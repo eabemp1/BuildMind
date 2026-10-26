@@ -13,6 +13,8 @@ import { buildCofounderJudgment } from "@/lib/cofounderJudgment";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError, generateRequestId } from "@/lib/server/logger";
 import { loadIntegrationContext } from "@/lib/integrations/context";
+import { loadSteeringBlock } from "@/lib/integrations/steer";
+import { capabilityBlock } from "@/lib/capability";
 import { sanitizeModelOutput } from "@/lib/ai-providers";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
 import { buildDebtPromptInjection, computeExecutionDebt, debtSuppressesTask, markDebtSurfaced } from "@/lib/executionDebt";
@@ -459,7 +461,9 @@ FOUNDER'S STATED BLOCKER AT ONBOARDING: "${project.biggest_blocker}"
         // Notion / Linear context injection (Audit v8 PROD #8)
         // Pull the founder's real task list and inject it into the Generator prompt.
         // This prevents the AI from suggesting work the founder is already doing.
-        const integrationContext = hasAdminEnv() ? (await loadIntegrationContext(supabase, userId)).text : "";
+        const integrationContext = hasAdminEnv()
+          ? (await loadIntegrationContext(supabase, userId)).text + (await loadSteeringBlock(supabase, userId))
+          : "";
 
         projectContext = `
 Project: ${project.name ?? project.title}
@@ -470,7 +474,7 @@ Description: ${project.description ?? "Not specified"}
 Overall progress: ${completedTasks}/${totalTasks} tasks done (${completionPct}%), ${completedMilestones}/${(milestones ?? []).length} milestones complete
 Pending milestones (next to tackle): ${pendingMilestonesList.length ? pendingMilestonesList.join(", ") : "None"}
 Next open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None"}
-Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.current_mrr / 100).toFixed(0)} / month` : "GHS 0 (pre-revenue)"}${project.current_mrr && project.current_mrr > 0 ? "\n→ This founder has paying customers. Tasks must prioritize retention, upsell, and reducing churn over acquisition." : "\n→ This founder has no revenue yet. Every task should move them closer to a first paying customer."}${onboardingBlockerLine}${integrationContext}`;
+Current MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.current_mrr / 100).toFixed(0)} / month` : "GHS 0 (pre-revenue)"}${project.current_mrr && project.current_mrr > 0 ? "\n→ This founder has paying customers. Tasks must prioritize retention, upsell, and reducing churn over acquisition." : "\n→ This founder has no revenue yet. Every task should move them closer to a first paying customer."}${onboardingBlockerLine}${integrationContext}${capabilityBlock()}`;
       }
 
       // ── Founder memory context — informs task assignment ─────────────────

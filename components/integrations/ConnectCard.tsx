@@ -53,6 +53,13 @@ export default function ConnectCard({ app, onConnected, onCancel }: Props) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [found, setFound] = React.useState<Array<{ label: string; value: string }> | null>(null);
+  // One-click GitHub is offered only when this deployment has the GitHub App set up.
+  const [appReady, setAppReady] = React.useState(false);
+  const [manual, setManual] = React.useState(false);
+  React.useEffect(() => {
+    if (app !== "github") return;
+    fetch("/api/integrations/status").then((r) => r.json()).then((j) => setAppReady(Boolean(j?.githubApp))).catch(() => {});
+  }, [app]);
 
   async function test() {
     setBusy(true); setError("");
@@ -71,6 +78,20 @@ export default function ConnectCard({ app, onConnected, onCancel }: Props) {
         <div style={label}>{c.name} connected. This is what BuildMind found:</div>
         {found.map((f) => <div key={f.label} style={{ fontSize: "var(--text-sm)", color: "var(--bm-text)" }}>{f.label}: <strong>{f.value}</strong></div>)}
         <div><button type="button" style={btn(true)} onClick={onConnected}>Rewrite my draft with this</button></div>
+      </div>
+    );
+  }
+
+  if (app === "github" && appReady && !manual) {
+    return (
+      <div style={{ display: "grid", gap: 8, border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 12px" }}>
+        <div style={label}>Connect GitHub, read-only</div>
+        <p style={small}>GitHub asks you to pick one project and confirm. The access is read-only, so BuildMind cannot change anything. GitHub's permission screen mentions code because it bundles commit history with it; BuildMind only uses commit counts and the titles of merged pull requests.</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <a href={`/api/integrations/github/connect?return=${typeof window !== "undefined" && window.location.pathname === "/today" ? "/today" : "/settings"}`} style={{ ...btn(true), textDecoration: "none", display: "inline-block" }}>Connect with GitHub</a>
+          <button type="button" style={btn()} onClick={() => setManual(true)}>Use a token instead</button>
+          {onCancel && <button type="button" style={btn()} onClick={onCancel}>Skip for now</button>}
+        </div>
       </div>
     );
   }

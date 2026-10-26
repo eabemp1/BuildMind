@@ -3,6 +3,7 @@
  * so investor updates, posts and demo scripts are about real work.
  */
 import type { PrepFact } from "@/lib/prep/kinds";
+import { installationIdFrom, mintInstallationToken } from "@/lib/integrations/githubApp";
 
 export interface GithubSummary {
   asOf: string;
@@ -75,9 +76,19 @@ async function gh<T>(path: string, token: string): Promise<{ ok: true; data: T }
 
 export type GithubFetch = { ok: true; summary: GithubSummary } | { ok: false; kind: "auth" | "not_found" | "network"; message: string };
 
-export async function fetchGithubSummary(token: string, repo: string): Promise<GithubFetch> {
-  const chk = checkGithubInput(token, repo);
-  if (!chk.ok) return { ok: false, kind: "auth", message: chk.reason };
+export async function fetchGithubSummary(stored: string, repo: string): Promise<GithubFetch> {
+  // "ghapp:<installation>" means the founder connected with one click: mint a short-lived token instead of using a pasted one.
+  const installation = installationIdFrom(stored.trim());
+  let token = stored;
+  if (installation) {
+    const minted = await mintInstallationToken(installation);
+    if (!minted) return { ok: false, kind: "auth", message: "GitHub no longer lets BuildMind read this repository. Connect it again." };
+    token = minted;
+    if (!REPO_RE.test(repo.trim())) return { ok: false, kind: "auth", message: "Enter the repository as owner/name." };
+  } else {
+    const chk = checkGithubInput(token, repo);
+    if (!chk.ok) return { ok: false, kind: "auth", message: chk.reason };
+  }
   const t = token.trim(); const r = repo.trim();
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
   const [commits, pulls] = await Promise.all([

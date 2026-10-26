@@ -1,6 +1,8 @@
 "use client";
 
 import PublishPage from "@/components/today/PublishPage";
+import { capabilityLine } from "@/lib/capability";
+import { ResultNote } from "@/components/today/ResultNote";
 import React from "react";
 import { PREP_META, prepKindFor, type PrepKind, type Prepared } from "@/lib/prep/kinds";
 import type { Diagnosis } from "@/lib/distribution/diagnose";
@@ -51,6 +53,13 @@ const btn = (primary = false, active = false): React.CSSProperties => ({
   background: primary ? "var(--bm-text)" : active ? "var(--bm-bg3)" : "transparent",
   color: primary ? "var(--bm-bg)" : "var(--bm-text2)",
 });
+
+const FOLLOW_UP: Partial<Record<string, { choice: "1d" | "3d"; when: string; measure: string }>> = {
+  outreach: { choice: "3d", when: "3 days", measure: "Did they reply? Who answered, and what did they say?" },
+  post: { choice: "1d", when: "tomorrow", measure: "How many views, replies or signups did the post get?" },
+  launch_plan: { choice: "1d", when: "tomorrow", measure: "What did the launch get: comments, visits, signups?" },
+  landing: { choice: "3d", when: "3 days", measure: "How many visits and signups did the page get?" },
+};
 
 async function post<T>(url: string, body: unknown): Promise<{ ok: boolean; data?: T; error?: string }> {
   try {
@@ -158,7 +167,15 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard may be blocked */ }
     bump("used"); void record("used");
   }
-  async function markDone() { bump("sent"); await record("sent"); }
+  // Marking work as sent also schedules the follow-up, so "did it work?" comes back on its own. Shown on Today when due.
+  const [followUp, setFollowUp] = React.useState("");
+  async function markDone() {
+    bump("sent"); await record("sent");
+    const plan = kind ? FOLLOW_UP[kind] : undefined;
+    if (!plan || !projectId) return;
+    const r = await post("/api/today/loops", { task_text: task.slice(0, 480), measure: plan.measure, choice: plan.choice, projectId });
+    if (r.ok) setFollowUp(`Follow-up set for ${plan.when}. It will show at the top of Today when it's due.`);
+  }
   async function setOutcome(id: string) { setPrep((p) => (p ? { ...p, outcome: id } : p)); await record("outcome", { outcome: id, finalText: undefined, originalText: undefined }); }
   async function fix() {
     setBusy("fix"); setNote("");
@@ -219,6 +236,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         <button type="button" onClick={async () => { setBusy("redo"); await load(true); setBusy(""); }} disabled={busy !== ""} style={{ ...btn(), border: "none", color: "var(--bm-text3)" }}>{busy === "redo" ? "Redoing…" : "Redo"}</button>
       </div>
       {prep.prepared.summary && <p style={muted}>{prep.prepared.summary}</p>}
+      {kind && <p style={muted}>{capabilityLine(kind)}</p>}
 
       {prep.prepared.facts.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
@@ -258,11 +276,13 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
             {onUseDraft && kind === "outreach" && <button type="button" onClick={() => { onUseDraft(text); bump("used"); void record("used"); }} style={btn()}>Use in the box below</button>}
             {canFix && <button type="button" onClick={fix} disabled={busy !== ""} style={btn()}>{busy === "fix" ? "Reviewing…" : "Fix it"}</button>}
             {meta.doneVerb && !done && <button type="button" onClick={markDone} style={btn(true)}>{meta.doneVerb}</button>}
-            {done && <span style={{ ...muted, color: "var(--bm-text2)" }}>Recorded.</span>}
+            {done && <span style={{ ...muted, color: "var(--bm-text2)" }}>Recorded.{followUp ? ` ${followUp}` : ""}</span>}
           </div>
           {kind === "landing" && text.trim() && <PublishPage draft={text} task={task} projectId={projectId} />}
         </div>
       )}
+
+      {!meta.doneVerb && !idea && <ResultNote task={task} projectId={projectId} />}
 
       {done && meta.outcomes && (
         <div style={{ display: "grid", gap: 6 }}>

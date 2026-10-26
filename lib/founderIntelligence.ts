@@ -29,6 +29,7 @@ export type IntelligenceSignalType =
   | "EXECUTION_DEGRADATION"
   | "BUSYWORK_PATTERN"
   | "RECOMMENDATION_REJECTION_PATTERN"
+  | "RECOMMENDATION_BLOCKED_PATTERN"
   | "MOMENTUM_CHANGE"
   | "FOUNDER_BEHAVIOR_CHANGE"
   | "LOW_CAPACITY";
@@ -618,6 +619,20 @@ export function deriveIntelligenceSignals(params: {
       summary: `The founder has rejected or ignored ${rejected.length} distinct recent recommendation${rejected.length === 1 ? "" : "s"}; avoided types: ${learnedPatterns.avoided_action_types.join(", ") || "not yet specific"}.`,
       evidence: rejected.slice(0, 3).map((r) => ({ source: "reflexion_learning_log", detail: `${r.action_shown} → ${r.outcome}` })),
       recommended_response: "Reduce friction or change channel/type while preserving the strategic goal.",
+    }));
+  }
+
+  if (learnedPatterns.patterns_reliable && (learnedPatterns.blocked_count ?? 0) >= 2) {
+    const blockedRows = learningLogs.filter((r) => isShownTaskRow(r) && r.outcome === "partial" && Boolean((r as { blocked_at?: string | null }).blocked_at));
+    signals.push(signal({
+      now,
+      type: "RECOMMENDATION_BLOCKED_PATTERN",
+      severity: (learnedPatterns.blocked_count ?? 0) >= 4 ? "high" : "medium",
+      confidence: Math.min(0.85, learnedPatterns.total_logged / 12),
+      title: "Recommendations keep getting blocked",
+      summary: `${learnedPatterns.blocked_count} recent recommendations were marked blocked, not rejected${(learnedPatterns.blocked_action_types ?? []).length ? `; most often ${(learnedPatterns.blocked_action_types ?? []).join(", ")}` : ""}. The tasks were accepted; something stopped them.`,
+      evidence: blockedRows.slice(0, 3).map((r) => ({ source: "reflexion_learning_log", detail: `${r.action_shown} → blocked` })),
+      recommended_response: "Shrink the task to a first step that needs nothing external, or name and clear the blocker before assigning more of the same kind.",
     }));
   }
 

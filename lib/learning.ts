@@ -85,6 +85,13 @@ export interface LearnedPatterns {
    * ones — the problem is upstream of the founder's choices.
    */
   avg_verifier_confidence: number | null;
+  /**
+   * Recommendations the founder marked blocked. They are NOT progress (they used to count as completed through the
+   * "partial" outcome) and NOT rejection (the task was right; something stopped it). Action types blocked at least
+   * twice are listed so the planner can shrink or unblock that kind of work instead of repeating it.
+   */
+  blocked_count?: number;
+  blocked_action_types?: ActionType[];
 }
 
 export interface LearningLogRow {
@@ -120,6 +127,8 @@ export interface LearningLogRow {
   outcome: ActionOutcome;
   outcome_note?: string | null;
   outcome_recorded_at?: string | null;
+  /** Set by the recommendation lifecycle when the founder said they were blocked. */
+  blocked_at?: string | null;
   created_at: string;
 }
 
@@ -133,6 +142,10 @@ export interface LearningLogRow {
  * deriveLearnedPatterns — reads the last 20 log rows for a user and computes
  * the LearnedPatterns object. The core of the learning loop.
  */
+export function isBlockedRow(r: Pick<LearningLogRow, "outcome" | "blocked_at">): boolean {
+  return r.outcome === "partial" && Boolean(r.blocked_at);
+}
+
 export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
   const empty: LearnedPatterns = {
     preferred_action_types: [],
@@ -159,7 +172,10 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
     r.outcome === "ignored" || r.outcome === "partial"
   );
 
-  const completed = resolved.filter(r => r.outcome === "completed" || r.outcome === "partial");
+  // A blocked recommendation is stored as "partial" with blocked_at set. It counts as resolved (it lowers the
+  // completion rate) but never as completed.
+  const completed = resolved.filter(r => r.outcome === "completed" || (r.outcome === "partial" && !isBlockedRow(r)));
+  const blockedRows = resolved.filter(isBlockedRow);
   const failedAll = resolved.filter(r => r.outcome === "overridden" || r.outcome === "ignored");
   // The same task shown and ignored ten times is ONE rejected task for pattern purposes
   // (the completion rate below still counts every showing).
@@ -183,6 +199,13 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
       failedTypeCounts.set(row.action_type, (failedTypeCounts.get(row.action_type) ?? 0) + 1);
     }
   }
+
+  const blockedTypeCounts = new Map<ActionType, number>();
+  for (const row of blockedRows) {
+    if (row.action_type) blockedTypeCounts.set(row.action_type, (blockedTypeCounts.get(row.action_type) ?? 0) + 1);
+  }
+  const blocked_action_types = Array.from(blockedTypeCounts.entries())
+    .filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 3) as ActionType[];
 
   // Preferred: completed at least twice, more completions than failures
   const preferred_action_types = Array.from(completedTypeCounts.entries())
@@ -288,6 +311,8 @@ export function deriveLearnedPatterns(rows: LearningLogRow[]): LearnedPatterns {
     patterns_reliable: rows.length >= 5,
     weak_quality_action_types,
     avg_verifier_confidence,
+    blocked_count: blockedRows.length,
+    blocked_action_types,
   };
 }
 
@@ -325,6 +350,12 @@ export function buildLearnedPatternsPrompt(patterns: LearnedPatterns): string {
   if (avoidedActionTypes.length > 0) {
     lines.push(
       `- This founder AVOIDS or OVERRIDES actions of type: ${avoidedActionTypes.join(", ")}. Do NOT recommend these unless unavoidable.`
+    );
+  }
+
+  if ((patterns.blocked_action_types ?? []).length > 0) {
+    lines.push(
+      `- This founder keeps getting BLOCKED on actions of type: ${(patterns.blocked_action_types ?? []).join(", ")}. They are not refusing them: something stops them. Make these smaller, name the exact thing in the way, or give the first step that needs nothing external.`
     );
   }
 

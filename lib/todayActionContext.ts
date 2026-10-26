@@ -23,6 +23,8 @@ import { sanitizeAvoidanceZones } from "@/lib/avoidanceSanitize";
 import { buildArchetypeSystemContext } from "@/lib/founderArchetype";
 import { inferStage } from "@/lib/stages";
 import { loadIntegrationContext } from "@/lib/integrations/context";
+import { loadSteeringBlock } from "@/lib/integrations/steer";
+import { capabilityBlock } from "@/lib/capability";
 import type { ReflexionContext } from "@/lib/reflexion";
 
 /**
@@ -250,9 +252,9 @@ export async function loadTodayActionContext(params: {
 
     // Notion / Linear context injection — pulls the founder's real task
     // list so the AI doesn't suggest work they're already doing elsewhere.
-    const integrationContext = (await loadIntegrationContext(supabase, userId)).text;
+    const integrationContext = (await loadIntegrationContext(supabase, userId)).text + (await loadSteeringBlock(supabase, userId));
 
-    ctx.projectContext = `Project: ${ctx.title}\nStage: ${ctx.stage}\nProblem: ${ctx.problem || "Not specified"}\nTarget users: ${ctx.targetUsers || "Not specified"}\nDescription: ${ctx.description || "Not specified"}\nOverall progress: ${completedTasks}/${totalTasks} tasks done (${completionPct}%), ${completedMilestones}/${(milestones ?? []).length} milestones complete\nPending milestones (next to tackle): ${pendingMilestonesList.length ? pendingMilestonesList.join(", ") : "None"}\nNext open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None"}\nCurrent MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.current_mrr / 100).toFixed(0)} / month` : "GHS 0 (pre-revenue)"}${project.current_mrr && project.current_mrr > 0 ? "\n→ This founder has paying customers. Tasks must prioritize retention, upsell, and reducing churn over acquisition." : "\n→ This founder has no revenue yet. Every task should move them closer to a first paying customer."}${onboardingBlockerLine}${integrationContext}`;
+    ctx.projectContext = `Project: ${ctx.title}\nStage: ${ctx.stage}\nProblem: ${ctx.problem || "Not specified"}\nTarget users: ${ctx.targetUsers || "Not specified"}\nDescription: ${ctx.description || "Not specified"}\nOverall progress: ${completedTasks}/${totalTasks} tasks done (${completionPct}%), ${completedMilestones}/${(milestones ?? []).length} milestones complete\nPending milestones (next to tackle): ${pendingMilestonesList.length ? pendingMilestonesList.join(", ") : "None"}\nNext open tasks: ${pendingTasksList.length ? pendingTasksList.join(", ") : "None"}\nCurrent MRR: ${project.current_mrr && project.current_mrr > 0 ? `GHS ${(project.current_mrr / 100).toFixed(0)} / month` : "GHS 0 (pre-revenue)"}${project.current_mrr && project.current_mrr > 0 ? "\n→ This founder has paying customers. Tasks must prioritize retention, upsell, and reducing churn over acquisition." : "\n→ This founder has no revenue yet. Every task should move them closer to a first paying customer."}${onboardingBlockerLine}${integrationContext}${capabilityBlock()}`;
   }
 
   if (memory) {

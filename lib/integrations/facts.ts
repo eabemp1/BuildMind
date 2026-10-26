@@ -11,13 +11,18 @@ import { fetchSearchSummary, searchFacts, type SearchSummary } from "@/lib/integ
 import type { PrepFact } from "@/lib/prep/kinds";
 
 export type KeyProvider = "stripe" | "github" | "search_console";
-export interface ConnectedFacts { facts: PrepFact[]; shipped: string[]; search?: SearchSummary; connected: KeyProvider[]; stale: KeyProvider[] }
+export interface ConnectedFacts { facts: PrepFact[]; shipped: string[]; search?: SearchSummary; stripe?: StripeSummary; github?: GithubSummary; connected: KeyProvider[]; stale: KeyProvider[] }
+
+export interface LoadOptions {
+  /** A saved snapshot younger than this is used as is, with no call to the provider. Keeps Today fast. */
+  maxAgeMs?: number;
+}
 
 interface Row { provider: KeyProvider; access_token: string; database_id: string | null; metadata: Record<string, unknown> | null }
 
 const when = (iso: string) => iso.slice(0, 10);
 
-export async function loadConnectedFacts(admin: SupabaseClient, userId: string): Promise<ConnectedFacts> {
+export async function loadConnectedFacts(admin: SupabaseClient, userId: string, opts: LoadOptions = {}): Promise<ConnectedFacts> {
   const out: ConnectedFacts = { facts: [], shipped: [], connected: [], stale: [] };
   try {
     const { data } = await admin.from("integrations").select("provider, access_token, database_id, metadata").eq("user_id", userId).in("provider", ["stripe", "github", "search_console"]);
@@ -28,13 +33,15 @@ export async function loadConnectedFacts(admin: SupabaseClient, userId: string):
       const cached = r.metadata?.summary as StripeSummary | GithubSummary | SearchSummary | undefined;
       let live: StripeSummary | GithubSummary | SearchSummary | null = null;
       let authFailed = false;
-      if (token) {
+      const fresh = opts.maxAgeMs && cached?.asOf && Date.now() - Date.parse(cached.asOf) < opts.maxAgeMs && !r.metadata?.needs_reconnect;
+      if (fresh) { live = cached as StripeSummary | GithubSummary | SearchSummary; }
+      else if (token) {
         if (r.provider === "stripe") { const f = await fetchStripeSummary(token); if (f.ok) live = f.summary; else authFailed = f.kind !== "network"; }
         else if (r.provider === "search_console") { if (r.database_id) { const f = await fetchSearchSummary(token, r.database_id); if (f.ok) live = f.summary; else authFailed = f.kind === "auth"; } }
         else if (r.database_id) { const f = await fetchGithubSummary(token, r.database_id); if (f.ok) live = f.summary; else authFailed = f.kind !== "network"; }
       } else authFailed = true;
 
-      if (live) {
+      if (live && !fresh) {
         void Promise.resolve(admin.from("integrations").update({ metadata: { ...(r.metadata ?? {}), summary: live, needs_reconnect: false }, updated_at: new Date().toISOString() }).eq("user_id", userId).eq("provider", r.provider)).catch(() => {});
       } else if (authFailed && !r.metadata?.needs_reconnect) {
         void Promise.resolve(admin.from("integrations").update({ metadata: { ...(r.metadata ?? {}), needs_reconnect: true } }).eq("user_id", userId).eq("provider", r.provider)).catch(() => {});
@@ -44,6 +51,7 @@ export async function loadConnectedFacts(admin: SupabaseClient, userId: string):
       if (!live) out.stale.push(r.provider);
       const note = live ? "" : ` (as of ${when(s.asOf)})`;
       if (r.provider === "search_console") { out.search = s as SearchSummary; out.facts.push(...searchFacts(s as SearchSummary).map((f) => ({ ...f, value: f.value + note }))); return; }
+      if (r.provider === "stripe") out.stripe = s as StripeSummary; else out.github = s as GithubSummary;
       const facts = r.provider === "stripe" ? stripeFacts(s as StripeSummary) : githubFacts(s as GithubSummary);
       out.facts.push(...facts.map((f) => ({ ...f, value: f.value + note })));
       if (r.provider === "github") out.shipped.push(...(s as GithubSummary).shipped);

@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isGithubAppConfigured } from "@/lib/integrations/githubApp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,8 @@ export async function GET() {
       searchConsoleSite: ((integrations ?? []) as Array<{ provider: string; database_id?: string | null }>).find((i) => i.provider === "search_console")?.database_id ?? null,
       searchConsoleSites: (((integrations ?? []) as Array<{ provider: string; metadata?: { sites?: Array<{ url: string }> } | null }>).find((i) => i.provider === "search_console")?.metadata?.sites ?? []).map((x) => x.url),
       github: providers.has("github"),
+      // True when one-click GitHub is set up on this deployment; the card then offers it before the token fields.
+      githubApp: isGithubAppConfigured(),
       githubRepo: ((integrations ?? []) as Array<{ provider: string; database_id?: string | null }>).find((i) => i.provider === "github")?.database_id ?? null,
     });
   } catch {
