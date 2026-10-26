@@ -11,7 +11,7 @@
  * download links are refused unless they're same-origin API paths.
  */
 
-import { Download, ListChecks, Database, Flag, Radar, GitBranch, Brain, TrendingUp, History, Shapes, LineChart } from "lucide-react";
+import { Download, ListChecks, Database, Flag, Radar, GitBranch, Brain, TrendingUp, History, Shapes, LineChart, CalendarDays } from "lucide-react";
 import { VisualBoard } from "@/components/visuals/VisualBoard";
 import type { CoachActionId, CoachActionResult } from "@/lib/coachActions/types";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
@@ -29,6 +29,7 @@ const ICONS: Record<CoachActionId, typeof Database> = {
   export_intelligence: Database,
   draw_execution_intelligence: Shapes,
   draw_progress: LineChart,
+  plan_week: CalendarDays,
 };
 
 export function CoachActionResultCard({ result }: { result: CoachActionResult }) {

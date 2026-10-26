@@ -145,10 +145,14 @@ const DRAW_VERB = /\b(draw|visuali[sz]e|visuali[sz]ation|chart|graph|plot|diagra
 const DRAW_EXECUTION = /\b(execution|intelligence|signals?|decision|beliefs?|patterns?|how i (?:work|operate)|founder (?:model|profile)|everything|my data)\b/;
 const DRAW_PROGRESS = /\b(progress|momentum|milestones?|streak|tasks?|week|weeks|month|performance|consistency|activity|how i(?:'|’)?m doing)\b/;
 
+const PLAN_WEEK = /\b(?:re-?plan|plan|schedule|organi[sz]e|sort out|lay out|map out)\s+(?:out\s+)?(?:my|the|this|next)\s+(?:whole\s+)?week\b|\bwhat should i (?:work on|do|focus on) (?:this|next) week\b/;
+
 export function matchCoachAction(message: string): CoachActionMatch | null {
   // Trailing punctuation off so "what have i done?" and "what have i done" match alike.
   const t = (message ?? "").trim().toLowerCase().replace(/[?.!]+$/, "");
   if (!t || t.length > MAX_MATCHABLE_LENGTH) return null;
+
+  if (PLAN_WEEK.test(t)) return { id: "plan_week", params: {} };
 
   if (DRAW_VERB.test(t) && /\b(my|me|i|our)\b/.test(t)) {
     if (DRAW_EXECUTION.test(t)) return { id: "draw_execution_intelligence", params: {} };

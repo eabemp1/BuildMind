@@ -2,12 +2,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { fetchBacklog } from "@/lib/coachActions/backlog";
 import { recordInteractionServer } from "@/lib/conversationContinuity";
+import { DURATION_CHOICES, MAX_OPEN_LOOPS, dueAtFor } from "@/lib/today/loops";
 import { parseCoachWrite, pickTask, rankTasks, type WriteRequest } from "./parse";
 
 /** What the founder sees on the confirm card. Carries only ids and text; the server re-checks everything on apply. */
 export const ProposalSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("add_task"), title: z.string().trim().min(3).max(140) }),
   z.object({ kind: z.literal("set_task"), taskId: z.string().uuid(), outcome: z.enum(["done", "blocked"]), reason: z.string().trim().max(200).optional() }),
+  z.object({ kind: z.literal("remind"), text: z.string().trim().min(3).max(200), choice: z.enum(["4h", "1d", "3d", "1w"]) }),
   z.object({ kind: z.literal("log_outreach"), text: z.string().trim().min(5).max(280) }),
 ]);
 export type Proposal = z.infer<typeof ProposalSchema>;
@@ -41,6 +43,9 @@ export async function proposeWrite(admin: Admin, userId: string, projectId: stri
 }
 
 async function buildProposal(admin: Admin, userId: string, projectId: string, req: WriteRequest): Promise<ProposeResult> {
+  if (req.kind === "remind") {
+    return { ok: true, card: { proposal: { kind: "remind", text: req.text, choice: req.choice }, heading: `Remind you: ${DURATION_CHOICES[req.choice].label.toLowerCase()}`, detail: req.text, confirmLabel: "Set reminder" } };
+  }
   if (req.kind === "log_outreach") {
     return { ok: true, card: { proposal: { kind: "log_outreach", text: req.text }, heading: "Log this outreach result", detail: req.text, confirmLabel: "Log it" } };
   }
@@ -73,6 +78,19 @@ export async function applyWrite(admin: Admin, userId: string, projectId: string
   const parsed = ProposalSchema.safeParse(input);
   if (!parsed.success) return { ok: false, status: 400, error: "That request isn't valid." };
   const p = parsed.data;
+
+  if (p.kind === "remind") {
+    // Project ownership is verified below by fetchBacklog; a reminder needs no backlog, so check it directly.
+    const { data: own } = await admin.from("projects").select("id").eq("id", projectId).eq("user_id", userId).maybeSingle();
+    if (!own) return { ok: false, status: 404, error: "Project not found." };
+    const { count } = await admin.from("today_loops").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "open");
+    if ((count ?? 0) >= MAX_OPEN_LOOPS) return { ok: false, status: 409, error: `You already have ${MAX_OPEN_LOOPS} open reminders. Record one on Today first.` };
+    const { data: dup } = await admin.from("today_loops").select("id").eq("user_id", userId).eq("status", "open").eq("task_text", p.text).maybeSingle();
+    if (dup?.id) return { ok: true, message: "That reminder is already set." };
+    const { error } = await admin.from("today_loops").insert({ user_id: userId, project_id: projectId, task_text: p.text, measure: "Did you get to it?", due_at: dueAtFor(p.choice) });
+    if (error) return { ok: false, status: 500, error: "Couldn't set the reminder." };
+    return { ok: true, message: `Reminder set for ${DURATION_CHOICES[p.choice].label.toLowerCase()}. It will show at the top of Today when it's due.` };
+  }
 
   // Ownership: fetchBacklog verifies the project belongs to userId and only returns that user's rows.
   const backlog = await fetchBacklog(admin, userId, projectId);

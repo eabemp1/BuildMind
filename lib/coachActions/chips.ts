@@ -22,6 +22,7 @@ export const COACH_ACTION_CHIPS: CoachActionChip[] = [
   { id: "get_decision_reasoning", label: "Why did you recommend that?", params: {} },
   { id: "get_beliefs", label: "What do you believe about me?", params: {} },
   { id: "get_momentum", label: "What's my momentum?", params: {} },
+  { id: "plan_week", label: "Plan my week", params: {} },
   { id: "list_milestones", label: "Show my milestones", params: {} },
   { id: "get_execution_log", label: "Show my execution log", params: {} },
   { id: "draw_execution_intelligence", label: "Draw my execution intelligence", params: {} },

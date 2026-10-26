@@ -23,7 +23,8 @@ export type CoachActionId =
   | "get_momentum"
   | "get_execution_log"
   | "draw_execution_intelligence"
-  | "draw_progress";
+  | "draw_progress"
+  | "plan_week";
 
 import type { VisualSpec } from "@/lib/visuals/spec";
 

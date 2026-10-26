@@ -6,12 +6,15 @@
  * would put a confirm card in front of someone who only asked a question.
  */
 
-export type WriteKind = "add_task" | "set_task" | "log_outreach";
+import { parseDuration, type DurationChoice } from "@/lib/today/loops";
+
+export type WriteKind = "add_task" | "set_task" | "log_outreach" | "remind";
 
 export type WriteRequest =
   | { kind: "add_task"; title: string }
   | { kind: "set_task"; query: string; outcome: "done" | "blocked" }
-  | { kind: "log_outreach"; text: string };
+  | { kind: "log_outreach"; text: string }
+  | { kind: "remind"; text: string; choice: DurationChoice };
 
 const clean = (s: string) =>
   s.replace(/\s+/g, " ").replace(/^["'“”‘’\s:,-]+|["'“”‘’\s.!,-]+$/g, "").trim();
@@ -22,6 +25,20 @@ export function parseCoachWrite(raw: string): WriteRequest | null {
   const message = String(raw ?? "").trim();
   if (!message || message.length > 400 || message.includes("?")) return null;
   const m = message.replace(/^(?:please|pls|hey|ok|okay|coach)[,\s]+/i, "").trim();
+
+  // Reminder: "remind me tomorrow to email Sam", "remind me to post the thread in 3 days", "remind me in a week".
+  const rem = m.match(/^remind me\b[,\s]*(.*)$/i);
+  if (rem) {
+    const rest = rem[1];
+    const choice = parseDuration(rest) ?? "1d";
+    const what = clean(
+      rest
+        .replace(/\b(?:in\s+)?(?:\d+|two|three|four|five)\s*days?\b/gi, " ")
+        .replace(/\b(?:next\s+week|in\s+a\s+week|tomorrow|overnight|in\s+(?:a\s+few|a\s+couple\s+of)\s+hours|in\s+\d+\s*(?:h|hrs?|hours?))\b/gi, " ")
+        .replace(/^\s*(?:to|about|that|of)\s+/i, ""),
+    ).replace(/^(?:to|about)\s+/i, "");
+    return what.length >= 3 ? { kind: "remind", text: what.slice(0, 200), choice } : null;
+  }
 
   // Add a task: "add a task: email 5 founders", "add task to my list - fix pricing", "create a new task called X".
   const add = m.match(/^(?:add|create|put|make)\s+(?:a\s+|another\s+)?(?:new\s+)?task\b(?:\s+(?:to|on|in)\s+(?:my\s+)?(?:list|backlog|plan|today))?\s*(?:called|named|titled|that says|:|-|to)?\s*(.+)$/i);

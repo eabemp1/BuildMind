@@ -57,3 +57,15 @@ describe("server helpers", () => {
     expect(ProposalSchema.safeParse({ kind: "add_task", title: "ok task" }).success).toBe(true);
   });
 });
+
+describe("reminders", () => {
+  it("parses time and subject in either order", () => {
+    expect(parseCoachWrite("remind me tomorrow to email Sam")).toEqual({ kind: "remind", text: "email Sam", choice: "1d" });
+    expect(parseCoachWrite("remind me to post the thread in 3 days")).toEqual({ kind: "remind", text: "post the thread", choice: "3d" });
+    expect(parseCoachWrite("remind me next week to review pricing")).toEqual({ kind: "remind", text: "review pricing", choice: "1w" });
+    expect(parseCoachWrite("remind me to check analytics")).toEqual({ kind: "remind", text: "check analytics", choice: "1d" });
+  });
+  it("needs something to be reminded about", () => {
+    expect(parseCoachWrite("remind me tomorrow")).toBeNull();
+  });
+});

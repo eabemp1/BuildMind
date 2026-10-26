@@ -27,6 +27,7 @@ import { fetchBacklog, shapeBacklog, shapeMilestones, type BacklogView, type Mil
 import { fetchExecutionLog, shapeExecutionLog, type ExecutionLogView } from "./executionLog";
 import { buildFounderIntelligenceReport } from "@/lib/server/founderIntelligenceExport";
 import { buildExecutionIntelligenceVisual, buildProgressVisual } from "@/lib/visuals/intelligenceVisual";
+import { planWeek, energyToday, type WeekPlan } from "./weekPlan";
 import { buildSignalsResult, buildDecisionResult, buildBeliefsResult, buildMomentumResult } from "./intelligenceViews";
 
 export interface CoachActionContext {
@@ -509,6 +510,49 @@ const drawProgress = defineAction({
   },
 });
 
+
+// ── plan_week ─────────────────────────────────────────────────────────────
+// Read-only: a suggested spread of the real open backlog over the next working days. Nothing is saved or changed.
+const planWeekAction = defineAction({
+  id: "plan_week",
+  label: "Plan my week",
+  description: "Spread open tasks over the next five working days, sized by today's energy check-in.",
+  minPlan: "free",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const fetched = await fetchBacklog(ctx.admin, ctx.userId, ctx.projectId);
+    if (!fetched.ok) return { ok: false, status: fetched.status, error: fetched.error };
+    const now = ctx.now ?? new Date();
+    let report: { level?: string; at?: string } | null = null;
+    try {
+      const { data } = await ctx.admin.from("user_behavior_state").select("value").eq("user_id", ctx.userId).eq("key", "founder_energy").maybeSingle();
+      report = (data as { value?: { level?: string; at?: string } } | null)?.value ?? null;
+    } catch { /* no energy check-in: a normal day is assumed */ }
+    return { ok: true, result: buildWeekPlanResult(planWeek(fetched.milestones, fetched.tasks, energyToday(report, now), now)) };
+  },
+});
+
+export function buildWeekPlanResult(plan: WeekPlan): CoachActionResult {
+  if (plan.openTotal === 0) return { actionId: "plan_week", title: "Your week", summary: "There are no open tasks to plan. Everything on this project is done." };
+  const rows = plan.days.flatMap((d) =>
+    d.tasks.map((t) => ({
+      primary: t.title,
+      secondary: `${d.label}${t.milestone ? ` · ${t.milestone}` : ""}`,
+      badge: d.isToday ? "Today" : t.stale ? "Older than 30 days" : undefined,
+    })),
+  );
+  const left = plan.openTotal - plan.planned;
+  const energyNote = plan.energy ? `Today is sized for your "${plan.energy}" energy check-in; other days assume a normal day.` : "No energy check-in today, so every day assumes a normal day.";
+  return {
+    actionId: "plan_week",
+    title: "Your week",
+    summary: `${plural(plan.planned, "task")} spread over ${plural(plan.days.length, "day")}${left > 0 ? `, ${left} more left for later` : ""}.`,
+    stats: [{ label: "Open tasks", value: String(plan.openTotal) }, { label: "Planned", value: String(plan.planned) }],
+    rows,
+    note: `${energyNote} This is a suggestion only: nothing was saved, and Today still picks your daily task.${plan.staleCount ? ` ${plural(plan.staleCount, "open task")} ${plan.staleCount === 1 ? "is" : "are"} older than 30 days, so those come last. Worth pruning.` : ""}`,
+  };
+}
+
 export const COACH_ACTIONS: Record<CoachActionId, RegisteredAction> = {
   export_intelligence: exportIntelligence,
   list_backlog: listBacklog,
@@ -520,6 +564,7 @@ export const COACH_ACTIONS: Record<CoachActionId, RegisteredAction> = {
   get_execution_log: getExecutionLog,
   draw_execution_intelligence: drawExecutionIntelligence,
   draw_progress: drawProgress,
+  plan_week: planWeekAction,
 };
 
 const isActionId = (id: unknown): id is CoachActionId =>
