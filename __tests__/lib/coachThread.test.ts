@@ -54,3 +54,13 @@ describe("refersBack", () => {
     expect(refersBack("What is the best channel for reaching founders who build in public on a tiny budget?")).toBe(false);
   });
 });
+
+import { wantsNextStep } from "@/lib/coachThread";
+describe("wantsNextStep", () => {
+  it("is true when the founder asks what to do", () => {
+    for (const m of ["What should I do next?", "where do I start", "give me a plan for this week", "what's next", "help me decide which one first"]) expect(wantsNextStep(m)).toBe(true);
+  });
+  it("is false for explanations and chat", () => {
+    for (const m of ["why did my streak break", "explain the Founder Mirror", "I'm tired", "what does momentum mean"]) expect(wantsNextStep(m)).toBe(false);
+  });
+});

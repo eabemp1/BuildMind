@@ -95,4 +95,15 @@ export function buildThreadBlock(history: ThreadMessage[], latest: string): stri
     block = rebuilt.join("\n\n");
   }
   return `\n\nCONVERSATION SO FAR (this is the thread you are in; the founder's latest message continues it):\n${block}`;
-      }
+}
+
+/**
+ * Did the founder actually ask what to do next? The "Recommended next step" card used to appear on almost every
+ * reply (the model added it whenever it could), so it read as noise and its button did not even do that step.
+ * It is now shown only when the founder asked for a next step, a plan, a priority or where to start.
+ */
+const NEXT_STEP_ASK = /\b(what (should|do|can) (i|we)\b|what'?s (the )?next|next step|where (do|should) i (start|begin)|how do i (start|begin|get started)|what now|prioriti[sz]e|which (one|task|thing) (first|should)|plan (for|my)|give me a plan|action plan|first step|what to do|help me (decide|choose|pick))/i;
+
+export function wantsNextStep(message: string): boolean {
+  return NEXT_STEP_ASK.test(clean(message));
+}

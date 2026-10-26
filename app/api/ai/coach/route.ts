@@ -1,5 +1,5 @@
 import { founderStatePromptBlock } from "@/lib/founderState";
-import { cleanThread, buildThreadBlock, refersBack } from "@/lib/coachThread";
+import { cleanThread, buildThreadBlock, refersBack, wantsNextStep } from "@/lib/coachThread";
 import { loadFounderState } from "@/lib/server/founderStateLoad";
 import { needsWebResearch, planResearch, gatherResearch, formatResearchBlock, publicSources, type ResearchResult } from "@/lib/webResearch";
 import { NextResponse } from "next/server";
@@ -525,7 +525,9 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
     // Only pass through when the model actually gave a concrete action —
     // partial/malformed objects are dropped rather than rendered half-empty.
     const ra = result?.recommended_action;
-    const recommendedAction = ra && typeof ra.what_to_do === "string" && ra.what_to_do.trim().length > 3 && typeof ra.why_now === "string" && ra.why_now.trim().length > 3
+    // Only when the founder asked what to do next (lib/coachThread.ts wantsNextStep). A bare follow-up like "yes" or
+    // "do it" keeps it if the previous coach reply had one in play, which we cannot see here, so it stays off.
+    const recommendedAction = wantsNextStep(message) && ra && typeof ra.what_to_do === "string" && ra.what_to_do.trim().length > 3 && typeof ra.why_now === "string" && ra.why_now.trim().length > 3
       ? {
           what_to_do: ra.what_to_do.trim(),
           why_now: ra.why_now.trim(),
@@ -597,4 +599,4 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       },
     }, { status });
   }
-  }
+                                                                            }

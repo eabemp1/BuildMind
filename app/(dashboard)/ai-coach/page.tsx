@@ -120,7 +120,7 @@ function useIsMobile() {
   return isMobile;
 }
 
-function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMessage; onStartAction: () => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
+function MessageBubble({ msg, onDraft, onOpen, onRunChip }: { msg: ChatMessage; onDraft: (what: string) => void; onOpen: (href: string) => void; onRunChip: (chip: CoachActionChip) => void }) {
   const isUser = msg.role === "user";
   // Buttons the Coach attached ([[open:...]] / [[run:...]]) are validated against closed allow-lists.
   const parsed = !isUser && msg.phase === "done" ? parseReplyLinks(msg.content) : { text: msg.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] };
@@ -216,11 +216,17 @@ function MessageBubble({ msg, onStartAction, onOpen, onRunChip }: { msg: ChatMes
                 <span className="font-semibold text-[var(--bm-text2)]">You will know it worked when: </span>{sanitizeOutput(msg.recommendedAction.expected_evidence)}
               </p>
             )}
-            <button onClick={onStartAction}
-              className="mt-4 w-full cursor-pointer rounded-[12px] border-0 py-3 text-[14px] font-bold sm:w-auto sm:px-6"
-              style={{ background: "var(--bm-accent)", color: "#15130a" }}>
-              Start this now
-            </button>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button onClick={() => onDraft(msg.recommendedAction!.what_to_do)}
+                className="cursor-pointer rounded-[12px] border-0 px-5 py-3 text-[14px] font-bold"
+                style={{ background: "var(--bm-accent)", color: "#15130a" }}>
+                Do this with me
+              </button>
+              <button onClick={() => { try { void navigator.clipboard?.writeText(msg.recommendedAction!.what_to_do); } catch { /* clipboard unavailable */ } }}
+                className="cursor-pointer rounded-[12px] border border-[var(--bm-border2)] bg-transparent px-4 py-3 text-[14px] font-semibold text-[var(--bm-text2)]">
+                Copy
+              </button>
+            </div>
           </div>
         )}
 
@@ -353,6 +359,7 @@ function AICoachPageInner() {
         body: JSON.stringify({
           userId,
           projectId: activeProject.id,
+          clientHour: new Date().getHours(),
           message: msg,
           project: activeProject,
           overview,
@@ -548,7 +555,7 @@ function AICoachPageInner() {
           </motion.div>
         ) : (
           <div className="mx-auto flex max-w-[760px] flex-col gap-8 py-4 pb-6">
-            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onStartAction={() => router.push("/today")} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
+            {messages.map(msg => <MessageBubble key={msg.id} msg={msg} onDraft={(what) => sendMessage(`Help me do this now: ${what}. Break it into the first two concrete moves, and draft any message or text I need.`)} onOpen={(href) => router.push(href)} onRunChip={(chip) => sendMessage(chip.label, { action: { id: chip.id, params: chip.params } })} />)}
           </div>
         )}
         <div ref={bottomRef} />
