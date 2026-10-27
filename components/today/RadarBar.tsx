@@ -47,7 +47,7 @@ const row: React.CSSProperties = { display: "flex", alignItems: "center", gap: 1
 const link: React.CSSProperties = { fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--bm-accent)", textDecoration: "none", whiteSpace: "nowrap" };
 const ghost: React.CSSProperties = { minHeight: 34, padding: "0 12px", borderRadius: 8, border: "1px solid var(--bm-border3)", background: "transparent", color: "var(--bm-text2)", fontSize: "var(--text-sm)", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 
-export default function RadarBar({ signal, setup, auto, tookOver, onUndo, onAutoChange }: { signal: RadarSignal; setup: boolean; auto?: RadarAuto; tookOver: boolean; onUndo: () => void; onAutoChange?: () => void }) {
+export default function RadarBar({ signal, setup, auto, tookOver, onUndo, onAutoChange, onCantAttend }: { signal: RadarSignal; setup: boolean; auto?: RadarAuto; tookOver: boolean; onUndo: () => void; onAutoChange?: () => void; onCantAttend?: (reason: "place" | "time") => void }) {
   const [turningOn, setTurningOn] = useState(false);
   async function turnOn() {
     setTurningOn(true);
@@ -56,6 +56,7 @@ export default function RadarBar({ signal, setup, auto, tookOver, onUndo, onAuto
   }
   const checked = auto && !auto.paid ? "Automatic search is part of the paid plan" : auto?.enabled === false ? "Automatic search is off" : auto?.lastRunAt ? `Last searched ${sinceLabel(auto.lastRunAt)}${auto.lastAdded ? `, found ${auto.lastAdded} new` : ""}` : "Searches for you twice a week";
   const { level } = signal;
+  const canDeclineEvent = Boolean(onCantAttend && signal.item && (signal.item.type === "event" || signal.item.type === "meeting"));
   const dot = (color: string, pulse: boolean) => (
     <span aria-hidden="true" className={pulse ? "bm-radar-dot" : undefined} style={{ width: 8, height: 8, borderRadius: 999, background: color, flexShrink: 0 }} />
   );
@@ -74,6 +75,7 @@ export default function RadarBar({ signal, setup, auto, tookOver, onUndo, onAuto
           <div style={{ fontSize: "var(--text-xs)", fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--bm-accent)" }}>Radar took over today</div>
           <div style={{ fontSize: "var(--text-sm)", color: "var(--bm-text)", fontWeight: 600, overflowWrap: "anywhere" }}>{signal.headline}</div>
         </div>
+        {canDeclineEvent && <><button type="button" onClick={() => onCantAttend?.("place")} style={ghost}>Can’t get there</button><button type="button" onClick={() => onCantAttend?.("time")} style={ghost}>No time</button></>}
         <button type="button" onClick={onUndo} style={ghost}>Keep my usual task</button>
       </div>
     );
@@ -88,6 +90,7 @@ export default function RadarBar({ signal, setup, auto, tookOver, onUndo, onAuto
           <div style={{ fontSize: "var(--text-xs)", fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--bm-accent)" }}>Radar{signal.dueThisWeek > 1 ? ` · ${signal.dueThisWeek} due this week` : ""}</div>
           <div style={{ fontSize: "var(--text-sm)", color: "var(--bm-text)", fontWeight: 600, overflowWrap: "anywhere" }}>{signal.headline}</div>
         </div>
+        {canDeclineEvent && <><button type="button" onClick={() => onCantAttend?.("place")} style={ghost}>Can’t get there</button><button type="button" onClick={() => onCantAttend?.("time")} style={ghost}>No time</button></>}
         <Link href="/radar" style={link}>Open →</Link>
       </div>
     );
@@ -116,3 +119,4 @@ export default function RadarBar({ signal, setup, auto, tookOver, onUndo, onAuto
     </div>
   );
 }
+

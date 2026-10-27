@@ -6,6 +6,9 @@ import type { RadarItem } from "@/lib/radar/types";
 
 export interface RadarView extends RadarItem { fit: { score: number; band: "act" | "consider" | "skip"; reasons: string[]; cautions: string[] }; next_move: string; ics: string | null; days: number | null }
 
+/** Matches the single-line reason saved when a founder cannot attend. */
+export const CANT_ATTEND_RE = /^Can't attend \((?:place|time)\)$/gm;
+
 export async function listRadar(admin: SupabaseClient, userId: string, opts: { projectId?: string | null; where?: string; now?: number } = {}): Promise<{ items: RadarView[]; setup: boolean }> {
   const now = opts.now ?? Date.now();
   const { data, error } = await admin.from("radar_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
@@ -37,3 +40,4 @@ export async function radarPromptBlock(admin: SupabaseClient, userId: string, pr
   const lines = due.map((i) => `- ${i.kind}: "${i.title}"${i.days === 0 ? ", due today" : `, in ${i.days} day${i.days === 1 ? "" : "s"}`}${i.location && !i.is_virtual ? `, at ${i.location}` : i.meeting_url || i.is_virtual ? ", online" : ""}. Next step: ${i.next_move}`);
   return `OPPORTUNITIES THE FOUNDER ALREADY TRACKS (confirmed, worth acting on this week). If today's task can honestly advance one of these, make it that task and use these exact details. If it does not fit their current direction, stated blockers or access, ignore this block. Never add details that are not written here:\n${lines.join("\n")}`;
 }
+
