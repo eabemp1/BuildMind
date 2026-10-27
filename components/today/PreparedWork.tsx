@@ -96,6 +96,9 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
   const [notes, setNotes] = React.useState("");
   const [notesRead, setNotesRead] = React.useState<NotesRead | null>(null);
   const [notesBusy, setNotesBusy] = React.useState(false);
+  // Keep every hook above the early returns below. This must be initialized
+  // even while preparation is loading or no prep kind is available.
+  const [followUp, setFollowUp] = React.useState("");
 
   const load = React.useCallback(async (regenerate = false) => {
     if (!kind) return;
@@ -168,7 +171,6 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
     bump("used"); void record("used");
   }
   // Marking work as sent also schedules the follow-up, so "did it work?" comes back on its own. Shown on Today when due.
-  const [followUp, setFollowUp] = React.useState("");
   async function markDone() {
     bump("sent"); await record("sent");
     const plan = kind ? FOLLOW_UP[kind] : undefined;
