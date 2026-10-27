@@ -13,17 +13,17 @@ describe("steeringBlock", () => {
     expect(steeringBlock({ shipped: [] })).toBe("");
   });
   it("points a founder with no customers at a first payment", () => {
-    const b = steeringBlock({ stripe: stripe(0), shipped: [] });
+    const b = steeringBlock({ revenue: [{ ...stripe(0), provider: "stripe" as const }], shipped: [] });
     expect(b).toMatch(/0 paying customers/);
     expect(b).toMatch(/first payment/);
   });
   it("uses real numbers when there are customers, and flags test mode", () => {
-    const b = steeringBlock({ stripe: { ...stripe(3, 3), mode: "test" }, shipped: [] });
+    const b = steeringBlock({ revenue: [{ ...stripe(3, 3), mode: "test" as const, provider: "stripe" as const }], shipped: [] });
     expect(b).toMatch(/3 paying customers/);
     expect(b).toMatch(/TEST-mode/);
   });
   it("names near-miss queries and keeps search small when there are no customers", () => {
-    const b = steeringBlock({ search: search({ nearMisses: [row("startup execution tool", 11.2, 90)] }), stripe: stripe(0), shipped: [] });
+    const b = steeringBlock({ search: search({ nearMisses: [row("startup execution tool", 11.2, 90)] }), revenue: [{ ...stripe(0), provider: "stripe" as const }], shipped: [] });
     expect(b).toMatch(/startup execution tool/);
     expect(b).toMatch(/does not replace talking to customers/);
   });

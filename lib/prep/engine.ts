@@ -330,11 +330,11 @@ export async function generatePrep(
   if (kind === "seo" && connected?.search) prepared = { ...prepared, sections: [...searchSections(connected.search), ...prepared.sections] };
 
   const needs = [...prepared.needs];
-  const has = (p: "stripe" | "github" | "search_console") => Boolean(connected?.connected.includes(p));
+  const has = (p: "payments" | "github" | "search_console") => Boolean(p === "payments" ? connected?.revenue.length : connected?.connected.includes(p));
   if (kind === "investor_update") {
-    if (!has("stripe")) needs.push({ label: "Optional: connect Stripe for exact revenue", why: "BuildMind reads your monthly recurring revenue, subscribers and last 30 days of payments, read-only, so the numbers are exact instead of placeholders.", connect: "stripe" });
+    if (!has("payments")) needs.push({ label: "Optional: connect your payment tool for exact revenue", why: "Stripe, Polar or Paystack, read-only, or type your own numbers. BuildMind then uses your real revenue, customers and last 30 days of payments instead of placeholders.", connect: "stripe" });
     if (!has("github")) needs.push({ label: "Optional: connect GitHub for what you shipped", why: "Merged pull requests become the \"what we shipped\" lines, read-only, for one repository.", connect: "github" });
-    if (!has("stripe")) needs.push({ label: "Users and signups", why: "BuildMind only knows what you do inside it. Add those numbers where the draft says [add: ...]." });
+    if (!has("payments")) needs.push({ label: "Users and signups", why: "BuildMind only knows what you do inside it. Add those numbers where the draft says [add: ...]." });
   }
     if (kind === "seo" && !has("search_console")) needs.push({ label: "Optional: connect Search Console", why: "Read-only. The brief then starts from queries your site already almost ranks for, using your own numbers instead of general advice.", connect: "search_console" });
   if (connected?.stale.length) needs.push({ label: "A connected app needs attention", why: `Could not read ${connected.stale.join(" and ")} just now, so older or no numbers were used. Reconnect it in Settings if this keeps happening.` });

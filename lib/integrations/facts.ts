@@ -5,13 +5,14 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptSecret } from "@/lib/integrations/crypto";
-import { fetchStripeSummary, stripeFacts, type StripeSummary } from "@/lib/integrations/stripe";
+import type { StripeSummary } from "@/lib/integrations/stripe";
+import { fetchRevenue, isRevenueProvider, revenueFacts, REVENUE_PROVIDERS, type RevenueProvider, type RevenueSummary } from "@/lib/integrations/revenue";
 import { fetchGithubSummary, githubFacts, type GithubSummary } from "@/lib/integrations/github";
 import { fetchSearchSummary, searchFacts, type SearchSummary } from "@/lib/integrations/searchConsole";
 import type { PrepFact } from "@/lib/prep/kinds";
 
-export type KeyProvider = "stripe" | "github" | "search_console";
-export interface ConnectedFacts { facts: PrepFact[]; shipped: string[]; search?: SearchSummary; stripe?: StripeSummary; github?: GithubSummary; connected: KeyProvider[]; stale: KeyProvider[] }
+export type KeyProvider = RevenueProvider | "github" | "search_console";
+export interface ConnectedFacts { facts: PrepFact[]; shipped: string[]; search?: SearchSummary; revenue: RevenueSummary[]; github?: GithubSummary; connected: KeyProvider[]; stale: KeyProvider[] }
 
 export interface LoadOptions {
   /** A saved snapshot younger than this is used as is, with no call to the provider. Keeps Today fast. */
@@ -23,20 +24,23 @@ interface Row { provider: KeyProvider; access_token: string; database_id: string
 const when = (iso: string) => iso.slice(0, 10);
 
 export async function loadConnectedFacts(admin: SupabaseClient, userId: string, opts: LoadOptions = {}): Promise<ConnectedFacts> {
-  const out: ConnectedFacts = { facts: [], shipped: [], connected: [], stale: [] };
+  const out: ConnectedFacts = { facts: [], shipped: [], revenue: [], connected: [], stale: [] };
   try {
-    const { data } = await admin.from("integrations").select("provider, access_token, database_id, metadata").eq("user_id", userId).in("provider", ["stripe", "github", "search_console"]);
+    const { data } = await admin.from("integrations").select("provider, access_token, database_id, metadata").eq("user_id", userId).in("provider", [...REVENUE_PROVIDERS, "github", "search_console"]);
     const rows = (data ?? []) as Row[];
     await Promise.all(rows.map(async (r) => {
       out.connected.push(r.provider);
       const token = decryptSecret(r.access_token);
-      const cached = r.metadata?.summary as StripeSummary | GithubSummary | SearchSummary | undefined;
-      let live: StripeSummary | GithubSummary | SearchSummary | null = null;
+      const cached = r.metadata?.summary as RevenueSummary | GithubSummary | SearchSummary | undefined;
+      let live: RevenueSummary | GithubSummary | SearchSummary | null = null;
       let authFailed = false;
       const fresh = opts.maxAgeMs && cached?.asOf && Date.now() - Date.parse(cached.asOf) < opts.maxAgeMs && !r.metadata?.needs_reconnect;
-      if (fresh) { live = cached as StripeSummary | GithubSummary | SearchSummary; }
+      if (fresh) { live = cached as RevenueSummary | GithubSummary | SearchSummary; }
       else if (token) {
-        if (r.provider === "stripe") { const f = await fetchStripeSummary(token); if (f.ok) live = f.summary; else authFailed = f.kind !== "network"; }
+        if (isRevenueProvider(r.provider)) {
+          if (r.provider === "revenue_manual") { /* typed-in numbers: the saved snapshot is the source, shown with its date */ }
+          else { const f = await fetchRevenue(r.provider, token); if (f.ok) live = f.summary; else authFailed = f.kind !== "network"; }
+        }
         else if (r.provider === "search_console") { if (r.database_id) { const f = await fetchSearchSummary(token, r.database_id); if (f.ok) live = f.summary; else authFailed = f.kind === "auth"; } }
         else if (r.database_id) { const f = await fetchGithubSummary(token, r.database_id); if (f.ok) live = f.summary; else authFailed = f.kind !== "network"; }
       } else authFailed = true;
@@ -51,8 +55,14 @@ export async function loadConnectedFacts(admin: SupabaseClient, userId: string, 
       if (!live) out.stale.push(r.provider);
       const note = live ? "" : ` (as of ${when(s.asOf)})`;
       if (r.provider === "search_console") { out.search = s as SearchSummary; out.facts.push(...searchFacts(s as SearchSummary).map((f) => ({ ...f, value: f.value + note }))); return; }
-      if (r.provider === "stripe") out.stripe = s as StripeSummary; else out.github = s as GithubSummary;
-      const facts = r.provider === "stripe" ? stripeFacts(s as StripeSummary) : githubFacts(s as GithubSummary);
+      if (isRevenueProvider(r.provider)) {
+        const rs = { ...(s as RevenueSummary), provider: r.provider };
+        out.revenue.push(rs);
+        out.facts.push(...revenueFacts(rs).map((f) => ({ ...f, value: f.value + note })));
+        return;
+      }
+      out.github = s as GithubSummary;
+      const facts = githubFacts(s as GithubSummary);
       out.facts.push(...facts.map((f) => ({ ...f, value: f.value + note })));
       if (r.provider === "github") out.shipped.push(...(s as GithubSummary).shipped);
     }));

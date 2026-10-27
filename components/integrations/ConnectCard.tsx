@@ -2,8 +2,10 @@
 
 import React from "react";
 import { parseRepo } from "@/lib/integrations/github";
+import ManualRevenueCard from "@/components/integrations/ManualRevenueCard";
 
-export type KeyApp = "stripe" | "github";
+export type KeyApp = "stripe" | "polar" | "paystack" | "github";
+const REVENUE_APPS: KeyApp[] = ["stripe", "polar", "paystack"];
 
 const COPY: Record<KeyApp, { name: string; who: string; link: { href: string; text: string }; reads: string[]; never: string; steps: string[]; placeholder: string }> = {
   stripe: {
@@ -18,6 +20,31 @@ const COPY: Record<KeyApp, { name: string; who: string; link: { href: string; te
       "Copy the key. It starts with rk_live_ (or rk_test_ for test mode).",
     ],
     placeholder: "rk_live_...",
+  },
+  polar: {
+    name: "Polar",
+    who: "Only if you sell through Polar. If you do not, skip this.",
+    link: { href: "https://polar.sh/dashboard", text: "Open Polar" },
+    reads: ["Monthly recurring revenue", "Paying subscribers", "Paid orders in the last 30 days"],
+    never: "BuildMind only makes read requests. Polar cannot enforce that for you, so create the token with read access only.",
+    steps: [
+      "Open Polar, go to your organization's settings and find Access tokens (the menu names may differ slightly).",
+      "Create a token named BuildMind with read access to subscriptions and orders. Leave write access off.",
+      "Copy it. It starts with polar_oat_.",
+    ],
+    placeholder: "polar_oat_...",
+  },
+  paystack: {
+    name: "Paystack",
+    who: "Only if you take payments with Paystack. If you do not, skip this.",
+    link: { href: "https://dashboard.paystack.com/#/settings/developer", text: "Open Paystack's API keys page" },
+    reads: ["Payments in the last 30 days", "Customers who paid"],
+    never: "BuildMind only reads transactions and stores the key encrypted. Paystack's secret key may not be limited to reading, so if you would rather not hand it over, use Type my numbers instead.",
+    steps: [
+      "Open the Paystack page below (Settings, then API Keys & Webhooks).",
+      "Copy the Secret key. It starts with sk_live_ (or sk_test_ for test mode). Do not use the public key.",
+    ],
+    placeholder: "sk_live_...",
   },
   github: {
     name: "GitHub",
@@ -46,7 +73,31 @@ interface Props { app: KeyApp; onConnected: () => void; onCancel?: () => void }
  * tests the key against the real service, and shows what was found before
  * anything is relied on.
  */
-export default function ConnectCard({ app, onConnected, onCancel }: Props) {
+export default function ConnectCard({ app: initial, onConnected, onCancel }: Props) {
+  const [app, setApp] = React.useState<KeyApp | "manual">(initial);
+  if (app === "manual") {
+    return (
+      <div style={{ display: "grid", gap: 8, border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 12px" }}>
+        <Switcher current="manual" onPick={setApp} />
+        <ManualRevenueCard onSaved={onConnected} onCancel={onCancel} />
+      </div>
+    );
+  }
+  return <KeyCard key={app} app={app} setApp={setApp} onConnected={onConnected} onCancel={onCancel} />;
+}
+
+/** Which payment tool the founder uses. Shown only for payment apps. */
+function Switcher({ current, onPick }: { current: KeyApp | "manual"; onPick: (a: KeyApp | "manual") => void }) {
+  const chip = (active: boolean): React.CSSProperties => ({ fontSize: "var(--text-xs)", fontWeight: 600, fontFamily: "inherit", cursor: "pointer", borderRadius: 8, padding: "5px 10px", border: `1px solid ${active ? "var(--bm-text)" : "var(--bm-border2)"}`, background: active ? "var(--bm-bg3)" : "transparent", color: active ? "var(--bm-text)" : "var(--bm-text2)" });
+  const items: Array<[KeyApp | "manual", string]> = [["stripe", "Stripe"], ["polar", "Polar"], ["paystack", "Paystack"], ["manual", "Other: type my numbers"]];
+  return (
+    <div role="tablist" aria-label="Payment tool" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {items.map(([k, t]) => <button key={k} type="button" role="tab" aria-selected={current === k} style={chip(current === k)} onClick={() => onPick(k)}>{t}</button>)}
+    </div>
+  );
+}
+
+function KeyCard({ app, setApp, onConnected, onCancel }: { app: KeyApp; setApp: (a: KeyApp | "manual") => void; onConnected: () => void; onCancel?: () => void }) {
   const c = COPY[app];
   const [key, setKey] = React.useState("");
   const [repo, setRepo] = React.useState("");
@@ -98,6 +149,7 @@ export default function ConnectCard({ app, onConnected, onCancel }: Props) {
 
   return (
     <div style={{ display: "grid", gap: 8, border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 12px" }}>
+      {REVENUE_APPS.includes(app) && <Switcher current={app} onPick={setApp} />}
       <div style={label}>Connect {c.name}, read-only</div>
       <p style={small}>{c.who}</p>
       <p style={small}>BuildMind reads: {c.reads.join(", ")}. {c.never}</p>

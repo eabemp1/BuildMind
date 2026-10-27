@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
+import ManualRevenueCard from "@/components/integrations/ManualRevenueCard";
 import ConnectCard, { type KeyApp } from "@/components/integrations/ConnectCard";
 
-interface Status { searchConsole?: boolean; searchConsoleSite?: string | null; searchConsoleSites?: string[]; stripe?: boolean; github?: boolean; githubRepo?: string | null; needsReconnect?: { stripe?: boolean; github?: boolean; search_console?: boolean } }
+interface Status { searchConsole?: boolean; searchConsoleSite?: string | null; searchConsoleSites?: string[]; stripe?: boolean; polar?: boolean; paystack?: boolean; revenueManual?: boolean; github?: boolean; githubRepo?: string | null; needsReconnect?: { stripe?: boolean; polar?: boolean; paystack?: boolean; github?: boolean; search_console?: boolean } }
 
 interface SeeRow { query: string; clicks: number; impressions: number; position: number }
 interface SeeState { state: string; site?: string; note?: string; summary?: { range: { start: string; end: string; }; asOf: string; topQueries: SeeRow[]; nearMisses: SeeRow[]; unclicked: SeeRow[] } }
@@ -24,7 +25,7 @@ const KEY_MESSAGES: Record<string, string> = {
 };
 
 /** "What BuildMind sees" for Stripe and GitHub. Loads only when opened, so Settings stays fast. */
-function KeyAppSees({ app, flat }: { app: "stripe" | "github"; flat: React.CSSProperties }) {
+function KeyAppSees({ app, flat }: { app: KeyApp | "revenue_manual"; flat: React.CSSProperties }) {
   const [open, setOpen] = React.useState(false);
   const [see, setSee] = React.useState<KeySee | null>(null);
   React.useEffect(() => {
@@ -58,19 +59,22 @@ function KeyAppSees({ app, flat }: { app: "stripe" | "github"; flat: React.CSSPr
   );
 }
 
-const NAMES: Record<KeyApp, { name: string; line: string }> = {
-  stripe: { name: "Stripe", line: "Real revenue and subscribers for investor updates." },
+const NAMES: Record<KeyApp | "revenue_manual", { name: string; line: string }> = {
+  stripe: { name: "Stripe", line: "Real revenue and subscribers for investor updates, and to steer your daily task." },
+  polar: { name: "Polar", line: "Subscriptions and paid orders, for international payments." },
+  paystack: { name: "Paystack", line: "Payments and customers who paid, for local payments." },
+  revenue_manual: { name: "Other payment tool", line: "Type your own numbers if your tool is not listed. Saved as self-reported." },
   github: { name: "GitHub", line: "What you actually shipped, for updates, posts and demo scripts." },
 };
 
 /** Settings view of the read-only apps. Connect, see state, disconnect. */
 export default function ConnectedApps() {
   const [s, setS] = React.useState<Status>({});
-  const [open, setOpen] = React.useState<KeyApp | null>(null);
+  const [open, setOpen] = React.useState<KeyApp | "revenue_manual" | null>(null);
   const load = React.useCallback(() => { fetch("/api/integrations/status").then((r) => (r.ok ? r.json() : null)).then((d) => d && setS(d)).catch(() => {}); }, []);
   React.useEffect(load, [load]);
 
-  async function remove(app: KeyApp) {
+  async function remove(app: KeyApp | "revenue_manual") {
     await fetch(`/api/integrations/connect?provider=${app}`, { method: "DELETE" }).catch(() => {});
     setOpen(null); load();
   }
@@ -135,9 +139,9 @@ export default function ConnectedApps() {
           </select>
         )}
       </div>
-      <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginTop: 4 }}>Optional. Only if you take payments with Stripe or keep your project's code on GitHub. BuildMind works fully without them.</div>
-      {(["stripe", "github"] as KeyApp[]).map((app) => {
-        const on = Boolean(s[app]); const bad = Boolean(s.needsReconnect?.[app]);
+      <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginTop: 4 }}>Optional. Connect the payment tool you use (Stripe, Polar, Paystack) or type your own numbers, and GitHub if your code is there. BuildMind works fully without them.</div>
+      {(["stripe", "polar", "paystack", "revenue_manual", "github"] as const).map((app) => {
+        const on = Boolean(app === "revenue_manual" ? s.revenueManual : s[app]); const bad = app === "revenue_manual" ? false : Boolean(s.needsReconnect?.[app]);
         return (
           <div key={app} style={{ border: "1px solid var(--bm-border)", borderRadius: 12, padding: "12px 14px", display: "grid", gap: 8 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -146,15 +150,17 @@ export default function ConnectedApps() {
                 <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)" }}>{bad ? "Access stopped working. Reconnect with a new key." : on ? "Connected" : NAMES[app].line}</div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                {(!on || bad) && <button type="button" onClick={() => setOpen(open === app ? null : app)} style={{ fontSize: "var(--text-xs)", fontWeight: 600, fontFamily: "inherit", cursor: "pointer", borderRadius: 8, padding: "6px 12px", border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)" }}>{bad ? "Reconnect" : "Connect"}</button>}
+                {(!on || bad || app === "revenue_manual") && <button type="button" onClick={() => setOpen(open === app ? null : app)} style={{ fontSize: "var(--text-xs)", fontWeight: 600, fontFamily: "inherit", cursor: "pointer", borderRadius: 8, padding: "6px 12px", border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)" }}>{bad ? "Reconnect" : on ? "Update" : app === "revenue_manual" ? "Add" : "Connect"}</button>}
                 {on && <button type="button" onClick={() => remove(app)} style={{ fontSize: "var(--text-xs)", fontFamily: "inherit", cursor: "pointer", borderRadius: 8, padding: "6px 12px", border: "none", background: "transparent", color: "var(--bm-text3)" }}>Disconnect</button>}
               </div>
             </div>
-            {on && !bad && <KeyAppSees app={app as "stripe" | "github"} flat={flat} />}
-            {open === app && <ConnectCard app={app} onCancel={() => setOpen(null)} onConnected={() => { setOpen(null); load(); }} />}
+            {on && !bad && <KeyAppSees app={app} flat={flat} />}
+            {open === app && (app === "revenue_manual"
+              ? <ManualRevenueCard onCancel={() => setOpen(null)} onSaved={() => { setOpen(null); load(); }} />
+              : <ConnectCard app={app} onCancel={() => setOpen(null)} onConnected={() => { setOpen(null); load(); }} />)}
           </div>
         );
       })}
     </div>
   );
-                }
+}

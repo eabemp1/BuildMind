@@ -1,5 +1,5 @@
 /**
- * POST   /api/integrations/connect  { provider: "stripe"|"github", key, repo? }
+ * POST   /api/integrations/connect  { provider: "stripe"|"polar"|"paystack"|"github", key, repo? }
  *   Tests the key against the real service first and returns what BuildMind
  *   found. Only a successful test is saved, encrypted.
  * DELETE /api/integrations/connect?provider=...  Removes the key and its snapshot.
@@ -12,14 +12,14 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret } from "@/lib/integrations/crypto";
-import { fetchStripeSummary, stripeFacts } from "@/lib/integrations/stripe";
+import { fetchRevenue, isRevenueProvider, revenueFacts } from "@/lib/integrations/revenue";
 import { fetchGithubSummary, githubFacts, parseRepo } from "@/lib/integrations/github";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const Body = z.object({ provider: z.enum(["stripe", "github"]), key: z.string().min(10).max(400), repo: z.string().max(210).optional() });
+const Body = z.object({ provider: z.enum(["stripe", "polar", "paystack", "github"]), key: z.string().min(10).max(400), repo: z.string().max(210).optional() });
 
 export async function POST(request: Request) {
   const user = await getRouteUser();
@@ -30,10 +30,10 @@ export async function POST(request: Request) {
   const { provider, key, repo } = p.data;
 
   let summary: unknown; let facts; let databaseId: string | null = null;
-  if (provider === "stripe") {
-    const r = await fetchStripeSummary(key);
+  if (provider !== "github") {
+    const r = await fetchRevenue(provider, key);
     if (!r.ok) return NextResponse.json({ ok: false, error: r.message }, { status: r.kind === "network" ? 502 : 400 });
-    summary = r.summary; facts = stripeFacts(r.summary);
+    summary = r.summary; facts = revenueFacts(r.summary);
   } else {
     const parsed = parseRepo(repo ?? "");
     if (!parsed) return NextResponse.json({ ok: false, error: "Paste the address of the repository from your browser, for example https://github.com/yourname/yourproject." }, { status: 400 });
@@ -57,8 +57,8 @@ export async function DELETE(request: Request) {
   const user = await getRouteUser();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   const provider = new URL(request.url).searchParams.get("provider");
-  if (provider !== "stripe" && provider !== "github" && provider !== "search_console") return NextResponse.json({ ok: false, error: "Unknown app." }, { status: 400 });
+  if (!isRevenueProvider(provider) && provider !== "github" && provider !== "search_console") return NextResponse.json({ ok: false, error: "Unknown app." }, { status: 400 });
   if (!hasAdminEnv()) return NextResponse.json({ ok: false, error: "Not available." }, { status: 503 });
   await createAdminClient().from("integrations").delete().eq("user_id", user.userId).eq("provider", provider);
   return NextResponse.json({ ok: true });
-    }
+}
