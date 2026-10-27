@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import RadarItemCard from "@/components/radar/RadarItemCard";
 import { KIND_LABEL, type RadarKind } from "@/lib/radar/types";
 import type { RadarView } from "@/lib/radar/store";
+import { readWhere } from "@/lib/radar/place";
 
 const field: React.CSSProperties = { width: "100%", boxSizing: "border-box", background: "transparent", border: "1px solid var(--bm-border2)", borderRadius: 8, color: "var(--bm-text)", fontSize: 14, fontFamily: "inherit", padding: "10px 12px", outline: "none" };
 const btn: React.CSSProperties = { minHeight: 44, padding: "0 16px", borderRadius: 8, border: "1px solid var(--bm-border3)", background: "var(--bm-accent)", color: "var(--bm-text-inv)", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" };
@@ -21,7 +22,7 @@ export default function RadarPage() {
   const [feedNote, setFeedNote] = useState("");
   const [ask, setAsk] = useState<{ id: string; options: RadarKind[]; why: string } | null>(null);
 
-  useEffect(() => { try { setWhere(localStorage.getItem("bm_radar_where") ?? ""); } catch { /* ignore */ } }, []);
+  useEffect(() => { setWhere(readWhere()); }, []);
   useEffect(() => {
     fetch("/api/radar/settings").then((r) => r.json()).then((b) => { if (b?.ok) setAuto({ enabled: b.auto !== false, lastRunAt: b.lastRunAt ?? null, lastAdded: b.lastAdded ?? 0, paid: b.paid === true }); }).catch(() => undefined);
   }, []);
@@ -121,7 +122,7 @@ export default function RadarPage() {
         ) : <div><button type="button" style={{ ...btn, background: "transparent", color: "var(--bm-text)" }} onClick={getFeed}>Create my calendar link</button></div>}
         {feedNote && <p role="status" style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text3)" }}>{feedNote}</p>}
       </div>
-      {items.length === 0 && !setup ? <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text3)" }}>Nothing on your Radar yet.</p> : (
+      {items.length === 0 && !setup ? <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--bm-text3)" }}>Nothing on your Radar yet. Paste a link above, or let it search for you. Once something is here, Radar re-checks dates and fit every time you open Today.</p> : (
         <div style={{ display: "grid", gap: 8 }}>{items.map((i) => <RadarItemCard key={i.id} item={i} onChange={load} />)}</div>
       )}
     </div>

@@ -66,3 +66,17 @@ export function buildWhyThis(input: WhyThisInput): WhyThisModel {
 
   return { confidence, reasons, signals, alternatives, usedReflection, fallbackNote, mirrorLink: "/founder-mirror" };
 }
+
+/** The full explanation as markdown, for the single "Why this" side pane on Today. */
+export function whyThisMarkdown(m: WhyThisModel): string {
+  const list = (xs: string[]) => xs.map((x) => `- ${x}`).join("\n");
+  return [
+    m.fallbackNote ?? "",
+    m.reasons.length ? `**Why this task**\n\n${list(m.reasons)}` : "",
+    m.signals.length ? `**What BuildMind noticed**\n\n${list(m.signals.map((s) => `${s.title}. ${s.detail}`))}` : "",
+    `**How sure we are:** ${m.confidence.label}`,
+    m.usedReflection === null ? "" : `**Your last check-in:** ${m.usedReflection ? "used to shape this task." : "wasn't available, so it wasn't used."}`,
+    m.alternatives.length ? `**Other options we weighed**\n\n${list(m.alternatives.map((a) => `${a.action}. ${a.why}`))}` : "",
+    `[Something wrong about you? Correct it in Founder Mirror](${m.mirrorLink})`,
+  ].filter(Boolean).join("\n\n");
+}

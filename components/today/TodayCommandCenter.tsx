@@ -52,6 +52,8 @@ export interface TodayCommandCenterProps {
   /** Colour for this kind of work; overridden by green once the action is done. */
   accent?: string;
   rationale?: React.ReactNode;
+  /** Full explanation (markdown) shown in the "Why this" pane. Replaces the short reasons list there. */
+  whyMore?: string;
   reasons?: string[];
   expectedEvidence?: string;
   lowConfidence?: boolean;
@@ -70,7 +72,7 @@ export interface TodayCommandCenterProps {
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
 
-export default function TodayCommandCenter({ action, kicker, accent, rationale, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
+export default function TodayCommandCenter({ action, kicker, accent, rationale, whyMore, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
   const { openPane } = useSidePane();
   const askCoach = () => openPane({ kind: "coach", title: "Coach on today's task", prompt: actionTitle ? `I'm about to work on this: "${actionTitle}". What is the smallest first move, and what usually makes people stall on it?` : undefined });
   const showWhy = () => openPane({
@@ -78,7 +80,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
     markdown: [
       typeof rationale === "string" && rationale ? rationale : "",
       firstStep ? `**Start with:** ${firstStep}` : "",
-      reasons && reasons.length ? `**What it is based on**\n\n${reasons.map((r) => `- ${r}`).join("\n")}` : "",
+      whyMore || (reasons && reasons.length ? `**What it is based on**\n\n${reasons.map((r) => `- ${r}`).join("\n")}` : ""),
       expectedEvidence ? `**You will know it worked when:** ${expectedEvidence}` : "",
     ].filter(Boolean).join("\n\n") || "Nothing more to show for this task yet.",
     facts: timeText ? [{ label: "Time", value: timeText }] : undefined,

@@ -72,7 +72,31 @@ async function buildProposal(admin: Admin, userId: string, projectId: string, re
   return { ok: false, reply: `I couldn't find an open task matching "${req.query}". Nothing was changed. Say it with a few words from the task title and I'll try again.` };
 }
 
-export type ApplyResult = { ok: true; message: string } | { ok: false; status: number; error: string };
+/** How to take back what was just applied. Ids only; the server re-checks ownership on undo. */
+export const UndoSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("remove_task"), taskId: z.string().uuid() }),
+  z.object({ kind: z.literal("reopen_task"), taskId: z.string().uuid(), status: z.string().max(30) }),
+  z.object({ kind: z.literal("cancel_remind"), loopId: z.string().uuid() }),
+]);
+export type Undo = z.infer<typeof UndoSchema>;
+
+export type ApplyResult = { ok: true; message: string; undo?: Undo } | { ok: false; status: number; error: string };
+
+export async function undoWrite(admin: Admin, userId: string, input: unknown): Promise<{ ok: boolean; message: string }> {
+  const parsed = UndoSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "That can't be undone." };
+  const u = parsed.data;
+  if (u.kind === "remove_task") {
+    const { error } = await admin.from("tasks").delete().eq("id", u.taskId).eq("user_id", userId);
+    return error ? { ok: false, message: "Couldn't undo that." } : { ok: true, message: "Undone. The task was removed." };
+  }
+  if (u.kind === "reopen_task") {
+    const { error } = await admin.from("tasks").update({ is_completed: false, status: u.status, completed_at: null, updated_at: new Date().toISOString() }).eq("id", u.taskId).eq("user_id", userId);
+    return error ? { ok: false, message: "Couldn't undo that." } : { ok: true, message: "Undone. The task is back as it was." };
+  }
+  const { error } = await admin.from("today_loops").delete().eq("id", u.loopId).eq("user_id", userId).eq("status", "open");
+  return error ? { ok: false, message: "Couldn't undo that." } : { ok: true, message: "Undone. The reminder was cancelled." };
+}
 
 export async function applyWrite(admin: Admin, userId: string, projectId: string, input: unknown): Promise<ApplyResult> {
   const parsed = ProposalSchema.safeParse(input);
@@ -87,9 +111,10 @@ export async function applyWrite(admin: Admin, userId: string, projectId: string
     if ((count ?? 0) >= MAX_OPEN_LOOPS) return { ok: false, status: 409, error: `You already have ${MAX_OPEN_LOOPS} open reminders. Record one on Today first.` };
     const { data: dup } = await admin.from("today_loops").select("id").eq("user_id", userId).eq("status", "open").eq("task_text", p.text).maybeSingle();
     if (dup?.id) return { ok: true, message: "That reminder is already set." };
-    const { error } = await admin.from("today_loops").insert({ user_id: userId, project_id: projectId, task_text: p.text, measure: "Did you get to it?", due_at: dueAtFor(p.choice) });
+    const { data: row, error } = await admin.from("today_loops").insert({ user_id: userId, project_id: projectId, task_text: p.text, measure: "Did you get to it?", due_at: dueAtFor(p.choice) }).select("id").maybeSingle();
     if (error) return { ok: false, status: 500, error: "Couldn't set the reminder." };
-    return { ok: true, message: `Reminder set for ${DURATION_CHOICES[p.choice].label.toLowerCase()}. It will show at the top of Today when it's due.` };
+    const loopId = (row as { id?: string } | null)?.id;
+    return { ok: true, message: `Reminder set for ${DURATION_CHOICES[p.choice].label.toLowerCase()}. It will show at the top of Today when it's due.`, undo: loopId ? { kind: "cancel_remind", loopId } : undefined };
   }
 
   // Ownership: fetchBacklog verifies the project belongs to userId and only returns that user's rows.
@@ -100,13 +125,14 @@ export async function applyWrite(admin: Admin, userId: string, projectId: string
     const milestoneId = activeMilestoneId(backlog.milestones);
     if (!milestoneId) return { ok: false, status: 409, error: "No milestone to add the task to." };
     const base = { milestone_id: milestoneId, user_id: userId, title: p.title, status: "pending", is_completed: false, priority: 2 };
-    let { error } = await admin.from("tasks").insert(base);
+    let { data: row, error } = await admin.from("tasks").insert(base).select("id").maybeSingle();
     if (error && /column|schema cache/i.test(error.message)) {
-      ({ error } = await admin.from("tasks").insert({ milestone_id: milestoneId, user_id: userId, title: p.title, status: "pending", priority: 2 }));
+      ({ data: row, error } = await admin.from("tasks").insert({ milestone_id: milestoneId, user_id: userId, title: p.title, status: "pending", priority: 2 }).select("id").maybeSingle());
     }
     if (error) return { ok: false, status: 500, error: "Couldn't add the task." };
     await note(admin, userId, `Added task via coach: ${p.title}`);
-    return { ok: true, message: `Added "${p.title}" to your backlog.` };
+    const taskId = (row as { id?: string } | null)?.id;
+    return { ok: true, message: `Added "${p.title}" to your backlog.`, undo: taskId ? { kind: "remove_task", taskId } : undefined };
   }
 
   if (p.kind === "set_task") {
@@ -120,7 +146,7 @@ export async function applyWrite(admin: Admin, userId: string, projectId: string
     const { error } = await admin.from("tasks").update(patch).eq("id", task.id).eq("user_id", userId);
     if (error) return { ok: false, status: 500, error: "Couldn't update the task." };
     await note(admin, userId, `${p.outcome === "done" ? "Completed" : "Blocked"} task via coach: ${task.title}`);
-    return { ok: true, message: p.outcome === "done" ? `Marked "${task.title}" as done.` : `Marked "${task.title}" as blocked.` };
+    return { ok: true, message: p.outcome === "done" ? `Marked "${task.title}" as done.` : `Marked "${task.title}" as blocked.`, undo: { kind: "reopen_task", taskId: task.id, status: String((task as { status?: string | null }).status ?? "pending") } };
   }
 
   // log_outreach: attach to the open task it most plausibly belongs to (if one clearly does) and save to coach memory.

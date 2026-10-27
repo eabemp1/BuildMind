@@ -69,3 +69,27 @@ describe("reminders", () => {
     expect(parseCoachWrite("remind me tomorrow")).toBeNull();
   });
 });
+
+import { UndoSchema } from "@/lib/coachWrites/server";
+import { prepLoopFor } from "@/lib/radar/prepLoop";
+import { weeklyNote } from "@/lib/weeklyNote";
+
+describe("undo, prep reminder and weekly note", () => {
+  it("undo accepts only ids and known kinds", () => {
+    expect(UndoSchema.safeParse({ kind: "remove_task", taskId: "7b0c1c0e-8c2f-4a39-9f5e-1d2b3c4d5e6f" }).success).toBe(true);
+    expect(UndoSchema.safeParse({ kind: "remove_task", taskId: "not-a-uuid" }).success).toBe(false);
+    expect(UndoSchema.safeParse({ kind: "drop_table" }).success).toBe(false);
+  });
+  it("an event far enough away gets a prep reminder two days before; a near one does not", () => {
+    const now = Date.parse("2026-10-27T10:00:00Z");
+    const r = prepLoopFor({ type: "event", title: "Demo day", starts_at: "2026-11-05T09:00:00Z" }, now);
+    expect(r?.due_at).toBe("2026-11-03T09:00:00.000Z");
+    expect(prepLoopFor({ type: "event", title: "Demo day", starts_at: "2026-10-28T09:00:00Z" }, now)).toBeNull();
+    expect(prepLoopFor({ type: "program", title: "Grant", starts_at: "2026-11-05T09:00:00Z" }, now)).toBeNull();
+  });
+  it("the weekly note is silent with no activity and honest about the change", () => {
+    expect(weeklyNote({ done: 0, prevDone: 0, radarActed: 0 })).toBeNull();
+    expect(weeklyNote({ done: 5, prevDone: 3, radarActed: 1 })).toBe("You closed 5 tasks in the last 7 days, 2 more than the week before. You acted on 1 Radar item.");
+    expect(weeklyNote({ done: 1, prevDone: 4, radarActed: 0 })).toContain("3 fewer");
+  });
+});

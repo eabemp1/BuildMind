@@ -13,7 +13,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { rateLimitAsync } from "@/lib/server/rateLimit";
 import { isPaidSubscription } from "@/lib/radar/autoRun";
 import { extractDraft } from "@/lib/radar/extract";
-import { listRadar, todayPicks } from "@/lib/radar/store";
+import { listRadar, todayPicks, CANT_ATTEND_RE } from "@/lib/radar/store";
+import { prepLoopFor } from "@/lib/radar/prepLoop";
+import { MAX_OPEN_LOOPS } from "@/lib/today/loops";
 import { typeOfKind, type RadarKind } from "@/lib/radar/types";
 
 export const runtime = "nodejs";
@@ -34,6 +36,8 @@ const Patch = z.object({
   meeting_url: z.string().url().max(500).nullable().optional(),
   role: z.enum(["customer", "mentor", "investor", "cofounder", "collaborator", "other"]).nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
+  /** One tap "Can't attend": dismisses the item and remembers why, so similar events rank lower. */
+  cant_attend: z.enum(["place", "time"]).optional(),
 });
 
 const unavailable = () => NextResponse.json({ ok: true, items: [], reason: "unavailable" });
@@ -94,12 +98,34 @@ export async function PATCH(request: Request) {
   const parsed = Patch.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
   if (!hasAdminEnv()) return unavailable();
-  const { id, kind, ...rest } = parsed.data;
+  const { id, kind, cant_attend, ...rest } = parsed.data;
   const patch: Record<string, unknown> = { ...rest, updated_at: new Date().toISOString() };
+  if (cant_attend) {
+    const { data: cur } = await createAdminClient().from("radar_items").select("notes").eq("id", id).eq("user_id", user.userId).maybeSingle();
+    const kept = String((cur as { notes: string | null } | null)?.notes ?? "").replace(CANT_ATTEND_RE, "").trim();
+    patch.status = "dismissed";
+    patch.notes = [kept, `Can't attend (${cant_attend})`].filter(Boolean).join("\n").slice(0, 1000);
+  }
   if (kind) { patch.kind = kind; patch.type = typeOfKind(kind); patch.kind_confirmed = true; }
   const { error } = await createAdminClient().from("radar_items").update(patch).eq("id", id).eq("user_id", user.userId);
   if (error) return NextResponse.json({ ok: false, error: "Could not save." }, { status: 500 });
+  if (patch.status === "attending") await addPrepReminder(id, user.userId);
   return NextResponse.json({ ok: true });
+}
+
+/** Committing to an event sets a reminder two days before it. Best effort: never fails the save. */
+async function addPrepReminder(id: string, userId: string) {
+  try {
+    const admin = createAdminClient();
+    const { data: it } = await admin.from("radar_items").select("type, title, starts_at, project_id").eq("id", id).eq("user_id", userId).maybeSingle();
+    const loop = it ? prepLoopFor(it as { type: string; title: string; starts_at: string | null }) : null;
+    if (!loop) return;
+    const { count } = await admin.from("today_loops").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "open");
+    if ((count ?? 0) >= MAX_OPEN_LOOPS) return;
+    const { data: dup } = await admin.from("today_loops").select("id").eq("user_id", userId).eq("status", "open").eq("task_text", loop.task_text).maybeSingle();
+    if (dup?.id) return;
+    await admin.from("today_loops").insert({ user_id: userId, project_id: (it as { project_id: string | null }).project_id, ...loop });
+  } catch { /* reminders are a bonus */ }
 }
 
 export async function DELETE(request: Request) {
