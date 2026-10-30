@@ -136,10 +136,11 @@ export function buildProgressVisual(input: {
     { label: "Milestones done", value: `${milestones.filter((m) => m.status === "completed").length}/${milestones.length}`, tone: "accent" },
   ] });
 
-  if (milestones.length) {
+  const withTasks = milestones.filter((m) => m.total > 0); // a milestone with no tasks has no progress to draw
+  if (withTasks.length) {
     panels.push({
       type: "bars", title: "Milestones", unit: "%", caption: "Share of each milestone's tasks that are done.",
-      items: milestones.slice(0, 8).map((m) => {
+      items: withTasks.slice(0, 8).map((m) => {
         const pct = m.total ? Math.round((m.done / m.total) * 100) : 0;
         const late = m.daysToTarget !== null && m.daysToTarget < 0 && m.status !== "completed";
         return { label: m.title, value: pct, max: 100, tone: m.status === "completed" ? "good" : late ? "bad" : "accent", note: `${m.done} of ${m.total} tasks${late ? `, ${-m.daysToTarget!}d past target` : m.daysToTarget != null && m.status !== "completed" ? `, ${m.daysToTarget}d left` : ""}` };

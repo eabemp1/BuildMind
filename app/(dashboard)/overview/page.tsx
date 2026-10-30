@@ -203,7 +203,7 @@ export default function OverviewPage() {
   const stage = activeProject?.startup_stage ?? "Idea";
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
   const totalTasks = activeProject?.tasksTotal ?? 0;
-  const doneTasks = overview?.completedTasks ?? activeProject?.tasksCompleted ?? 0;
+  const doneTasks = activeProject?.tasksCompleted ?? overview?.completedTasks ?? 0; // same project as the total
 
   const todayStr = now.toLocaleDateString("en-CA");
   const todayDone = userId

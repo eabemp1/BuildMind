@@ -49,7 +49,9 @@ const STAGE_MOVE: Record<string, { label: string; why: string }> = {
 };
 
 export function buildExecutionPicture(i: PictureInput): Picture {
-  const completionPct = i.tasksTotal > 0 ? Math.round((i.tasksDone / i.tasksTotal) * 100) : 0;
+  // Done can never exceed the total it is shown against.
+  const done = i.tasksTotal > 0 ? Math.min(i.tasksDone, i.tasksTotal) : i.tasksDone;
+  const completionPct = i.tasksTotal > 0 ? Math.round((done / i.tasksTotal) * 100) : 0;
   const stale = i.daysSinceReflection != null && i.daysSinceReflection >= 3;
   const scoreDropped = i.scoreDelta != null && i.scoreDelta <= -10;
   const lowCompletion = i.tasksTotal >= 4 && completionPct < 50;
@@ -80,11 +82,11 @@ export function buildExecutionPicture(i: PictureInput): Picture {
   } else if (stale || scoreDropped || lowCompletion) {
     tone = scoreDropped && stale ? "risk" : "watch";
     verdict = `Slowing down in ${i.stage}`;
-    because = `${i.tasksDone} of ${i.tasksTotal} tasks done, ${i.milestonesCompleted} milestone${i.milestonesCompleted === 1 ? "" : "s"} completed.`;
+    because = `${done} of ${i.tasksTotal} tasks done, ${i.milestonesCompleted} milestone${i.milestonesCompleted === 1 ? "" : "s"} completed.`;
   } else {
     tone = "steady";
     verdict = `On track in ${i.stage}`;
-    because = `${i.tasksDone} of ${i.tasksTotal} tasks done, ${i.milestonesCompleted} milestone${i.milestonesCompleted === 1 ? "" : "s"} completed.`;
+    because = `${done} of ${i.tasksTotal} tasks done, ${i.milestonesCompleted} milestone${i.milestonesCompleted === 1 ? "" : "s"} completed.`;
   }
 
   // One next move. A concrete task beats the generic stage move; an unfinished

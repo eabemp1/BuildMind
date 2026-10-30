@@ -33,7 +33,7 @@ const STATUS_COLOR: Record<GhostStatus, string> = {
 
 function RaceChart({ race }: { race: GhostRace }) {
   const [wrapRef, measured] = useMeasuredWidth<HTMLDivElement>(320);
-  const W = Math.max(260, Math.min(measured, 720)), H = 140, padL = 24, padR = 52, padT = 12, padB = 24;
+  const W = Math.max(260, Math.min(measured, 720)), H = 140, padL = 24, padR = 68, padT = 12, padB = 24;
   const top = Math.max(race.ghost, race.doneSoFar, 3);
   const x = (i: number) => padL + (i / 6) * (W - padL - padR);
   const y = (v: number) => padT + (1 - v / top) * (H - padT - padB);

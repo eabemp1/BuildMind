@@ -58,6 +58,9 @@ export function DayActivityCanvas({ days }: { days: DayActivity[] }) {
         role="img"
         aria-label="This week's completed activity by day, shaded by how crucial each was"
       >
+        {days.every((d) => d.activities.length === 0) && (
+          <text x={width / 2} y={PAD + 18} textAnchor="middle" fontSize={13} fill="var(--bm-text3)">No finished actions yet this week</text>
+        )}
         {days.map((day, colIndex) => {
           const x = PAD + colIndex * (COL_W + COL_GAP);
           const isToday = day.date === todayStr;
