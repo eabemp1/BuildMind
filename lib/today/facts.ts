@@ -85,7 +85,7 @@ function mentionedPlatform(s: string): string | undefined {
 }
 
 // "I don't (yet) have any (beta) users", "I have no users", "no beta users", "0 users"
-const NO_USERS_RULE = "The founder has NO users yet. Never write a task that messages, emails, interviews, surveys or follows up 'your users', 'beta users', 'paying' customers, or anyone who 'used' or 'tried' the product. Tasks must find or reach people who have never used it, with the goal of getting the first 5 users.";
+const NO_USERS_RULE = "The founder has NO users yet. Never write a task that messages, emails, interviews, surveys or follows up 'your users', 'beta users', 'paying' customers, or anyone who 'used' or 'tried' the product. Tasks must find or reach people who have never used it, with the goal of getting the first 5 users. Do not assume the founder has anyone's email or phone number: unless they named a specific person, the task must be doable from a group or community they already belong to, or its first step must be finding those people.";
 const noAccessRule = (subject: string) => `The founder has no access to ${subject} communities right now. Do not assign tasks that need ${subject} (joining, posting, DMing there) unless the task first gets access in a way that works today.`;
 
 const NO_USERS_RE = new RegExp(
@@ -355,4 +355,4 @@ export function findContradictions(task: string, ledger: Ledger): Contradiction[
     }
   }
   return out;
-}
+        }
