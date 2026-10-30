@@ -626,7 +626,7 @@ function LoginContent() {
   const supabase     = createClient();
   const { theme }    = useTheme();
 
-  const [tab,          setTab         ] = useState<"signin" | "signup">("signin");
+  const [tab,          setTab         ] = useState<"signin" | "signup">(searchParams.get("tab") === "signup" ? "signup" : "signin");
   const [email,        setEmail       ] = useState("");
   const [password,     setPassword    ] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -950,4 +950,4 @@ export default function LoginPage() {
       <LoginContent />
     </Suspense>
   );
-}
+                                              }
