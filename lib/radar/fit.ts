@@ -5,6 +5,7 @@
  */
 import { tokenize, stem } from "@/lib/taxonomy/taskTaxonomy";
 import type { RadarItem, RadarKind, PersonRole } from "@/lib/radar/types";
+import { reach } from "@/lib/radar/place";
 
 export type StageBand = "idea" | "validation" | "building" | "launch" | "growth";
 export function stageBandOf(stage: string): StageBand {
@@ -100,8 +101,10 @@ export function fitFor(i: RadarItem, ctx: FitContext): Fit {
   // 4. Effort, place, cost (-15..+10)
   if (i.is_virtual || i.meeting_url) { score += 10; reasons.push("Online, no travel."); }
   else if (i.location) {
-    const home = (ctx.homeWhere ?? "").trim().toLowerCase();
-    if (home && i.location.toLowerCase().includes(home)) { score += 8; reasons.push(`In ${i.location}.`); }
+    const home = (ctx.homeWhere ?? "").trim();
+    const r = reach(i.location, home);
+    if (r === "near") { score += 8; reasons.push(`In ${i.location}.`); }
+    else if (r === "far") { score -= 60; cautions.push(`In ${i.location}, which is outside ${home}.`); }
     else if (home) { score -= 12; cautions.push(`In ${i.location}. Check you can get there.`); }
     else cautions.push(`In ${i.location}. Tell BuildMind where you are to rank by distance.`);
   }

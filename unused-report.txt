@@ -1,0 +1,821 @@
+Unused files (63)
+app/today/components/SignalList.tsx
+app/today/components/TodayScreens.tsx
+app/today/components/TodayShared.tsx
+app/today/components/WhyThisPanel.tsx
+app/today/todayHelpers.ts
+components/break-my-startup/AttackCard.tsx
+components/break-my-startup/MoatFingerprint.tsx
+components/break-my-startup/SurvivalBar.tsx
+components/break-my-startup/types.ts
+components/break/EvidencePanel.tsx
+components/BreakMyStartup2.tsx
+components/CognitiveLoadCheckin.tsx
+components/ConsentLedgerCTA.tsx
+components/dashboard-card.tsx
+components/dashboard-visuals.tsx
+components/ExecutionScorecardModal.tsx
+components/FirstTaskNotificationPrompt.tsx
+components/FoundingMemberBadge.tsx
+components/landing/dashboard-preview.tsx
+components/layout/page-hero.tsx
+components/layout/responsive-layout.tsx
+components/milestone-card.tsx
+components/milestone-chart.tsx
+components/MobileCheckin.tsx
+components/MorningBriefingCard.tsx
+components/progress-bar.tsx
+components/project-card.tsx
+components/project-table.tsx
+components/providers/IdleDetectionProvider.tsx
+components/QuickWinStrip.tsx
+components/ReflectSheet.tsx
+components/startup-timeline.tsx
+components/TaskQualityFeedback.tsx
+components/tour/TourOverlay.tsx
+components/ui/AIVisualWidget.tsx
+components/ui/BuildMindLogo.tsx
+components/ui/Divider.tsx
+components/ui/ErrorState.tsx
+components/ui/glow-card.tsx
+components/ui/IconButton.tsx
+components/ui/SectionHeader.tsx
+components/ui/StatCard.tsx
+components/ui/Tooltip.tsx
+components/UpgradeCelebration.tsx
+components/UrgencyBanner.tsx
+components/WeeklyReportCard.tsx
+lib/cofounder/idleDetection.ts
+lib/cofounder/index.ts
+lib/journeyCalls.ts
+lib/journeyPlacement.ts
+lib/reports.ts
+lib/server/contextCache.ts
+lib/server/errorReporter.ts
+lib/server/stageTransitionCache.ts
+lib/urgency/index.ts
+lib/utils.ts
+public/sw.js
+route.ts
+scripts/cleanup-avoidance-zones.ts
+scripts/reclassify-founder-memory-from-source.ts
+scripts/recommendation-metrics.ts
+supabase/functions/scheduled-jobs/index.ts
+supabase/functions/send-daily-push/index.ts
+Unused dependencies (5)
+axios           package.json:33:6
+clsx            package.json:34:6
+html2canvas     package.json:36:6
+recharts        package.json:42:6
+tailwind-merge  package.json:43:6
+Unused devDependencies (1)
+wait-on  package.json:64:6
+Unused exports (355)
+PLAN_MONTHLY_LIMITS                             app/api/ai/_utils.ts:39:10
+PLAN_DAILY_LIMITS                               app/api/ai/_utils.ts:39:31
+CORE_MONTHLY_LIMITS                             app/api/ai/_utils.ts:39:50
+CORE_DAILY_LIMITS                               app/api/ai/_utils.ts:39:71
+default                                         app/today/components/RisksGapsCard.tsx:101:16
+default                                         app/today/components/WhatChangedCard.tsx:66:16
+VerdictTrail                          function  components/agents/parts.tsx:69:17
+default                                         components/AIErrorBoundary.tsx:161:16
+paceLine                              function  components/BriefingStats.tsx:27:17
+default                                         components/BuildMindCalibrating.tsx:223:16
+AnimatedMark                                    components/BuildMindLoader.tsx:179:10
+MomentumArc                                     components/charts/index.ts:9:23
+DotHeatmap                                      components/charts/index.ts:15:10
+SeverityStack                                   components/charts/index.ts:21:10
+MomentumArc                           function  components/charts/RadialGauge.tsx:132:17
+SeverityStack                         function  components/charts/SeverityStack.tsx:39:17
+default                               function  components/CofounderPulse.tsx:138:25
+default                                         components/ConfidenceBadge.tsx:116:16
+NotifBadge                            function  components/layout/sidebar-nav.tsx:28:17
+default                                         components/LoopNarrative.tsx:219:16
+usePaywall                            function  components/PaywallGate.tsx:111:17
+useMorningBriefingPaywall             function  components/PaywallMoment.tsx:185:17
+computeCompleteness                             components/ProfileCompletenessBar.tsx:27:10
+default                                         components/ProfileCompletenessBar.tsx:196:16
+downloadIcs                           function  components/radar/RadarItemCard.tsx:18:17
+default                                         components/TeamsWaitlistCard.tsx:254:16
+readUndone                            function  components/today/RadarBar.tsx:24:17
+FEEDBACK_REASONS                                components/today/ReplaceWithReason.tsx:12:14
+TrialCounterPill                      function  components/TrialBanner.tsx:157:17
+TrialWelcomeCard                      function  components/TrialBanner.tsx:201:17
+TrialPaywall                          function  components/TrialBanner.tsx:321:17
+default                                         components/ui/EmptyState.tsx:30:16
+Select                                          components/ui/input.tsx:134:14
+default                                         components/ui/PageHeader.tsx:64:16
+default                                         components/ui/ScoreRing.tsx:77:16
+TabsContent                           function  components/ui/tabs.tsx:169:17
+default                                         components/ui/UIModeToggle.tsx:72:16
+default                                         components/ui/WhyReveal.tsx:100:16
+signOut                               function  e2e/helpers.ts:31:23
+waitForTodayReady                     function  e2e/helpers.ts:41:23
+signupSeries                          function  lib/adminBriefing.ts:35:17
+sanitizePromptInput                   function  lib/agents/index.ts:67:17
+EMPTY_AGENT_EVIDENCE                            lib/agentToToday.ts:58:14
+CONFIRMED_MAX_AGE_DAYS                          lib/agentToToday.ts:61:14
+RECHECK_AFTER_DAYS                              lib/agentToToday.ts:63:14
+tierPhrase                            function  lib/agentToToday.ts:138:17
+sanitizeFinding                       function  lib/agentWorkforce.ts:347:17
+HARD_FAIL_CHECKS                                lib/aiEvaluator.ts:100:14
+runPreScreen                          function  lib/aiEvaluator.ts:102:17
+getStoredToken                        function  lib/api.ts:19:17
+isOnboarded                           function  lib/api.ts:32:17
+setOnboarded                          function  lib/api.ts:37:17
+shouldShowTour                        function  lib/api.ts:42:17
+markTourSeen                          function  lib/api.ts:47:17
+markFirstLogin                        function  lib/api.ts:77:17
+breakMyStartup                        function  lib/api.ts:228:23
+looksLikeQuotedText                   function  lib/avoidanceSanitize.ts:29:17
+buildWeeklyBriefing                   function  lib/behavioralLayers.ts:342:23
+EARLY_BELOW                                     lib/beliefCalibration.ts:37:14
+CORRECTION_CHECK_MIN                            lib/beliefCalibration.ts:127:14
+recordBenchmarkEvent                  function  lib/benchmarks.ts:71:23
+makeBenchmarkEvent                    function  lib/benchmarks.ts:97:17
+PLAN_PRICE_USD                                  lib/billing/pricing.ts:9:14
+PLAN_PRICE_CENTS                                lib/billing/pricing.ts:15:14
+foundingPriceUsd                      function  lib/billing/pricing.ts:34:17
+foundingPriceCents                    function  lib/billing/pricing.ts:38:17
+AFRICA_COUNTRIES                                lib/billing/regionalPricing.ts:31:14
+ghsPlanCodes                          function  lib/billing/regionalPricing.ts:61:17
+priceLabel                            function  lib/billing/regionalPricing.ts:142:17
+detectContradictions                  function  lib/blockerIntelligence.ts:107:23
+generateInsightContent                function  lib/blockerIntelligence.ts:162:17
+surfaceInsight                        function  lib/blockerIntelligence.ts:200:23
+excludedCompetitors                   function  lib/breakEvidence.ts:184:17
+gradeCompetitors                      function  lib/breakEvidence.ts:198:17
+detectConflicts                       function  lib/breakEvidence.ts:238:17
+detectTextConflicts                   function  lib/breakEvidence.ts:314:17
+labelClaims                           function  lib/breakEvidence.ts:358:17
+evidenceQuality                       function  lib/breakEvidence.ts:392:17
+calibrate                             function  lib/breakEvidence.ts:401:17
+buildFalsifiers                       function  lib/breakEvidence.ts:423:17
+buildScoreBasis                       function  lib/breakEvidence.ts:469:17
+buildConclusion                       function  lib/breakEvidence.ts:504:17
+buildThesisTest                       function  lib/breakEvidence.ts:532:17
+buildChangeMyMind                     function  lib/breakEvidence.ts:560:17
+checkPivots                           function  lib/breakEvidence.ts:577:17
+specificityOf                         function  lib/breakScore.ts:54:17
+STAGE_ORDER                                     lib/buildmind.ts:31:3
+normalizeStage                                  lib/buildmind.ts:32:3
+inferStageFromMilestones                        lib/buildmind.ts:33:3
+stageRank                                       lib/buildmind.ts:34:3
+computeScoreDelta                               lib/buildmind.ts:38:31
+applyScoreDelta                                 lib/buildmind.ts:38:50
+markOnboardingComplete                          lib/buildmind.ts:45:3
+updateProjectStage                              lib/buildmind.ts:48:3
+calculateDashboardStats                         lib/buildmind.ts:54:3
+createNotificationForCurrentUser                lib/buildmind.ts:59:3
+getUnreadNotificationCount                      lib/buildmind.ts:63:3
+completeTask                          function  lib/buildmind.ts:89:23
+csvCell                               function  lib/coachActions/csv.ts:8:17
+buildMilestonesResult                 function  lib/coachActions/registry.ts:264:17
+buildExecutionLogResult               function  lib/coachActions/registry.ts:388:17
+buildWeekPlanResult                   function  lib/coachActions/registry.ts:535:17
+PER_DAY                                         lib/coachActions/weekPlan.ts:14:14
+syncBlueprintUsesFromServer           function  lib/cofounder/blueprintMode.ts:57:23
+getBlueprintUsesForProject            function  lib/cofounder/blueprintMode.ts:67:17
+canUseBlueprintMode                   function  lib/cofounder/blueprintMode.ts:72:17
+runBlueprintMode                      function  lib/cofounder/blueprintMode.ts:94:23
+syncCompetitorReframeStateFromServer  function  lib/cofounder/competitorReframe.ts:77:23
+trackCompetitorLookup                 function  lib/cofounder/competitorReframe.ts:100:17
+getReframeUsageThisWeek               function  lib/cofounder/competitorReframe.ts:129:17
+runCompetitorReframe                  function  lib/cofounder/competitorReframe.ts:157:23
+classifySpiralWithLLM                 function  lib/cofounder/spiralDetection.ts:84:23
+shouldActivateDeepIntervention        function  lib/cofounder/spiralDetection.ts:183:17
+syncAvoidanceSignalsFromServer        function  lib/cofounder/spiralDetection.ts:230:23
+recordAvoidanceSignal                 function  lib/cofounder/spiralDetection.ts:240:17
+getAvoidanceSignals                   function  lib/cofounder/spiralDetection.ts:259:17
+saveValidationReceipt                 function  lib/cofounder/validationReceipts.ts:59:17
+deleteValidationReceipt               function  lib/cofounder/validationReceipts.ts:73:17
+getConfirmedReceipts                  function  lib/cofounder/validationReceipts.ts:81:17
+STYLES                                          lib/companion/gather.ts:12:14
+INTENSITIES                                     lib/companion/gather.ts:13:14
+milestoneOverdue                      function  lib/companion/moments.ts:149:17
+restart                               function  lib/companion/moments.ts:162:17
+win                                   function  lib/companion/moments.ts:175:17
+recordInteraction                     function  lib/conversationContinuity.ts:60:17
+getRecentInteractions                 function  lib/conversationContinuity.ts:132:17
+buildContinuityPrompt                 function  lib/conversationContinuity.ts:178:17
+generateEveningNudge                  function  lib/cron/aiContent.ts:40:23
+generateWeeklyReportPush              function  lib/cron/aiContent.ts:261:23
+normalizeTextArray                    function  lib/data/projects.ts:32:17
+markOnboardingComplete                function  lib/data/projects.ts:126:23
+calculateDashboardStats                         lib/data/projects.ts:749:56
+updateProjectMRR                      function  lib/data/projects.ts:758:23
+calculateDashboardStats               function  lib/data/reports.ts:700:17
+filterVariants                        function  lib/distribution/engine.ts:86:17
+investorFallback                      function  lib/distribution/engine.ts:167:17
+MIN_OUTCOMES                                    lib/distribution/experiments.ts:33:14
+DAILY_AI_LIMIT_PROMOTER                         lib/distribution/handlers.ts:13:14
+insightFrom                           function  lib/distribution/overview.ts:91:17
+PLATFORM_LIMITS                                 lib/distribution/textSignals.ts:7:14
+env                                             lib/env.ts:56:14
+domainOf                              function  lib/evidence.ts:34:17
+ACCEPT_AT                                       lib/evidenceWeigh.ts:59:14
+PARTIAL_AT                                      lib/evidenceWeigh.ts:60:14
+PARTIAL_WEIGHT                                  lib/evidenceWeigh.ts:61:14
+UNBACKED_PARTIAL_AT                             lib/evidenceWeigh.ts:62:14
+UNBACKED_WEIGHT                                 lib/evidenceWeigh.ts:63:14
+requestScorecard                      function  lib/executionScorecard.ts:225:23
+shareToX                              function  lib/executionScorecard.ts:247:17
+buildExternalAnchorCheckinQuestion    function  lib/externalAnchors.ts:233:17
+ARCHETYPE_TONE                                  lib/founderArchetype.ts:23:14
+ARCHETYPE_DRAFT_STYLE                           lib/founderArchetype.ts:39:14
+recomputeArchetypeConfidence          function  lib/founderArchetype.ts:116:23
+ARCHETYPE_CONFIDENCE_THRESHOLD                  lib/founderArchetypeDisplay.ts:74:14
+formatArchetypeLabel                  function  lib/founderArchetypeDisplay.ts:93:17
+computeMomentumTrend                            lib/founderContext.ts:71:3
+projectMomentum                                 lib/founderContext.ts:72:3
+fetchFounderContext                   function  lib/founderContext.ts:79:23
+updateFounderContext                  function  lib/founderContext.ts:91:23
+recordCognitiveLoad                   function  lib/founderContext.ts:117:23
+fetchMorningBriefing                  function  lib/founderContext.ts:125:23
+deriveIntelligenceSignals             function  lib/founderIntelligence.ts:437:17
+sampleBeta                            function  lib/founderIntelligence.ts:1099:17
+decayedSignalConfidence               function  lib/founderIntelligence.ts:1119:17
+upsertFounderMemory                   function  lib/founderMemory.ts:188:23
+FOUNDER_PATTERN_LIBRARY                         lib/founderPatternLibrary.ts:25:14
+isLateNight                           function  lib/founderState.ts:62:17
+EFFORT                                          lib/founderState.ts:161:14
+getUsdToGhsRate                       function  lib/fx.ts:79:23
+MIN_GHOST                                       lib/ghostRace.ts:18:14
+MAX_GHOST                                       lib/ghostRace.ts:19:14
+GHOST_LOOKBACK_WEEKS                            lib/ghostRaceData.ts:15:14
+REPO_RE                                         lib/integrations/github.ts:17:14
+APP_TOKEN_PREFIX                                lib/integrations/githubApp.ts:9:14
+refreshAccessToken                    function  lib/integrations/searchConsole.ts:64:23
+getLevelProgress                      function  lib/journey.ts:170:23
+getStreak                             function  lib/journey.ts:177:23
+getUnlockedAchievements               function  lib/journey.ts:228:23
+getOrCreatePath                       function  lib/journey.ts:403:23
+getOrCreateProject                    function  lib/journey.ts:433:23
+getOrCreatePathForStudent             function  lib/journey.ts:509:23
+getOrCreateProjectForStudent          function  lib/journey.ts:537:23
+DEFAULT_RUBRIC_WEIGHTS                          lib/journey.ts:994:10
+getCandidateArchetypeStats            function  lib/learningLoop.ts:462:23
+milestoneStageIndex                   function  lib/milestoneScope.ts:17:17
+applyMomentumEMA                      function  lib/momentum.ts:59:17
+createNotificationForCurrentUser                lib/notifications.ts:83:14
+seedMorningBriefing                   function  lib/notifications.ts:366:17
+seedEveningCheck                      function  lib/notifications.ts:401:17
+getFunnelEvents                       function  lib/onboarding-analytics.ts:61:17
+trackEvent                            function  lib/onboarding-analytics.ts:155:17
+usePageTracking                       function  lib/onboarding-analytics.ts:182:17
+inferCategory                         function  lib/outcomeCorrelation.ts:101:17
+inferTaskType                         function  lib/outcomeCorrelation.ts:114:17
+getCategoryTaskPromptHint             function  lib/outcomeCorrelation.ts:387:17
+MAX_SIGNAL_COUNT                                lib/outcomeSignal.ts:54:14
+PROOF_CAP                                       lib/outcomeSignal.ts:96:14
+gradeExecutionConsistency             function  lib/patternGrading.ts:57:17
+gradeBacklogClearance                 function  lib/patternGrading.ts:79:17
+startFreeTrial                        function  lib/plan.ts:118:17
+getTrialStatus                        function  lib/plan.ts:136:17
+isTrialActive                         function  lib/plan.ts:166:17
+markTrialExpired                      function  lib/plan.ts:174:17
+getEffectivePlan                      function  lib/plan.ts:184:17
+PLAN_PRICES                                     lib/plan.ts:249:14
+PAYWALL_FREE_TO_BUILDER                         lib/plan.ts:260:14
+FEATURE_GATES                                   lib/plan.ts:264:14
+planMeetsRequirement                  function  lib/plan.ts:316:17
+clearStoredPlan                       function  lib/plan.ts:328:17
+syncStoredPlanFromUser                function  lib/plan.ts:349:17
+getActionsThisWeek                    function  lib/plan.ts:380:17
+recordWeeklyAction                    function  lib/plan.ts:384:17
+hasHitWeeklyLimit                     function  lib/plan.ts:390:17
+getAIMessagesToday                    function  lib/plan.ts:412:17
+recordAIMessage                       function  lib/plan.ts:416:17
+hasHitDailyAILimit                    function  lib/plan.ts:420:17
+applyServerStreak                     function  lib/plan.ts:484:17
+checkUpgradeTrigger                   function  lib/plan.ts:508:17
+resetUpgradeTrigger                   function  lib/plan.ts:518:17
+investorFacts                         function  lib/prep/engine.ts:51:23
+groundedCompetitors                   function  lib/prep/engine.ts:86:17
+competitorBrief                       function  lib/prep/engine.ts:102:23
+validationFallback                    function  lib/prep/engine.ts:135:17
+validationKit                         function  lib/prep/engine.ts:154:23
+pricingTest                           function  lib/prep/engine.ts:201:23
+prospectMap                           function  lib/prep/engine.ts:238:23
+computeOptimalDeliveryHour            function  lib/proactiveDelivery.ts:69:17
+buildTodayScreenPayload               function  lib/proactiveDelivery.ts:126:17
+buildDismissalInsight                 function  lib/proactiveDelivery.ts:228:17
+formatNotificationBody                function  lib/proactiveDelivery.ts:263:17
+getActivePrompt                       function  lib/promptRegistry.ts:130:17
+getPromptText                         function  lib/promptRegistry.ts:134:17
+emitPulseBatch                        function  lib/pulse.ts:145:23
+checkStreakMilestone                  function  lib/pulse.ts:274:17
+WINDOW_START_HOUR                               lib/pushWindow.ts:11:14
+WINDOW_END_HOUR                                 lib/pushWindow.ts:12:14
+useActiveProject                      function  lib/queries.ts:71:17
+useNotificationsQuery                 function  lib/queries.ts:111:17
+useMarkNotificationMutation           function  lib/queries.ts:162:17
+useClearNotificationsMutation         function  lib/queries.ts:182:17
+useAICoachQuery                       function  lib/queries.ts:255:17
+enqueue                               function  lib/queue/index.ts:75:23
+queue                                           lib/queue/index.ts:193:14
+QUIET_WINDOW_DAYS                               lib/quietDays.ts:17:14
+topicTerms                            function  lib/radar/discover.ts:24:17
+calendarStart                         function  lib/radar/nextMove.ts:36:17
+countryOf                             function  lib/radar/place.ts:22:17
+PREP_LEAD_DAYS                                  lib/radar/prepLoop.ts:3:14
+isLive                                function  lib/radar/urgency.ts:34:17
+isTakeover                            function  lib/radar/urgency.ts:42:17
+isSoon                                function  lib/radar/urgency.ts:52:17
+markRecommendationLifecycle           function  lib/recommendationLifecycle.ts:115:23
+STALL_AFTER_DAYS                                lib/recommendationRecovery.ts:63:14
+RECONSIDER_AFTER_DAYS                           lib/recommendationRecovery.ts:64:14
+estimateTaskDifficulty                function  lib/reflexion.ts:78:17
+groqCall                              function  lib/reflexion.ts:104:23
+CHANNEL_STYLE_EXAMPLES                          lib/reflexion.ts:184:14
+getChannelStyleInstruction            function  lib/reflexion.ts:235:17
+getCofounderStyleInstruction          function  lib/reflexion.ts:317:17
+getNewUserContextInstruction          function  lib/reflexion.ts:336:17
+computeDomainDataPoints               function  lib/reflexion.ts:370:17
+detectFounderGaps                     function  lib/reflexion.ts:1122:23
+generateEveningNudge                  function  lib/reflexion.ts:1396:23
+getRegionalContext                    function  lib/regionalContext.ts:76:17
+TimeoutError                          class     lib/resilience.ts:7:14
+retry                                 function  lib/resilience.ts:16:23
+updateStreak                          function  lib/scorecard.ts:197:23
+setWeeklyMomentumBaseline             function  lib/scorecard.ts:264:23
+hostOf                                          lib/searchRank.ts:15:14
+queryTerms                            function  lib/searchRank.ts:17:17
+relevance                             function  lib/searchRank.ts:21:17
+DEFAULT_DAILY_CEILING                           lib/server/aiBudget.ts:22:14
+utcDay                                function  lib/server/aiBudget.ts:55:17
+totalToday                            function  lib/server/aiBudget.ts:82:23
+_resetBudgetCache                     function  lib/server/aiBudget.ts:109:17
+DEFAULT_PUBLIC_BREAK_DAILY_CAP                  lib/server/aiBudget.ts:116:14
+isTestStatus                          function  lib/server/breakPredictions.ts:15:17
+getAgentConcurrencyStats              function  lib/server/concurrency.ts:79:17
+logIntelligenceSnapshot               function  lib/server/founderIntelligenceExport.ts:102:23
+looksLikeLabel                        function  lib/server/founderMemoryMaintenance.ts:61:17
+reclassifyRow                         function  lib/server/founderMemoryMaintenance.ts:120:23
+hasAdminPlanLookupEnv                 function  lib/server/plan.ts:31:17
+weekStart                                       lib/server/projectReadiness.ts:160:10
+resolveMilestoneStage                 function  lib/server/stageProgress.ts:94:17
+insightLine                           function  lib/shareCard.tsx:93:17
+CLAIM_KINDS                                     lib/signalLinks.ts:19:14
+emailDomain                           function  lib/signupGuard.ts:23:17
+BURST_WINDOW_MS                                 lib/signupGuard.ts:39:14
+scoreFounderCompatibility             function  lib/socialAccountability.ts:139:17
+buildPairingReason                    function  lib/socialAccountability.ts:168:17
+buildCommitmentPublicText             function  lib/socialAccountability.ts:199:17
+buildCommitmentResultText             function  lib/socialAccountability.ts:208:17
+isCommitmentWindowOpen                function  lib/socialAccountability.ts:224:17
+isResultPostingTime                   function  lib/socialAccountability.ts:231:17
+buildStreakLossMessage                function  lib/socialAccountability.ts:245:17
+buildPublicStreakAtRiskMessage        function  lib/socialAccountability.ts:259:17
+LAYER_7_MIGRATION_HINT                          lib/socialAccountability.ts:318:14
+lastTouched                           function  lib/staleTasks.ts:12:17
+runStatusChecks                       function  lib/statusChecks.ts:40:23
+LEAVES                                          lib/taxonomy/taskTaxonomy.ts:65:14
+CHANNELS                                        lib/taxonomy/taskTaxonomy.ts:218:14
+detectChannel                         function  lib/taxonomy/taskTaxonomy.ts:363:17
+detectAudience                        function  lib/taxonomy/taskTaxonomy.ts:378:17
+getLeaf                               function  lib/taxonomy/taskTaxonomy.ts:430:17
+categoryLabelFor                      function  lib/taxonomy/taskTaxonomy.ts:495:17
+isEvidenceWork                        function  lib/taxonomy/workSignals.ts:28:17
+threadKey                             function  lib/threadProof.ts:91:17
+contentWords                          function  lib/today/clarify.ts:23:17
+hasLeadingVerb                        function  lib/today/clarify.ts:27:17
+stripFiller                           function  lib/today/clarify.ts:33:17
+taskContext                           function  lib/today/clarify.ts:42:17
+isOutcome                             function  lib/today/evening.ts:42:17
+isBlocker                             function  lib/today/evening.ts:45:17
+PLATFORMS                                       lib/today/facts.ts:63:14
+isDurationChoice                      function  lib/today/loops.ts:40:17
+TEMPLATE_LEAK_RE                                lib/today/rules.ts:13:14
+OPEN_SEARCH_RE                                  lib/today/rules.ts:15:14
+NAMED_TARGET_RE                                 lib/today/rules.ts:16:14
+SLO_DEFS                                        lib/today/slo.ts:53:14
+CANDIDATE_IMPORTANCE                            lib/today/swap.ts:180:14
+TODAY_FLOW_SESSION_PREFIXES                     lib/todayFlowSessions.ts:25:14
+localDay                              function  lib/todayFocus.ts:35:17
+similarity                            function  lib/todayMission.ts:414:17
+POPOVER_GAP                                     lib/tour/tour.ts:161:14
+VIEWPORT_MARGIN                                 lib/tour/tour.ts:162:14
+getUIMode                             function  lib/uiMode.ts:26:17
+setUIModeGlobal                       function  lib/uiMode.ts:32:17
+recordTaskCompletion                            lib/upgrade.ts:9:3
+incrementDailyStreak                            lib/upgrade.ts:10:3
+recordAIUse                                     lib/upgrade.ts:12:22
+checkUpgradeTrigger                             lib/upgrade.ts:14:3
+resetUpgradeTrigger                             lib/upgrade.ts:15:3
+computeUrgencySignal                            lib/urgency.ts:21:10
+getMissedDayCost                                lib/urgency.ts:21:32
+LAST_ACTIVE_KEY                                 lib/urgency/activeDate.ts:11:14
+TASK_DEBT_KEY                                   lib/urgency/taskDebt.ts:12:14
+getAIMessagesTodayForUser             function  lib/usePlan.ts:168:17
+recordAIMessageForUser                function  lib/usePlan.ts:174:17
+getActionsThisWeekForUser             function  lib/usePlan.ts:192:17
+recordWeeklyActionForUser             function  lib/usePlan.ts:198:17
+getCachedPlanForUser                  function  lib/usePlan.ts:206:17
+authSchema                                      lib/validation.ts:3:14
+onboardingSchema                                lib/validation.ts:8:14
+VENTURE_TIMELINE                                lib/ventures.ts:332:14
+COMBINED_REVENUE                                lib/ventures.ts:340:14
+getSavedBlueprints                    function  lib/ventures/index.ts:235:17
+saveBlueprint                         function  lib/ventures/index.ts:240:17
+deleteBlueprint                       function  lib/ventures/index.ts:247:17
+generateBlueprint                     function  lib/ventures/index.ts:265:23
+scoreBlueprintFeasibility             function  lib/ventures/index.ts:343:17
+blueprintToExecutionTasks             function  lib/ventures/index.ts:401:17
+extractUrls                                     lib/webResearch.ts:44:10
+decodeEntities                        function  lib/webResearch.ts:81:17
+fetchReadable                         function  lib/webResearch.ts:119:23
+hasAnyGradableSignal                  function  lib/weeklyPulseData.ts:167:17
+Unused exported types (372)
+Kind                              type       app/admin/distribution/shared.tsx:5:13
+StudioProps                       interface  app/admin/distribution/Studio.tsx:25:18
+DecisionBriefProps                type       app/today/components/DecisionBrief.tsx:8:13
+ResolvedOutcome                   type       app/today/components/IntelligencePanel.tsx:76:13
+MascotMove                        type       components/achievements/AchievementMascot.tsx:26:13
+BlockerInsightCardProps           interface  components/BlockerInsightCard.tsx:18:18
+BreakResultViewProps              interface  components/break-my-startup/BreakResultView.tsx:42:18
+EvidenceRecorder                  interface  components/break/EvidenceSections.tsx:42:18
+DotHeatmapProps                   interface  components/charts/DotHeatmap.tsx:12:18
+RadialGaugeProps                  type       components/charts/index.ts:10:15
+GaugeThreshold                    type       components/charts/index.ts:10:33
+SparklineProps                    type       components/charts/index.ts:13:15
+DotHeatmapProps                   type       components/charts/index.ts:16:15
+RadarAxis                         type       components/charts/index.ts:19:15
+RadarChartProps                   type       components/charts/index.ts:19:26
+Severity                          type       components/charts/index.ts:22:15
+SeverityItem                      type       components/charts/index.ts:22:25
+RadarAxis                         interface  components/charts/RadarChart.tsx:21:18
+RadarChartProps                   interface  components/charts/RadarChart.tsx:30:18
+GaugeThreshold                    type       components/charts/RadialGauge.tsx:17:13
+RadialGaugeProps                  interface  components/charts/RadialGauge.tsx:19:18
+Severity                          type       components/charts/SeverityStack.tsx:15:13
+SeverityItem                      interface  components/charts/SeverityStack.tsx:17:18
+SparklineProps                    interface  components/charts/Sparkline.tsx:12:18
+CompanionData                     interface  components/companion/useCompanion.ts:8:18
+RelationshipNodeType              type       components/founder-mirror/RelationshipGraph.tsx:25:13
+WeeklyGoal                        interface  components/GhostGoalBanner.tsx:25:18
+Token                             type       components/journey/PythonCode.tsx:43:15
+CoachChatMessage                  interface  components/layout/side-pane-context.tsx:35:18
+NavItemConfig                     type       components/layout/sidebar-nav.tsx:25:35
+PaywallTrigger                    type       components/PaywallMoment.tsx:30:13
+ResetMission                      interface  components/RecoveryModeCard.tsx:13:18
+RiskRecoveryMission               interface  components/RecoveryModeCard.tsx:19:18
+ScreenshotResult                  interface  components/ScreenshotProof.tsx:6:18
+RibbonSpan                        interface  components/today/DayRibbon.tsx:20:18
+DayRibbonProps                    interface  components/today/DayRibbon.tsx:22:18
+RadarAuto                         interface  components/today/RadarBar.tsx:17:18
+FeedbackKey                       type       components/today/ReplaceWithReason.tsx:21:13
+TodayCommandCenterProps           interface  components/today/TodayCommandCenter.tsx:48:18
+ButtonVariant                     type       components/ui/button.tsx:6:13
+ButtonSize                        type       components/ui/button.tsx:7:13
+WhyEvidenceItem                   type       components/ui/WhyReveal.tsx:25:13
+AchievementCardState              type       lib/achievements.ts:293:13
+Severity                          type       lib/adminBriefing.ts:17:13
+ParsedStartupSchema               interface  lib/agents/index.ts:813:18
+PivotSuggestion                   interface  lib/agents/index.ts:877:18
+AgentVerdict                      type       lib/agentWorkforce.ts:32:13
+SignalType                        type       lib/agentWorkforce.ts:34:13
+AgentFinding                      interface  lib/agentWorkforce.ts:46:18
+AgentRunInput                     interface  lib/agentWorkforce.ts:62:18
+AgentRunResult                    interface  lib/agentWorkforce.ts:75:18
+FindingLite                       interface  lib/agentWorkspace.ts:14:18
+ModelRole                         type       lib/ai-providers.ts:109:13
+ProviderHealth                    interface  lib/ai-providers.ts:283:18
+EvalContext                       type       lib/aiEvaluator.ts:7:13
+EvalVerdict                       type       lib/aiEvaluator.ts:17:13
+EvalDimension                     interface  lib/aiEvaluator.ts:19:18
+EvalRubric                        interface  lib/aiEvaluator.ts:24:18
+EvalResult                        interface  lib/aiEvaluator.ts:32:18
+EvaluateParams                    interface  lib/aiEvaluator.ts:43:18
+BreakMyStartupAnalysis            type       lib/api.ts:160:13
+ViabilityBreakdownEntry           type       lib/api.ts:176:13
+BreakMyStartupResult              type       lib/api.ts:185:13
+AutoSignal                        interface  lib/autoSignals.ts:21:18
+BehavioralContext                 interface  lib/behavioralLayers.ts:69:18
+PatternStat                       interface  lib/beliefCalibration.ts:15:18
+CalibratedConfidence              interface  lib/beliefCalibration.ts:23:18
+BenchmarkSignalType               type       lib/benchmarks.ts:28:13
+BenchmarkEvent                    interface  lib/benchmarks.ts:37:18
+BenchmarkCohort                   interface  lib/benchmarks.ts:45:18
+CreatePolarCheckoutParams         type       lib/billing/polar.ts:33:13
+PriceTier                         type       lib/billing/regionalPricing.ts:22:13
+PricingEnv                        type       lib/billing/regionalPricing.ts:50:13
+PublicPrice                       type       lib/billing/regionalPricing.ts:134:13
+PublicPlan                        type       lib/billing/server.ts:5:13
+BlockerCategory                   type       lib/blockerIntelligence.ts:18:13
+ContradictionSignal               interface  lib/blockerIntelligence.ts:29:18
+BlockerInsight                    interface  lib/blockerIntelligence.ts:42:18
+SiteBrief                         interface  lib/break/siteScan.ts:11:18
+StepAction                        interface  lib/break/stepIntent.ts:10:18
+ScoreComponent                    interface  lib/breakEvidence.ts:73:18
+RiskCategory                      type       lib/breakGuards.ts:34:13
+FocusAreaDefinition               interface  lib/breakMyStartupFocusAreas.ts:31:18
+FocusAreaCoverage                 interface  lib/breakMyStartupFocusAreas.ts:118:18
+Dimension                         type       lib/breakScore.ts:16:13
+Signals                           type       lib/breakScore.ts:17:13
+BuildMindProject                  type       lib/buildmind.ts:21:3
+DashboardOverview                 type       lib/buildmind.ts:25:3
+ReliabilityBin                    interface  lib/calibrationEval.ts:24:18
+CalibrationReport                 interface  lib/calibrationEval.ts:32:18
+Capability                        interface  lib/capability.ts:11:18
+BacklogStatus                     type       lib/coachActions/backlog.ts:21:13
+BacklogFilters                    interface  lib/coachActions/backlog.ts:51:18
+FetchBacklogResult                type       lib/coachActions/backlog.ts:53:13
+FetchExecutionLogResult           type       lib/coachActions/executionLog.ts:57:13
+CoachActionContext                interface  lib/coachActions/registry.ts:33:18
+RunCoachActionOutcome             type       lib/coachActions/registry.ts:54:13
+PlannedTask                       interface  lib/coachActions/weekPlan.ts:18:18
+AppKnowledgeSection               interface  lib/coachAppKnowledge.ts:28:18
+CoachBehavioralContext            interface  lib/coachContext.ts:17:18
+NavTarget                         interface  lib/coachNavigation.ts:26:18
+ReplyLink                         type       lib/coachNavigation.ts:65:13
+CoachTip                          type       lib/coachTips.ts:25:13
+WriteKind                         type       lib/coachWrites/parse.ts:11:13
+MatchableTask                     interface  lib/coachWrites/parse.ts:83:18
+ProposeResult                     type       lib/coachWrites/server.ts:26:13
+ApplyResult                       type       lib/coachWrites/server.ts:83:13
+CompetitorReframeInput            interface  lib/cofounder/competitorReframe.ts:23:18
+CompetitorReframeOutput           interface  lib/cofounder/competitorReframe.ts:36:18
+CompetitorHistoryEntry            interface  lib/cofounder/competitorReframe.ts:54:18
+SpiralSignal                      type       lib/cofounder/spiralDetection.ts:44:13
+SpiralDetectionResult             interface  lib/cofounder/spiralDetection.ts:46:18
+ValidationAction                  interface  lib/cofounder/validationReceipts.ts:24:18
+ValidationActionRequest           interface  lib/cofounder/validationReceipts.ts:32:18
+InterventionMode                  type       lib/cofounderJudgment.ts:8:13
+ProposalDecision                  type       lib/cofounderJudgment.ts:9:13
+ProposalEvaluation                interface  lib/cofounderJudgment.ts:39:18
+CronFounderContext                interface  lib/cron/aiContent.ts:17:18
+CrossPageSignal                   interface  lib/crossPageSignals.ts:27:18
+ExportGroup                       type       lib/dataExport.ts:19:13
+ExportCategory                    interface  lib/dataExport.ts:21:18
+CategoryStatus                    type       lib/dataExport.ts:114:13
+CsvResult                         interface  lib/dataExportFormats.ts:11:18
+Approach                          type       lib/distribution/diagnose.ts:13:13
+ReplyInput                        interface  lib/distribution/diagnose.ts:122:18
+ReplyDraft                        interface  lib/distribution/diagnose.ts:123:18
+SerpHit                           interface  lib/distribution/engine.ts:23:18
+ContentCtx                        interface  lib/distribution/engine.ts:25:18
+Confidence                        type       lib/distribution/experiments.ts:59:13
+Comparison                        interface  lib/distribution/experiments.ts:68:18
+ActionKind                        type       lib/distribution/overview.ts:29:13
+TextSignals                       interface  lib/distribution/textSignals.ts:16:18
+EmailTemplate                     type       lib/email.ts:251:13
+SendEmailOptions                  interface  lib/email.ts:346:18
+SendEmailResult                   interface  lib/email.ts:357:18
+Readiness                         type       lib/evidence.ts:14:13
+Classified                        interface  lib/evidence.ts:26:18
+RunReadiness                      interface  lib/evidence.ts:97:18
+FramedVerdict                     interface  lib/evidence.ts:118:18
+VerificationStatus                type       lib/evidence.ts:146:13
+Provenance                        interface  lib/evidence.ts:148:18
+EvidenceKind                      type       lib/evidenceWeigh.ts:25:13
+Verdict                           type       lib/evidenceWeigh.ts:26:13
+Observed                          interface  lib/evidenceWeigh.ts:28:18
+WeighInput                        interface  lib/evidenceWeigh.ts:33:18
+Weighed                           interface  lib/evidenceWeigh.ts:49:18
+ExecutionDebtCheckInput           interface  lib/executionDebtGate.ts:17:18
+ExecutionDebtCheckResult          interface  lib/executionDebtGate.ts:28:18
+ReadinessTier                     type       lib/executionPicture.ts:14:13
+PictureInput                      interface  lib/executionPicture.ts:17:18
+Picture                           interface  lib/executionPicture.ts:33:18
+ExecutionScorecard                interface  lib/executionScorecard.ts:15:18
+ScorecardDelta                    interface  lib/executionScorecard.ts:30:18
+ScorecardSharePayload             interface  lib/executionScorecard.ts:42:18
+FeatureKey                        type       lib/features.ts:23:13
+FirstDaysInput                    interface  lib/firstDaysBrief.ts:13:18
+FocusEventInput                   interface  lib/focusReminder.ts:49:18
+ArchetypeResult                   interface  lib/founderArchetype.ts:15:18
+ArchetypeDisplay                  interface  lib/founderArchetypeDisplay.ts:22:18
+FounderCognitionState             interface  lib/founderCognition.ts:8:18
+CognitionSynthesisInput           interface  lib/founderCognition.ts:24:18
+MomentumLabel                     type       lib/founderContext.ts:74:15
+MomentumTrend                     type       lib/founderContext.ts:74:30
+FounderCorrection                 interface  lib/founderMirror.ts:41:18
+FounderPattern                    interface  lib/founderPatternLibrary.ts:9:18
+MatchedPattern                    interface  lib/founderPatternLibrary.ts:21:18
+AreaRecord                        interface  lib/founderPatterns.ts:14:18
+ResolvedPatterns                  interface  lib/founderPatterns.ts:16:18
+AreaStat                          interface  lib/founderPatterns.ts:27:18
+RelationshipNodeType              type       lib/founderRelationships.ts:23:13
+RelationshipNode                  interface  lib/founderRelationships.ts:34:18
+RelationshipEdge                  interface  lib/founderRelationships.ts:42:18
+StartupRelationshipGraph          interface  lib/founderRelationships.ts:48:18
+RelationshipChain                 interface  lib/founderRelationships.ts:53:18
+StateText                         interface  lib/founderState.ts:23:18
+StateSwap                         interface  lib/founderState.ts:24:18
+StateInput                        interface  lib/founderState.ts:26:18
+FounderStyleInput                 interface  lib/founderStyle.ts:66:18
+ActivityDates                     interface  lib/inactivity.ts:18:18
+InboundPayload                    interface  lib/inboundReply.ts:13:18
+InboundVerdict                    type       lib/inboundReply.ts:22:13
+IntegrationContextResult          interface  lib/integrations/context.ts:15:18
+LoadOptions                       interface  lib/integrations/facts.ts:17:18
+GithubFetch                       type       lib/integrations/github.ts:77:13
+InstalledRepo                     interface  lib/integrations/githubApp.ts:59:18
+LinearIssue                       interface  lib/integrations/linear.ts:18:18
+LinearContext                     interface  lib/integrations/linear.ts:29:18
+NotionTask                        interface  lib/integrations/notion.ts:39:18
+NotionContext                     interface  lib/integrations/notion.ts:49:18
+ManualRevenue                     type       lib/integrations/revenue/manual.ts:14:13
+PaystackTx                        interface  lib/integrations/revenue/paystack.ts:9:18
+PolarSub                          interface  lib/integrations/revenue/polar.ts:9:18
+PolarOrder                        interface  lib/integrations/revenue/polar.ts:10:18
+SiteEntry                         interface  lib/integrations/searchConsole.ts:76:18
+KeyCheck                          type       lib/integrations/stripe.ts:20:13
+StripeSub                         interface  lib/integrations/stripe.ts:34:18
+StripeFetch                       type       lib/integrations/stripe.ts:94:13
+CompletionResult                  interface  lib/journey.ts:104:18
+UnlockedAchievement               interface  lib/journey.ts:193:18
+JourneyPath                       interface  lib/journey.ts:301:18
+JourneyStudent                    interface  lib/journeyAccess.ts:21:18
+JourneyModule                     interface  lib/journeyCurriculum.ts:14:18
+JourneySkill                      interface  lib/journeyCurriculum.ts:42:18
+JourneyLevel                      interface  lib/journeyGamification.ts:43:18
+JourneyAchievement                interface  lib/journeyGamification.ts:207:18
+ResolvedPrediction                interface  lib/learningLoop.ts:179:18
+ArchetypeStats                    interface  lib/learningLoop.ts:439:18
+ChannelRow                        interface  lib/linkNudge.ts:48:18
+ChannelStat                       interface  lib/linkNudge.ts:49:18
+MilestonePacingInput              interface  lib/milestonePacing.ts:43:18
+MilestonePhase                    type       lib/milestoneScope.ts:25:13
+MomentumLabel                     interface  lib/momentum.ts:121:18
+MomentumTrend                     type       lib/momentum.ts:139:13
+StaleGoal                         interface  lib/monthlyReckoning.ts:35:18
+FunnelStep                        type       lib/onboarding-analytics.ts:17:13
+FunnelEvent                       interface  lib/onboarding-analytics.ts:41:18
+SessionEvent                      interface  lib/onboarding-analytics.ts:47:18
+PageView                          interface  lib/onboarding-analytics.ts:129:18
+OwnerMessage                      interface  lib/ownerNotify.ts:11:18
+SignupPlan                        interface  lib/ownerNotify.ts:92:18
+DigestInput                       interface  lib/ownerNotify.ts:129:18
+WorkRow                           interface  lib/prep/context.ts:11:18
+ReflectionRow                     interface  lib/prep/context.ts:12:18
+FeedbackRow                       interface  lib/prep/context.ts:13:18
+PrepResult                        interface  lib/prep/engine.ts:288:18
+PrepEngine                        type       lib/prep/kinds.ts:30:13
+PrepOutcome                       interface  lib/prep/kinds.ts:32:18
+PrepMeta                          interface  lib/prep/kinds.ts:34:18
+LessonSet                         interface  lib/prep/learning.ts:11:18
+VideoProvider                     type       lib/prep/video.ts:2:13
+TodayScreenPayload                interface  lib/proactiveDelivery.ts:38:18
+WeeklyBriefingPayload             interface  lib/proactiveDelivery.ts:52:18
+DismissalSignal                   interface  lib/proactiveDelivery.ts:215:18
+CompletenessItem                  interface  lib/profileCompleteness.ts:20:18
+PromptMetrics                     interface  lib/promptRegistry.ts:18:18
+PromptVersion                     interface  lib/promptRegistry.ts:27:18
+ActivePrompt                      interface  lib/promptRegistry.ts:37:18
+PageFields                        interface  lib/publishPage.ts:13:18
+PulseEventType                    type       lib/pulse.ts:26:13
+PulseEmitOptions                  interface  lib/pulse.ts:41:18
+PulseMetrics                      interface  lib/pulse.ts:66:18
+StreakMilestone                   type       lib/pulse.ts:267:13
+PulseWeekSummary                  interface  lib/pulse.ts:288:18
+QueueJob                          interface  lib/queue/index.ts:44:18
+QueueName                         type       lib/queue/index.ts:48:13
+QuietCheck                        type       lib/quietDays.ts:42:13
+SubscriptionRow                   interface  lib/radar/autoRun.ts:13:18
+AutoCandidate                     interface  lib/radar/autoRun.ts:32:18
+Classification                    interface  lib/radar/classify.ts:32:18
+Query                             interface  lib/radar/discover.ts:22:18
+Candidate                         interface  lib/radar/discover.ts:41:18
+DiscoverResult                    type       lib/radar/discoverRun.ts:17:13
+Draft                             interface  lib/radar/extract.ts:13:18
+StageBand                         type       lib/radar/fit.ts:10:13
+FitContext                        interface  lib/radar/fit.ts:43:18
+Fit                               interface  lib/radar/fit.ts:49:18
+RecommendationLifecycleEventType  type       lib/recommendationLifecycle.ts:17:13
+OutcomeQuality                    type       lib/recommendationLifecycle.ts:29:13
+RecommendationLifecycleEvent      interface  lib/recommendationLifecycle.ts:31:18
+RecommendationMetrics             interface  lib/recommendationMetrics.ts:11:18
+RecoveryModeStatus                interface  lib/recoveryMode.ts:22:18
+ResetMission                      interface  lib/recoveryMode.ts:29:18
+RedditVerdict                     type       lib/redditProof.ts:92:13
+ReflexionResult                   interface  lib/reflexion.ts:392:18
+VerifierOutput                    interface  lib/reflexion.ts:607:18
+FullReflexionInput                interface  lib/reflexion.ts:625:18
+FullReflexionOutput               interface  lib/reflexion.ts:643:18
+FounderGap                        interface  lib/reflexion.ts:1115:18
+RegionalContext                   interface  lib/regionalContext.ts:20:18
+RecoveryMission                   interface  lib/riskSignals.ts:126:18
+ScoringInput                      interface  lib/scoring/index.ts:36:18
+BreakdownEntry                    interface  lib/scoring/index.ts:248:18
+IterationDelta                    interface  lib/scoring/index.ts:345:18
+MetricName                        type       lib/screenshotMetrics.ts:11:13
+SearchResponse                    interface  lib/search.ts:40:18
+Extras                            interface  lib/seo/definitionContent.ts:7:18
+ActivityEvent                     type       lib/server/activityLog.ts:3:13
+BudgetDecision                    type       lib/server/aiBudget.ts:39:13
+UsageBucket                       type       lib/server/aiUsageStore.ts:22:13
+SpendArgs                         interface  lib/server/aiUsageStore.ts:31:18
+UsageBucketStatus                 interface  lib/server/aiUsageStore.ts:93:18
+AIUsageStatus                     interface  lib/server/aiUsageStore.ts:94:18
+FounderIntelligenceReport         interface  lib/server/founderIntelligenceExport.ts:35:18
+IntelligenceLogEntry              interface  lib/server/founderIntelligenceExport.ts:133:18
+ReclassifyRow                     interface  lib/server/founderMemoryMaintenance.ts:32:18
+FounderSnapshot                   interface  lib/server/founderSnapshot.ts:25:18
+GrowthMetricStatus                type       lib/server/growthMetrics.ts:6:13
+GrowthMetric                      interface  lib/server/growthMetrics.ts:8:18
+GrowthMetricsPayload              interface  lib/server/growthMetrics.ts:18:18
+InsightNotifType                  type       lib/server/notificationInsights.ts:25:13
+InsightNotification               interface  lib/server/notificationInsights.ts:35:18
+GuardedHandler                    type       lib/server/planGuard.ts:20:13
+ProjectReadinessResult            interface  lib/server/projectReadiness.ts:50:18
+PublicStats                       type       lib/server/publicStats.ts:3:13
+RateLimitResult                   type       lib/server/rateLimit.ts:31:13
+StageEvidenceSlot                 interface  lib/server/stageEvidence.ts:64:18
+StageEvidenceRequirement          interface  lib/server/stageEvidence.ts:72:18
+StageEvidenceCompleteness         interface  lib/server/stageEvidence.ts:259:18
+StageProgressMilestoneInput       interface  lib/server/stageProgress.ts:33:18
+StageProgressTaskInput            interface  lib/server/stageProgress.ts:40:18
+StageTransitionEvaluation         interface  lib/server/stageTransition.ts:47:18
+TrialDecision                     type       lib/server/trialGuard.ts:47:13
+CardFont                          interface  lib/shareCard.tsx:49:18
+InsightRow                        interface  lib/shareCard.tsx:118:18
+ProofCheck                        interface  lib/signalProof.ts:13:18
+Resolved                          interface  lib/signalResolve.ts:31:18
+SignupRow                         interface  lib/signupGuard.ts:42:18
+FounderPair                       interface  lib/socialAccountability.ts:124:18
+PublicCommitment                  interface  lib/socialAccountability.ts:187:18
+PublicStreak                      interface  lib/socialAccountability.ts:237:18
+StartupStage                      type       lib/stages/index.ts:17:13
+ComponentStatus                   interface  lib/statusChecks.ts:19:18
+Components                        type       lib/statusChecks.ts:20:13
+Transition                        interface  lib/statusChecks.ts:71:18
+CheckRow                          interface  lib/statusChecks.ts:84:18
+DayUptime                         interface  lib/statusChecks.ts:85:18
+StreakStatus                      interface  lib/streak.ts:33:18
+TabSyncEvent                      type       lib/tabSync.ts:28:13
+Leaf                              interface  lib/taxonomy/taskTaxonomy.ts:53:18
+TaskClassification                interface  lib/taxonomy/taskTaxonomy.ts:323:18
+FocusArea                         type       lib/taxonomy/workSignals.ts:52:13
+TemporalComparisonInput           interface  lib/temporalCoherence.ts:14:18
+TemporalComparison                interface  lib/temporalCoherence.ts:25:18
+ThreadPlatform                    type       lib/threadProof.ts:13:13
+ThreadRef                         type       lib/threadProof.ts:16:13
+ThreadVerdict                     type       lib/threadProof.ts:95:13
+ClearMove                         interface  lib/today/clarify.ts:49:18
+EveningInput                      interface  lib/today/evening.ts:32:18
+FactKind                          type       lib/today/facts.ts:29:13
+LedgerOptions                     interface  lib/today/facts.ts:132:18
+Contradiction                     interface  lib/today/facts.ts:321:18
+Urgency                           type       lib/today/loops.ts:77:13
+MoodBehavior                      interface  lib/today/mood.ts:49:18
+OutcomeCheckInput                 interface  lib/today/outcomeCheck.ts:17:18
+OutcomeCheckResult                interface  lib/today/outcomeCheck.ts:26:18
+ReplayRow                         interface  lib/today/replay.ts:21:18
+ReplayReport                      interface  lib/today/replay.ts:29:18
+SloStatus                         type       lib/today/slo.ts:27:13
+Slo                               interface  lib/today/slo.ts:29:18
+SwapCandidate                     interface  lib/today/swap.ts:187:18
+SwapOption                        interface  lib/today/swap.ts:197:18
+QualityEventKind                  type       lib/today/telemetry.ts:12:13
+QualityEvent                      interface  lib/today/telemetry.ts:14:18
+TodayActionContext                interface  lib/todayActionContext.ts:67:18
+FallbackInput                     interface  lib/todayFallbacks.ts:12:18
+KindFallback                      interface  lib/todayFallbacks.ts:19:18
+DayArc                            interface  lib/todayFocus.ts:114:18
+NudgeInput                        interface  lib/todayFocus.ts:131:18
+GroundingLink                     interface  lib/todayGrounding.ts:15:18
+RecentTask                        interface  lib/todayMission.ts:37:18
+MissionSignals                    interface  lib/todayMission.ts:42:18
+CandidateTask                     interface  lib/todayMission.ts:372:18
+QualityContext                    interface  lib/todayMission.ts:383:18
+QualityResult                     interface  lib/todayMission.ts:397:18
+TodayPersonalisationContext       interface  lib/todayPersonalisationContext.ts:8:18
+Placement                         type       lib/tour/tour.ts:9:13
+TourStep                          interface  lib/tour/tour.ts:11:18
+UrgencyLevel                      type       lib/urgency.ts:18:15
+UrgencySignal                     type       lib/urgency.ts:18:29
+ClientPrice                       type       lib/usePricing.ts:6:13
+MilestoneType                     type       lib/ventures.ts:17:13
+VentureMilestone                  interface  lib/ventures.ts:19:18
+VenturesInput                     interface  lib/ventures/index.ts:37:18
+AchLite                           interface  lib/visuals/achievementsVisual.ts:7:18
+LevelLite                         interface  lib/visuals/achievementsVisual.ts:8:18
+TrendPoint                        interface  lib/visuals/intelligenceVisual.ts:22:18
+AccuracyLike                      interface  lib/visuals/intelligenceVisual.ts:23:18
+PortfolioProject                  interface  lib/visuals/portfolioVisual.ts:4:18
+ResearchPlan                      interface  lib/webResearch.ts:31:18
+WeekCounts                        interface  lib/weeklyNote.ts:2:18
+WhyThisInput                      type       lib/whyThis.ts:10:13
+WhyThisModel                      type       lib/whyThis.ts:24:13
+Duplicate exports (17)
+RisksGapsCard|default                               app/today/components/RisksGapsCard.tsx
+WhatChangedCard|default                             app/today/components/WhatChangedCard.tsx
+AIErrorBoundary|default                             components/AIErrorBoundary.tsx
+BuildMindCalibrating|default                        components/BuildMindCalibrating.tsx
+ConfidenceBadge|default                             components/ConfidenceBadge.tsx
+LoopNarrative|default                               components/LoopNarrative.tsx
+ProfileCompletenessBar|default                      components/ProfileCompletenessBar.tsx
+TeamsWaitlistCard|default                           components/TeamsWaitlistCard.tsx
+EmptyState|default                                  components/ui/EmptyState.tsx
+PageHeader|default                                  components/ui/PageHeader.tsx
+ScoreRing|default                                   components/ui/ScoreRing.tsx
+UIModeToggle|default                                components/ui/UIModeToggle.tsx
+WhyReveal|default                                   components/ui/WhyReveal.tsx
+getUnreadCount|getUnreadNotificationCount           lib/notifications.ts
+markRead|markNotificationAsRead                     lib/notifications.ts
+getAllNotifications|getNotificationsForCurrentUser  lib/notifications.ts
+addNotification|createNotificationForCurrentUser    lib/notifications.ts
+Configuration hints (1)
+. (root)    .  Create knip.json configuration file, and add entry and/or refine project files (63 unused files)

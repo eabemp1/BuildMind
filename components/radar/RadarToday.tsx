@@ -3,12 +3,13 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import RadarItemCard from "@/components/radar/RadarItemCard";
 import type { RadarView } from "@/lib/radar/store";
+import { readWhere } from "@/lib/radar/place";
 
 export default function RadarToday({ projectId }: { projectId?: string | null }) {
   const [items, setItems] = useState<RadarView[] | null>(null);
   const [setup, setSetup] = useState(false);
   const load = useCallback(() => {
-    let where = ""; try { where = localStorage.getItem("bm_radar_where") ?? ""; } catch { /* ignore */ }
+    const where = readWhere();
     const q = new URLSearchParams({ today: "1", ...(projectId ? { projectId } : {}), ...(where ? { where } : {}) });
     fetch(`/api/radar?${q}`).then((r) => r.json()).then((b) => { setItems(b.items ?? []); setSetup(b.reason === "setup"); }).catch(() => setItems([]));
   }, [projectId]);

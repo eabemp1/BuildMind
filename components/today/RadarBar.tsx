@@ -12,6 +12,7 @@ import Link from "next/link";
 import type { RadarView } from "@/lib/radar/store";
 import { radarSignal, type RadarSignal } from "@/lib/radar/urgency";
 import { sinceLabel } from "@/lib/radar/autoRun";
+import { readWhere } from "@/lib/radar/place";
 
 export interface RadarAuto { enabled: boolean; lastRunAt: string | null; lastAdded: number; known: boolean; paid: boolean }
 
@@ -33,7 +34,7 @@ export function useRadarSignal(projectId?: string | null): { items: RadarView[] 
   const [auto, setAuto] = useState<RadarAuto>({ enabled: true, lastRunAt: null, lastAdded: 0, known: false, paid: true });
   const [ignored, setIgnored] = useState<string | null>(null);
   const reload = useCallback(() => {
-    let where = ""; try { where = localStorage.getItem("bm_radar_where") ?? ""; } catch { /* ignore */ }
+    const where = readWhere();
     const q = new URLSearchParams({ ...(projectId ? { projectId } : {}), ...(where ? { where } : {}) });
     setIgnored(readUndone());
     fetch(`/api/radar?${q}`).then((r) => r.json()).then((b) => { setItems(b.items ?? []); setSetup(b.reason === "setup"); if (b.auto) setAuto({ ...b.auto, known: true }); }).catch(() => setItems([]));
