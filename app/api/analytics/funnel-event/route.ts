@@ -9,7 +9,7 @@ const VALID_STEPS = new Set([
   "reflexion_strike_started", "reflexion_strike_shown", "reflexion_strike_fallback",
   "reflexion_strike_accepted", "founder_state_complete", "depth_questions_answered",
   "stage_selected", "identity_complete", "onboarding_complete",
-  "first_task_completed", "first_reflect",
+  "first_task_completed", "first_reflect", "landing_cta_click", "demo_play",
 ]);
 
 export async function POST(req: NextRequest) {
