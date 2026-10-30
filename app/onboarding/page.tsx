@@ -297,6 +297,8 @@ interface StrikeResult {
   marketGap: string;
   firstTask: string;
   rationale: string;
+  /** True when the AI call failed and this is the stock answer. */
+  generic?: boolean;
 }
 
 // ── Shared visual tokens ──────────────────────────────────────────────────────
@@ -511,21 +513,8 @@ function IdentityInputScreen({
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <button
-            onClick={() => {}} // no-op, first screen
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--bm-text3)",
-              fontSize: 12,
-              cursor: "pointer",
-              fontFamily: "'Inter', sans-serif",
-              padding: "10px 0",
-            }}
-          >
-            Skip setup
-          </button>
+        {/* No skip here: the two fields are the least BuildMind needs to build a first task. */}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
           <button
             onClick={() => canContinue && onSubmit(firstName.trim(), startupName.trim())}
             disabled={!canContinue}
@@ -875,37 +864,30 @@ function StrikeScreen({ idea, result, onContinue, onBack }: {
   onContinue: () => void;
   onBack?: () => void;
 }) {
-  // Parse survival score from result if available, else use defaults
-  const scores = {
-    survival: 41,
-    moat: 58,
-    timing: 64,
-  };
-
   const attackCards = [
     {
-      role: "VC",
+      role: "The gap",
       roleColor: "var(--bm-red)",
       roleBg: "var(--bm-red-dim)",
       roleBd: "var(--bm-red-bd)",
       content: result.marketGap,
     },
     {
-      role: "Competitor",
+      role: "Your first move",
       roleColor: "var(--bm-accent)",
       roleBg: "var(--bm-accent-dim)",
       roleBd: "var(--bm-accent-bd)",
       content: result.firstTask,
     },
     {
-      role: "Cynical User",
+      role: "Why this first",
       roleColor: "var(--bm-blue)",
       roleBg: "var(--bm-blue-dim)",
       roleBd: "var(--bm-blue-bd)",
-      content: result.rationale || "\"I've seen 10 products like this. What makes you different enough that I'd switch?\"",
+      content: result.rationale,
 
     },
-  ];
+  ].filter((c) => c.content);
 
   return (
     <OnboardingShell step={3} maxWidth={560}>
@@ -925,44 +907,20 @@ function StrikeScreen({ idea, result, onContinue, onBack }: {
           fontFamily: "'Syne', sans-serif", fontSize: 26, fontWeight: 700,
           letterSpacing: "-0.025em", color: "var(--bm-text)", lineHeight: 1.2, marginBottom: 8,
         }}>
-          Here&apos;s what would <em style={{ fontStyle: "normal", color: "var(--bm-red)" }}>kill you</em>
+          Your gap, and your <em style={{ fontStyle: "normal", color: "var(--bm-accent)" }}>first move</em>
         </h1>
         <p style={{
           fontFamily: "'Inter', sans-serif", fontSize: 12.5,
           color: "var(--bm-text2)", lineHeight: 1.55, marginBottom: 22,
         }}>
-          Three adversarial takes — before you spend another week building.
+          The gap nobody has claimed yet, and the one thing to do about it today.
         </p>
 
-        {/* Score row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 6 }}>
-          {[
-            { label: "Survival score", score: scores.survival, color: "var(--bm-red)" },
-            { label: "Moat strength", score: scores.moat, color: "var(--bm-text)" },
-            { label: "Market timing", score: scores.timing, color: "var(--bm-text)" },
-          ].map(({ label, score, color }) => (
-            <div key={label} style={{
-              background: "var(--bm-bg2)", border: "1px solid var(--bm-border)",
-              borderRadius: "var(--r-lg)", padding: "12px 14px",
-            }}>
-              <div style={{
-                fontFamily: "'Syne', sans-serif", fontSize: 24, fontWeight: 700,
-                letterSpacing: "-0.03em", color, lineHeight: 1,
-              }}>{score}</div>
-              <div style={{
-                fontFamily: "'DM Mono', monospace", fontSize: 8,
-                textTransform: "uppercase" as const, letterSpacing: "0.08em",
-                color: "var(--bm-text3)", marginTop: 6,
-              }}>{label}</div>
-            </div>
-          ))}
-        </div>
-        <p style={{
-          fontFamily: "'DM Mono', monospace", fontSize: 9,
-          color: "var(--bm-text4)", letterSpacing: "0.05em", marginBottom: 20,
-        }}>
-          The uncomfortable ones are the useful ones.
-        </p>
+        {result.generic && (
+          <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: "var(--bm-text4)", letterSpacing: "0.05em", marginBottom: 16 }}>
+            A general first read. Your first real task will be sharper.
+          </p>
+        )}
 
         {/* Attack cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
@@ -1013,31 +971,6 @@ function StrikeScreen({ idea, result, onContinue, onBack }: {
               </div>
             </motion.div>
           ))}
-        </div>
-
-        {/* Insight box */}
-        <div style={{
-          background: "var(--bm-bg2)",
-          border: "1px solid var(--bm-border)",
-          borderRadius: "var(--r-lg)",
-          padding: "14px 16px",
-          marginBottom: 24,
-        }}>
-          <p style={{
-            display: "flex", alignItems: "center", gap: 7,
-            fontFamily: "'DM Mono', monospace", fontSize: 9,
-            textTransform: "uppercase" as const, letterSpacing: "0.08em",
-            color: "var(--bm-accent)", marginBottom: 8,
-          }}>
-            <span className="bm-status-dot" style={{ background: "var(--bm-accent)", marginTop: 0 }} />
-            What this means for your next 7 days
-          </p>
-          <p style={{
-            fontFamily: "'Inter', sans-serif", fontSize: 12.5,
-            color: "var(--bm-text2)", lineHeight: 1.55, margin: 0,
-          }}>
-            Your survival score is low because the market hasn&apos;t validated you yet — not because your idea is wrong. The next 7 days are about one thing: get one person to pay or strongly commit. Everything else is noise.
-          </p>
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1709,7 +1642,7 @@ function OnboardingInner() {
       const data = await res.json();
       if (requestId !== strikeRequestId.current) return;
       if (data.ok && data.data) {
-        setStrikeResult(data.data);
+        setStrikeResult({ ...data.data, generic: Boolean(data.fallback) });
         trackFunnelStep("reflexion_strike_shown");
       } else {
         throw new Error("Strike failed");
@@ -1721,6 +1654,7 @@ function OnboardingInner() {
         marketGap: "The crowded part of this market is generic solutions. The gap nobody has claimed yet is serving your exact type of user with deep specificity.",
         firstTask: "Find one person who has this problem. Send them a message in the next 30 minutes asking what they currently do about it.",
         rationale: "Because talking to one real person beats a week of planning every time.",
+        generic: true,
       });
       trackFunnelStep("reflexion_strike_fallback");
     }
