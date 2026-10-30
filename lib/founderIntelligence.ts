@@ -1253,7 +1253,7 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
 // current goal (rather than always the first option) means two founders
 // with different goals don't get the same channel every time, and the
 // same founder doesn't get the same channel every day for a repeating signal.
-const OUTREACH_PLATFORMS = ["WhatsApp", "LinkedIn", "email", "Twitter"] as const;
+const OUTREACH_PLATFORMS = ["WhatsApp", "email", "Twitter"] as const; // LinkedIn left out while it is blocked for this founder
 function pickPlatform(seed: string): string {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
@@ -1274,8 +1274,14 @@ export function buildDecisionState(state: FounderIntelligenceState, excludeActio
 
 function buildDecisionStateInner(state: FounderIntelligenceState, excludeAction?: string): DecisionState {
   const candidates: Array<Omit<DecisionCandidate, "scores" | "why_it_beats_alternatives">> = [];
-  const currentGoal = state.startup.current_goal ?? "the current startup goal";
-  const target = state.startup.assumptions.find((a) => a.toLowerCase().includes("target segment"))?.replace(/^Target segment: /, "") || "target users";
+  const currentGoal = state.startup.current_goal ?? "the current startup goal"; // still used as the stable seed below
+  // Words pasted into a sentence must be real: placeholders ("Not specified yet") and long half-sentences are dropped.
+  const usable = (text: string | null | undefined, max: number): string | null => {
+    const t = (text ?? "").replace(/\s+/g, " ").replace(/[.:;,\s]+$/, "").trim();
+    return t.length < 3 || t.length > max || /^(?:not specified(?: yet)?|unknown|n\/a|none|tbd|undefined|null)$/i.test(t) ? null : t;
+  };
+  const goalRef = usable(state.startup.current_goal, 90) ? `"${usable(state.startup.current_goal, 90)}"` : "your current goal";
+  const target = usable(state.startup.assumptions.find((a) => a.toLowerCase().includes("target segment"))?.replace(/^Target segment: /, ""), 60) ?? "people who have this problem";
   // Decay-filtered: a signal detected once no longer gates candidate
   // selection forever — see decayedSignalConfidence() above.
   const live = activeSignals(state.signals, new Date(state.generated_at));
@@ -1285,7 +1291,7 @@ function buildDecisionStateInner(state: FounderIntelligenceState, excludeAction?
     const platform = pickPlatform(`evidence_probe:${currentGoal}`);
     candidates.push({
       id: "evidence_probe",
-      action: `Message 3 ${target} on ${platform} for ${currentGoal}: ask what they did the last time this problem appeared.`,
+      action: `Message 3 ${target} on ${platform}: ask what they did the last time this problem came up.`,
       rationale: "Fresh evidence is the bottleneck; more internal work will not reduce assumption risk.",
       expected_evidence: "A concrete user/customer response, objection, workflow detail, or commitment signal.",
       supporting_signals: topSignals.filter((s) => s.type === "EVIDENCE_GAP" || s.type === "ASSUMPTION_DECAY" || s.type === "BUSYWORK_PATTERN").map((s) => s.type),
@@ -1295,7 +1301,7 @@ function buildDecisionStateInner(state: FounderIntelligenceState, excludeAction?
   if (live.some((s) => s.type === "GOAL_SLIPPAGE")) {
     candidates.push({
       id: "unstall_goal",
-      action: `Unstall ${currentGoal}: finish 1 concrete subtask today and log the specific before/after result — no planning, only a completed artifact.`,
+      action: `Unstall ${goalRef}: finish 1 concrete subtask today and log the specific before/after result — no planning, only a completed artifact.`,
       rationale: "The active goal is aging; the next move should make progress observable rather than broad.",
       expected_evidence: "A task completion plus a specific before/after or user/revenue/learning artifact.",
       supporting_signals: topSignals.filter((s) => s.type === "GOAL_SLIPPAGE" || s.type === "MOMENTUM_CHANGE").map((s) => s.type),
@@ -1318,7 +1324,7 @@ function buildDecisionStateInner(state: FounderIntelligenceState, excludeAction?
 
   candidates.push({
     id: "continue_best_next_task",
-    action: `Advance ${currentGoal}: complete 1 highest-priority open task today and name one observable result before calling it done.`,
+    action: `Advance ${goalRef}: complete 1 highest-priority open task today and name one observable result before calling it done.`,
     rationale: "When signals are mixed, preserve strategic continuity and improve outcome quality.",
     expected_evidence: "A completed task with a named result, blocker, or learning artifact.",
     supporting_signals: topSignals.map((s) => s.type),

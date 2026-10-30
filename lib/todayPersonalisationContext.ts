@@ -5,6 +5,19 @@ import { loopsPromptBlock, partitionLoops, type Loop } from "@/lib/today/loops";
 import { radarPromptBlock } from "@/lib/radar/store";
 import { assessRecovery, shownFromLog, recoveryPromptBlock, type RecoveryAssessment, type LogRow } from "@/lib/recommendationRecovery";
 
+/** People and conversations the founder has recorded. Undefined when it cannot be read, so nothing is assumed. */
+async function countKnownContacts(supabase: ReturnType<typeof createAdminClient>, userId: string): Promise<number | undefined> {
+  try {
+    const [talks, people] = await Promise.all([
+      supabase.from("dist_conversations").select("id", { count: "exact", head: true }).eq("user_id", userId),
+      supabase.from("radar_items").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("type", "person"),
+    ]);
+    return talks.error || people.error ? undefined : (talks.count ?? 0) + (people.count ?? 0);
+  } catch {
+    return undefined;
+  }
+}
+
 export interface TodayPersonalisationContext {
   /** Last 7 actions shown (from reflexion_learning_log), formatted for prompt injection */
   recentActionsBlock: string;
@@ -177,7 +190,8 @@ export async function buildTodayPersonalisationContext(
 
     const ledgerRows = ledgerResult.status === "fulfilled" ? (ledgerResult.value.data ?? []) : [];
     const feedbackRows = feedbackResult.status === "fulfilled" && !feedbackResult.value.error ? (feedbackResult.value.data ?? []) : [];
-    const ledger = buildLedger(ledgerRows, { feedback: feedbackRows as import("@/lib/today/facts").FeedbackRow[] });
+    const knownContacts = await countKnownContacts(supabase, userId);
+    const ledger = buildLedger(ledgerRows, { feedback: feedbackRows as import("@/lib/today/facts").FeedbackRow[], knownContacts });
     const loopRows = loopsResult.status === "fulfilled" && !loopsResult.value.error ? ((loopsResult.value.data ?? []) as Loop[]) : [];
     const { due: dueLoops } = partitionLoops(loopRows);
     const radarBlock = await radarPromptBlock(supabase, userId, projectId).catch(() => "");

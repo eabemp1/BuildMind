@@ -3,6 +3,7 @@
 import { classifyAiFailure, type AiFailure } from "@/lib/aiFailure";
 import FollowUpCard from "@/components/today/FollowUpCard";
 import WeeklyNote from "@/components/today/WeeklyNote";
+import PathCard from "@/components/today/PathCard";
 import EnergyCheck from "@/components/today/EnergyCheck";
 import TrackedLinks from "@/components/today/TrackedLinks";
 import { inferSource, needsTrackedLink } from "@/lib/linkNudge";
@@ -2166,12 +2167,12 @@ function TodayContent() {
         <RadarBar signal={radar.signal} setup={radar.setup} auto={radar.auto} onAutoChange={radar.reload} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} onCantAttend={cantAttendRadar} />
       </div>
       <div className="mood-dim"><TomorrowCarry /></div>
-      <div className="mood-dim"><FollowUpCard /><WeeklyNote /></div>
+      <div className="mood-dim"><FollowUpCard /><WeeklyNote /><PathCard projectId={project?.id ?? null} /></div>
         </>
       ) : (
         <>
         {/* A due follow-up or reminder must never sit behind a closed row. */}
-        <div className="mood-dim"><FollowUpCard /><WeeklyNote /></div>
+        <div className="mood-dim"><FollowUpCard /><WeeklyNote /><PathCard projectId={project?.id ?? null} /></div>
         <Fold label="Also today" storageKey="bm_today_also_open">
       <div className="mood-secondary"><CompanionBrief /></div>
       <div style={{ marginBottom: 12 }}>

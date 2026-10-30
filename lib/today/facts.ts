@@ -132,6 +132,8 @@ export interface FeedbackRow {
 export interface LedgerOptions {
   now?: number;
   feedback?: FeedbackRow[];
+  /** People and conversations recorded in BuildMind. 0 means none; leave undefined when unknown. */
+  knownContacts?: number;
 }
 
 export interface Ledger {
@@ -240,6 +242,11 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
       // A newer reflection on the same task closes older loops about it.
       loops.push({ text: clip(sentenceAround(text, lp), 200), at, task: r.today_action ?? undefined });
     }
+  }
+
+  // Nobody recorded and nobody ever mentioned: do not assume the founder has users to contact.
+  if (opts.knownContacts === 0 && !facts.some((f) => f.kind === "no_users") && !sorted.some((r) => GOT_USERS_RE.test(textOf(r)))) {
+    facts.push({ kind: "no_users", rule: NO_USERS_RULE, evidence: "No people or conversations are recorded in BuildMind yet.", at: new Date(now).toISOString() });
   }
 
   // One-tap feedback is the strongest signal: the founder said it directly.
