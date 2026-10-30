@@ -443,12 +443,14 @@ function TodayContent() {
   // Opened from the notification's "Done" button: ask once, never mark anything silently.
   const quickDoneRequested = searchParams.get("quickdone") === "1";
   const [quickDoneOpen, setQuickDoneOpen] = useState(false);
+  const [accountAgeDays, setAccountAgeDays] = useState(0);
+  const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
+  // A founder in their first days with nothing finished yet sees the task and nothing else.
+  const firstRun = accountCreatedAt !== null && accountAgeDays < 3 && (project?.tasksCompleted ?? 0) === 0;
   const executionScriptRef = useRef<HTMLDivElement | null>(null);
   const actionCardRef = useRef<HTMLDivElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
-  const [accountAgeDays, setAccountAgeDays] = useState(0);
-  const [accountCreatedAt, setAccountCreatedAt] = useState<string | null>(null);
   // Founder archetype — light presence on the daily page (see /memory for
   // the full explanation). This is one query for one string array, kept
   // deliberately separate from the big data-loading effects below so it
@@ -1285,7 +1287,8 @@ function TodayContent() {
   // directly on the page instead of staying inside "Why this task?", and
   // the task recommendation collapses into a "Show task" pill so the page
   // doesn't just accumulate more sections on top of each other.
-  const isEveningSurfaced = checkinSlot?.type === "evening";
+  // Not on a first run: the first thing a new founder sees is the task, not a question about a task they never had.
+  const isEveningSurfaced = checkinSlot?.type === "evening" && !firstRun;
   const [taskPillExpanded, setTaskPillExpanded] = useState(false);
 
   const OUTREACH_KEYWORDS = ["dm", "message", "send", "email", "outreach", "call", "text", "reach out", "post", "tweet", "share"];
@@ -2037,7 +2040,7 @@ function TodayContent() {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
           <MoodStrip mood={mood} engaged={engaged} />
-          <UIModeToggle mode={uiMode} onChange={setUIMode} />
+          {firstRun ? null : <UIModeToggle mode={uiMode} onChange={setUIMode} />}
         </div>
 
         {/* AI usage warning */}
@@ -2153,14 +2156,17 @@ function TodayContent() {
           recommendation is tucked behind the evening pill. */}
       {uiMode === "pro" && criticalSignal ? <RiskInterrupt signal={criticalSignal} /> : null}
 
-      <EnergyCheck
-        inferredNote={actionData?.intelligence?.capacity?.note ?? null}
-        onLighten={() => handlePreTaskReplace({ reason: "no_motivation", mode: "shrink" })}
-      />
+      {firstRun ? null : (
+        <EnergyCheck
+          inferredNote={actionData?.intelligence?.capacity?.note ?? null}
+          onLighten={() => handlePreTaskReplace({ reason: "no_motivation", mode: "shrink" })}
+        />
+      )}
       {/* Last night's own first move stays visible in both modes. */}
-      {uiMode === "pro" ? null : <div className="mood-dim"><TomorrowCarry /></div>}
-      {/* Lite (the default) keeps the task first: the other daily cards sit behind one quiet row. Pro shows them in place. */}
-      {uiMode === "pro" ? (
+      {uiMode === "pro" || firstRun ? null : <div className="mood-dim"><TomorrowCarry /></div>}
+      {/* Lite (the default) keeps the task first: the other daily cards sit behind one quiet row. Pro shows them in place.
+          A first run shows none of them. */}
+      {firstRun ? null : uiMode === "pro" ? (
         <>
       <div className="mood-secondary"><CompanionBrief /></div>
       <div style={{ marginBottom: 12 }}>
@@ -2172,8 +2178,9 @@ function TodayContent() {
       ) : (
         <>
         {/* A due follow-up or reminder must never sit behind a closed row. */}
-        <div className="mood-dim"><FollowUpCard /><WeeklyNote /><PathCard projectId={project?.id ?? null} /></div>
+        <div className="mood-dim"><FollowUpCard /><WeeklyNote /></div>
         <Fold label="Also today" storageKey="bm_today_also_open">
+      <PathCard projectId={project?.id ?? null} />
       <div className="mood-secondary"><CompanionBrief /></div>
       <div style={{ marginBottom: 12 }}>
         <RadarBar signal={radar.signal} setup={radar.setup} auto={radar.auto} onAutoChange={radar.reload} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} onCantAttend={cantAttendRadar} />
@@ -3078,4 +3085,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-    }
+      }
