@@ -1137,6 +1137,15 @@ export async function detectFounderGaps(
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
+    // A new account can't have "gone 14 days" without talking to anyone. Say nothing for the first 3 days,
+    // and never claim a longer gap than the account has existed.
+    let accountAgeDays = Infinity;
+    try {
+      const { data } = await sb.auth.admin.getUserById(userId);
+      if (data?.user?.created_at) accountAgeDays = Math.floor((now.getTime() - new Date(data.user.created_at).getTime()) / 86_400_000);
+    } catch { /* age unknown: keep the old behaviour */ }
+    if (accountAgeDays < 3) return gaps;
+
     // ── Gap 1: User conversations ────────────────────────────────────────────
     // Check reflections and check-ins for any mention of talking to users.
     // Keywords: "user", "customer", "interview", "feedback", "talked to", "called"
@@ -1174,11 +1183,12 @@ export async function detectFounderGaps(
 
     if (!lastUserConvo) {
       // No user conversation found in 14 days
+      const days = Math.min(14, accountAgeDays);
       gaps.push({
         type: "user_conversations",
-        daysSince: 14,
-        detail: "No user conversation recorded in the last 14 days.",
-        question: "You haven't talked to a real user in 14 days. Are you building for yourself or for them?",
+        daysSince: days,
+        detail: `No user conversation recorded in the last ${days} days.`,
+        question: `You haven't talked to a real user in ${days} days. Are you building for yourself or for them?`,
       });
     } else {
       const daysSince = Math.floor((now.getTime() - new Date(lastUserConvo.created_at).getTime()) / (1000 * 60 * 60 * 24));
@@ -1477,4 +1487,4 @@ function extractAction(text: string): string {
     /\b(do|send|call|write|post|reach out|open|find|talk|test|launch|build|contact)\b/i.test(s)
   );
   return actionSentence ?? sentences[sentences.length - 1] ?? "";
-}
+  }
