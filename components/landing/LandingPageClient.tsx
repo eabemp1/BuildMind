@@ -309,7 +309,7 @@ function ReflexionPipelineDemo() {
                   <span style={{ fontSize: 11, color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: 4 }}>
                     <Clock size={10} /> Est. {finalOutput.time}
                   </span>
-                  <Link href="/auth/login">
+                  <Link href="/auth/login?tab=signup">
                     <Button size="sm">
                       Build yours free <ArrowRight size={11} />
                     </Button>
@@ -319,6 +319,21 @@ function ReflexionPipelineDemo() {
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function HeroTodayCard() {
+  return (
+    <div className="mx-auto w-full max-w-[460px] rounded-2xl p-5 sm:p-6" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)" }}>
+      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, letterSpacing: "0.12em", color: "var(--bm-accent)" }}>TODAY&apos;S MOVE · EXAMPLE</div>
+      <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 22, lineHeight: 1.3, margin: "10px 0 8px", color: "var(--bm-text)" }}>Send your working link to one person who has the problem. Ask what breaks.</p>
+      <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0 }}>10 min · Talk to a real user</p>
+      <div style={{ borderTop: "1px solid var(--bm-border)", marginTop: 14, paddingTop: 12, fontSize: 14, lineHeight: 1.7, color: "var(--bm-text2)" }}>
+        <div><span style={{ color: "var(--bm-accent)" }}>✓</span> 6 build tasks finished this month</div>
+        <div><span style={{ color: "var(--bm-accent)" }}>✓</span> 0 conversations with a real user</div>
+        <div><span style={{ color: "var(--bm-accent)" }}>→</span> The next best move is one outside opinion</div>
       </div>
     </div>
   );
@@ -719,7 +734,7 @@ function DemoModal({ onClose }: { onClose: () => void }) {
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-[var(--r-xl)]" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)" }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--bm-border)" }}>
           <div>
-            <div className="text-xs font-bold uppercase tracking-widest text-[var(--bm-accent)]">2-minute demo</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-[var(--bm-accent)]">30-second demo</div>
             <div className="text-sm text-[var(--bm-text3)]">BuildMind product walkthrough</div>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg text-[var(--bm-text3)] hover:text-[var(--bm-text)] hover:bg-[var(--bm-bg3)]" aria-label="Close demo">
@@ -742,11 +757,11 @@ function DemoModal({ onClose }: { onClose: () => void }) {
             <video
               ref={videoRef}
               className="block w-full aspect-video min-h-[260px] sm:min-h-[420px] bg-black"
-              src="/demo/buildmind_demo.mp4"
+              src="/demo/buildmind_demo_30s.mp4"
               controls
               playsInline
               preload="metadata"
-              poster="/logo/buildmind-og-image.png"
+              poster="/demo/buildmind_demo_poster.png"
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
@@ -757,10 +772,10 @@ function DemoModal({ onClose }: { onClose: () => void }) {
               <div className="text-[11px] font-bold text-[var(--bm-text3)] uppercase tracking-widest mb-2">Product walkthrough</div>
               <h3 className="text-2xl font-bold tracking-tight text-[var(--bm-text)] mb-2">See BuildMind in motion</h3>
               <p className="max-w-2xl text-sm leading-relaxed text-[var(--bm-text2)]">
-                Watch how a founder moves from idea to execution with projects, daily actions, milestones, scoring, and AI coaching in one workspace.
+                See how one move for today is picked, explained, and remembered. An illustrative example.
               </p>
             </div>
-            <Link href="/auth/login" className="shrink-0">
+            <Link href="/auth/login?tab=signup" className="shrink-0">
               <Button size="sm">
                 Start Building Free <ArrowRight size={12} />
               </Button>
@@ -897,7 +912,7 @@ function BreakMyStartupSection() {
                   </Card>
                 </motion.div>
               ))}
-              <Link href="/auth/login">
+              <Link href="/auth/login?tab=signup">
                 <Button variant="secondary" size="sm">
                   Save this analysis to your project <ArrowRight size={12} />
                 </Button>
@@ -948,7 +963,7 @@ function PricingSection() {
                   </li>
                 ))}
               </ul>
-              <Link href="/auth/login">
+              <Link href="/auth/login?tab=signup">
                 <Button variant="secondary" size="md" className="w-full html-btn-secondary">
                   Start Free
                 </Button>
@@ -987,7 +1002,7 @@ function PricingSection() {
                   </li>
                 ))}
               </ul>
-              <Link href="/auth/login">
+              <Link href="/auth/login?tab=signup">
                 <Button size="md" className="w-full">
                   Go Builder — <Price /> <ArrowRight size={14} />
                 </Button>
@@ -2222,10 +2237,16 @@ function LandingAestheticLayer() {
   );
 }
 
+function track(step: string) {
+  try { void fetch("/api/analytics/funnel-event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ step }), keepalive: true }).catch(() => {}); } catch { /* analytics must never break the page */ }
+}
+
 export default function LandingPageClient({ initialStats }: { initialStats?: PublicStats }) {
   const { theme } = useTheme();
   const [stats, setStats] = useState(() => normalizePublicStats(initialStats));
   const [demoOpen, setDemoOpen] = useState(false);
+  useEffect(() => { track("landing_view"); }, []);
+  const showStats = stats.founders >= 25; // small counters read as weak proof, so show them only once they are impressive
   const [scrollProgress, setScrollProgress] = useState(0);
   const [navScrolled, setNavScrolled] = useState(false);
 
@@ -2322,7 +2343,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           <Link href="/auth/login" className="hidden sm:block">
             <Button variant="ghost" size="sm">Log in</Button>
           </Link>
-          <Link href="/auth/login">
+          <Link href="/auth/login?tab=signup">
             <Button size="sm">
               <span className="sm:hidden">Start</span>
               <span className="hidden sm:inline">Get Started →</span>
@@ -2348,32 +2369,36 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             {/* Live pill */}
             <span className="bm-hero-badge">
               <span className="bm-live-dot" />
-              Execution intelligence for founders
+              For solo founders
             </span>
 
             <h1 style={{ fontSize: "clamp(2rem,4.5vw,4rem)", fontWeight: 800, lineHeight: 1.06, letterSpacing: "-0.03em", color: "var(--bm-text)" }}>
-              Stop guessing.
+              One clear move
               <br />
-              <span className="font-display italic gradient-text">Build what's true.</span>
+              <span className="font-display italic gradient-text">for your startup, every day.</span>
             </h1>
 
-            <p style={{ maxWidth: 400, fontSize: 15, lineHeight: 1.75, color: "var(--bm-text2)" }}>
-              BuildMind is the operating partner for founders building alone. It remembers what you did, what you avoided and what worked, then gives you the one move that matters today, with the reasoning shown. Before you spend months on an idea, it tries to break it with evidence.
+            <p style={{ maxWidth: 460, fontSize: 17, lineHeight: 1.65, color: "var(--bm-text2)" }}>
+              BuildMind remembers what you did and what you avoided, then picks the one action that matters today and shows you why. Free to start.
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <Link href="/auth/login" className="w-full sm:w-auto">
+              <Link href="/auth/login?tab=signup" onClick={() => track("landing_cta_click")} className="w-full sm:w-auto">
                 <Button size="lg" className="w-full sm:w-auto">
                   Start free <ArrowRight size={16} />
                 </Button>
               </Link>
-              <Button size="lg" variant="secondary" onClick={() => setDemoOpen(true)} className="html-btn-secondary w-full sm:w-auto">
-                <Play size={14} />
-                Watch the 2-minute demo
-              </Button>
+              <a href="#break" className="w-full sm:w-auto">
+                <Button size="lg" variant="secondary" className="html-btn-secondary w-full sm:w-auto">
+                  Try a free teardown, no signup
+                </Button>
+              </a>
+              <button type="button" onClick={() => { track("demo_play"); setDemoOpen(true); }} className="inline-flex items-center gap-2 text-sm text-[var(--bm-text2)] underline-offset-4 hover:underline sm:ml-2">
+                <Play size={12} /> Watch the 30-second demo
+              </button>
             </div>
 
-            {/* Social proof pills — live momentum ticker */}
+            {showStats ? (
             <div className="flex flex-wrap gap-2 pt-1 sm:pt-2">
               {[
                 { label: "Founders building", val: stats.founders },
@@ -2401,16 +2426,20 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
                 </div>
               )}
             </div>
+            ) : (
+              <p style={{ fontSize: 13, color: "var(--bm-text3)", margin: 0 }}>Early access. Built by a solo founder in Ghana, with real founders shaping what comes next.</p>
+            )}
           </motion.div>
 
           {/* Right — Reflexion Loop agent pipeline */}
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.7, delay: 0.15 }} className="relative mt-2 md:mt-0">
             <div className="absolute inset-0 -z-10" style={{ background: "transparent", filter: "blur(20px)", transform: "scale(1.2)" }} />
-            <HeroReflexionPipeline />
+            <HeroTodayCard />
           </motion.div>
           </div>
         </div>
 
+        {showStats && (<>
         {/* Floating ambient widgets — real live stats, not decoration.
             Zoom+fade in on mount via .bm-float-card, then drift forever
             via .bm-drift — both classes already power the agent pipeline
@@ -2469,6 +2498,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             </div>
           </div>
         )}
+        </>)}
       </section>
 
       <section id="how" className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
@@ -2551,7 +2581,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             <p className="mt-4 text-base leading-relaxed text-[var(--bm-text2)]">
               Weeks go into research, design and tooling while the one conversation that would settle everything keeps getting postponed. BuildMind exists to close that gap.
             </p>
-            <Link href="/auth/login" className="mt-6 inline-block">
+            <Link href="/auth/login?tab=signup" className="mt-6 inline-block">
               <Button size="md">Start free <ArrowRight size={14} /></Button>
             </Link>
           </motion.div>
@@ -2605,7 +2635,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             Your first move is waiting. Free to start, and your stress-test shows its evidence.
           </p>
           <div className="flex flex-wrap justify-center gap-3">
-            <Link href="/auth/login">
+            <Link href="/auth/login?tab=signup">
               <button
                 className="bm-cta-primary inline-flex h-[46px] items-center gap-1.5 rounded-[var(--r-xl)] px-7 text-[15px] font-semibold transition-all hover:brightness-108 active:scale-95"
                 style={{ background: "var(--grad-primary)", color: "#0C0C0D" }}
@@ -2631,4 +2661,4 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {demoOpen && <DemoModal onClose={() => setDemoOpen(false)} />}
     </div>
   );
-  }
+             }
