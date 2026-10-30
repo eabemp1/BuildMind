@@ -1682,8 +1682,10 @@ function OnboardingInner() {
       const newProject = await createProjectWithRoadmap({
         project_name: projectName,
         idea_description: idea,
-        target_users: resolvedDepthAnswers.targetUsers.trim() || "founders",
-        problem: strikeResult?.marketGap ?? idea,
+        // Left empty when the founder didn't say: a made-up audience ("founders") sent everyone's first task to the wrong people.
+        target_users: resolvedDepthAnswers.targetUsers.trim(),
+        // The founder's own words. The AI's market-gap sentence is a guess, and it used to be saved here as if the founder had said it.
+        problem: idea,
         startup_stage: startupStage,
       });
       // FIX: return value was previously discarded. For a founder's first
@@ -1893,4 +1895,4 @@ export default function OnboardingPage() {
       <OnboardingInner />
     </Suspense>
   );
-  }
+                  }
