@@ -475,6 +475,7 @@ const REASON_TEXT: Record<string, string> = {
   repeat: "Too similar to a recent task.",
   repeats_stalled_task: "Repeats a task that has already been on Today for days. Make it smaller, clearer, unblock it, or turn it into a decision.",
   template_leak: "Contains template text (e.g. 'Not specified yet', 'No confirmed evidence', '(Myself)') instead of a real value.",
+  platform_debugging: "Asks the founder to debug another platform (a social network, hosting or DNS). Give a task that gets around it or moves the business forward instead.",
   open_ended_search: "Asks the founder to find a community/group without naming one. Name a specific place and the exact message.",
   contradicts_fact: "Contradicts something the founder said in a reflection (e.g. assumes users they said they don't have).",
   missing_number: "Needs a specific number for this kind of task.",
@@ -497,4 +498,4 @@ export function failsMissionPreScreen(task: string, mission: Mission, ctx: Quali
   const q = assessTaskQuality({ task, done_when: "placeholder-ok", first_step: "placeholder-ok", draft: "x".repeat(30) }, mission, ctx);
   const failed = q.hardFails.filter((f) => f !== "no_done_when");
   return { fails: failed.length > 0, failed_checks: failed };
-                                            }
+    }
