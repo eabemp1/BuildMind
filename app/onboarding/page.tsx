@@ -1162,37 +1162,37 @@ const STAGE_OPTIONS: {
     value: "Idea",
     emoji: "💡",
     label: "Idea",
-    sub: "I have an idea but haven't validated it with real people yet.",
+    sub: "I have an idea and haven't talked to the people it's for yet.",
   },
   {
     value: "Validation",
     emoji: "🧪",
     label: "Validation",
-    sub: "I'm talking to potential users and testing assumptions.",
+    sub: "I'm talking to people who might use it, to find out if the problem is real.",
   },
   {
     value: "MVP",
     emoji: "🛠️",
     label: "MVP / Prototype",
-    sub: "I have something working - rough, but real people can use it.",
+    sub: "I'm building it, or it's built but few or no outside people have used it yet.",
   },
   {
     value: "Launch",
     emoji: "🚀",
     label: "Launched",
-    sub: "I'm live and actively acquiring my first users or customers.",
+    sub: "It's live and I'm working on getting my first real users.",
   },
   {
     value: "Growth",
     emoji: "📈",
     label: "Growth",
-    sub: "I have repeatable traction and I'm scaling what works.",
+    sub: "I already have users and I'm working on getting more.",
   },
   {
     value: "Revenue",
     emoji: "💰",
     label: "Revenue / Scale",
-    sub: "I'm generating meaningful revenue and optimising for retention.",
+    sub: "People are paying me and I'm working on keeping them.",
   },
 ];
 
@@ -1895,4 +1895,4 @@ export default function OnboardingPage() {
       <OnboardingInner />
     </Suspense>
   );
-                  }
+          }
