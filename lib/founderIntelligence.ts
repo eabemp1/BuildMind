@@ -1233,7 +1233,7 @@ function scoreCandidate(candidate: Omit<DecisionCandidate, "scores" | "why_it_be
   // Capacity: a candidate heavier than the founder can carry right now is ranked down,
   // the small first-slice candidate up. Importance is untouched.
   const cap = state.capacity;
-  const candidateEffort = ({ avoidance_microdose: 1, evidence_probe: 2, unstall_goal: 3, continue_best_next_task: 3, agent_finding: 2, agent_recheck: 1 } as Record<string, number>)[candidate.id] ?? 2;
+  const candidateEffort = ({ avoidance_microdose: 1, evidence_probe: 2, unstall_goal: 3, continue_best_next_task: 3, agent_finding: 2, agent_recheck: 1, break_test: 2 } as Record<string, number>)[candidate.id] ?? 2;
   const capacity_penalty = cap && (cap.level === "low" || cap.level === "depleted") ? Math.max(0, candidateEffort - cap.effortCap) * 12 + (cap.holdBigDecisions && /pivot|pricing|rewrite|rebuild|shut/i.test(candidate.action) ? 20 : 0) : 0;
   const capacity_boost = cap && (cap.level === "low" || cap.level === "depleted") && candidateEffort === 1 ? 8 : 0;
   const agent_boost = agentItem ? agentRankingBoost(agentItem) : 0;
@@ -1523,4 +1523,4 @@ export async function loadFounderIntelligence(
     logError("founderIntelligence/loadFounderIntelligence", err, { userId, projectId });
     return buildFounderIntelligenceState({ ...preloaded, now });
   }
-          }
+}
