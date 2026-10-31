@@ -10,7 +10,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { callModelJSON } from "@/lib/ai-providers";
 import { loadConnectedFacts, type ConnectedFacts } from "@/lib/integrations/facts";
-import { webSearch } from "@/lib/search";
+import { webSearch, discussionSearch } from "@/lib/search";
 import { getFounderSnapshot } from "@/lib/server/founderSnapshot";
 import { isTodayFlowSession } from "@/lib/todayFlowSessions";
 import { draftContent, keepPastBehaviourQuestions, unsupportedNumbers, type ProjectCtx } from "@/lib/distribution/engine";
@@ -235,11 +235,23 @@ Return JSON: {"summary":"one sentence","others":[{"name":"product as written in 
   }, "pricing_test", { needs });
 }
 
+const THREAD_HOST_RE = /^https?:\/\/(?:www\.|old\.)?(?:reddit\.com\/r\/[^/]+\/comments\/|news\.ycombinator\.com\/item\?id=)/i;
+
+/** Real, current discussion threads (Reddit, Hacker News) on the problem. Only results that were actually fetched; never invented. */
+export async function discussionThreads(q: string): Promise<Hit[]> {
+  try {
+    const r = await discussionSearch(q.slice(0, 140), 8);
+    if (!r.scraped) return [];
+    return r.results.filter((x) => THREAD_HOST_RE.test(x.url)).slice(0, 4).map((x) => ({ title: x.title.slice(0, 120), url: x.url, snippet: x.snippet }));
+  } catch { return []; }
+}
+
 export async function prospectMap(project: ProjectCtx, task: string, inferred: string): Promise<Prepared | null> {
   const who = project.targetUsers || project.name;
-  const [a, b] = await Promise.all([
+  const [a, b, threads] = await Promise.all([
     search(`where do ${who} discuss ${project.problem || project.description.slice(0, 60)} community forum subreddit`, 6),
     search(`${who} newsletter OR slack OR discord OR group`, 5),
+    discussionThreads(`${who} ${project.problem || project.description.slice(0, 60)}`),
   ]);
   const seen = new Set<string>();
   const hits = [...a, ...b].filter((h) => { const k = h.url.replace(/^https?:\/\/(www\.)?/, "").split("?")[0]; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 8);
@@ -276,6 +288,7 @@ Return JSON: {"summary":"one sentence","places":[{"name":"place as written in th
     summary: typeof o.summary === "string" && o.summary.trim() ? o.summary : "Where the people you want to talk to already are.",
     sections: [
       ...(places.length ? [{ heading: "Where they are", bullets: places.map((c) => `${c.name}${c.why ? `: ${c.why}` : ""}`), links: places.map((c) => ({ title: hits[c.source - 1].title, url: hits[c.source - 1].url })) }] : []),
+      ...(threads.length ? [{ heading: "Conversations you can join today", bullets: threads.map((t) => t.title), links: threads.map((t) => ({ title: t.title, url: t.url })) }] : []),
       ...(profile.length ? [{ heading: "Who is worth messaging", bullets: profile }] : []),
       ...(queries.length ? [{ heading: "Searches to run today", bullets: queries }] : []),
       ...(typeof o.start === "string" && o.start.trim() ? [{ heading: "How to start", body: o.start.trim().slice(0, 260) }] : []),
