@@ -53,6 +53,8 @@ export interface StageReadinessEvidence {
   filledSlots: number;
   totalSlots: number;
   meetsBar: boolean;
+  /** At least one filled slot is something other than the founder's own opinion (a number, a document, an experiment, or recorded MRR). */
+  hasHardEvidence: boolean;
   missingLabels: string[];
 }
 
@@ -104,10 +106,15 @@ export function computeStageReadiness(input: {
     if (requirement) {
       const completeness = computeStageEvidenceCompleteness(requirement, evidenceRows, input.derivedSlotKeys ?? []);
       const bar = Math.ceil(requirement.slots.length * EVIDENCE_BAR_FRACTION);
+      // Opinion alone can't clear the bar: "I think it's ready" twice is not evidence.
+      const hasHardEvidence = requirement.slots.some(
+        s => completeness.filledSlotKeys.includes(s.key) && s.acceptedTypes.some(t => t !== "founder_judgment"),
+      );
       evidence = {
         filledSlots: completeness.filledSlotKeys.length,
         totalSlots: requirement.slots.length,
-        meetsBar: completeness.filledSlotKeys.length >= bar,
+        hasHardEvidence,
+        meetsBar: completeness.filledSlotKeys.length >= bar && hasHardEvidence,
         missingLabels: requirement.slots
           .filter(s => completeness.missingSlotKeys.includes(s.key))
           .map(s => s.label),
@@ -145,7 +152,9 @@ export function computeStageReadiness(input: {
   // exists to surface honestly instead of silently calling it "ready."
   const gaps: string[] = [];
   if (evidence && !evidence.meetsBar) {
-    gaps.push(
+    if (evidence.filledSlots >= Math.ceil(evidence.totalSlots * EVIDENCE_BAR_FRACTION) && !evidence.hasHardEvidence) {
+      gaps.push("Evidence: so far it is only your own judgment. Add one real number, document or experiment.");
+    } else gaps.push(
       `Evidence: ${evidence.filledSlots}/${evidence.totalSlots} captured — still missing ${evidence.missingLabels.slice(0, 2).join(", ")}${evidence.missingLabels.length > 2 ? ", and more" : ""}.`,
     );
   }
@@ -165,4 +174,4 @@ export function computeStageReadiness(input: {
     headline: `Checklist done for ${currentStage} — that's necessary, not proof.`,
     detail: gaps.join(" "),
   };
-}
+         }
