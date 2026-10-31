@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { selectAgentEvidence, agentCandidateTemplates, agentPromptBlock, agentRankingBoost, loadAgentEvidence, type AgentFindingRow } from "@/lib/agentToToday";
+import { selectBreakTest, selectAgentEvidence, agentCandidateTemplates, agentPromptBlock, agentRankingBoost, loadAgentEvidence, type AgentFindingRow } from "@/lib/agentToToday";
 import { buildDecisionState } from "@/lib/founderIntelligence";
 
 const now = new Date("2026-10-22T10:00:00Z");
@@ -90,5 +90,55 @@ describe("decision ranking", () => {
     const c = d.candidates.find((x) => x.id === "agent_finding");
     expect(c?.evidence?.finding_id).toBe(ev.confirmed[0].finding_id);
     expect(d.top_candidate?.id).toBe("agent_finding");
+  });
+});
+
+describe("teardown tests reaching Today", () => {
+  const tests = [
+    { id: "t1", assumption: "People will pay for this", test: "Ask 5 people in your target group what they pay for today.", provenWrongIf: "None of the 5 pay for anything similar", predictedHold: 0.6, status: "open" },
+    { id: "t2", assumption: "Founders have time for weekly check-ins", test: "Offer a 10-minute call to 5 founders and count who books.", provenWrongIf: "Fewer than 2 book", predictedHold: 0.35, status: "open" },
+    { id: "t3", assumption: "Already checked", test: "A test that was already run and resolved.", predictedHold: 0.2, status: "supported" },
+  ];
+  const rows = [{ id: "bbbbbbbb-1111-0000-0000-000000000000", project_id: null, created_at: daysAgo(2), tests }];
+
+  it("picks the open test the teardown rated least likely to hold", () => {
+    const b = selectBreakTest(rows, "p1", now)!;
+    expect(b.kind).toBe("break_test");
+    expect(b.title).toBe("Founders have time for weekly check-ins");
+    expect(b.action_hint).toContain("5 founders");
+  });
+  it("ignores resolved tests, stale analyses and other projects", () => {
+    expect(selectBreakTest([{ ...rows[0], tests: [tests[2]] }], "p1", now)).toBeNull();
+    expect(selectBreakTest([{ ...rows[0], created_at: daysAgo(30) }], "p1", now)).toBeNull();
+    expect(selectBreakTest([{ ...rows[0], project_id: "other" }], "p1", now)).toBeNull();
+  });
+  it("becomes a candidate that says it is a prediction, and the prompt asks to name the teardown", () => {
+    const breakTest = selectBreakTest(rows, "p1", now);
+    const ev = { confirmed: [], recheck: [], breakTest, key: "b1" };
+    const c = agentCandidateTemplates(ev).find((x) => x.id === "break_test")!;
+    expect(c.rationale).toMatch(/prediction, not a fact/);
+    expect(c.expected_evidence).toContain("Fewer than 2 book");
+    const block = agentPromptBlock(ev);
+    expect(block).toContain("BREAK MY STARTUP TEARDOWN");
+    expect(block).toContain("from your teardown");
+    expect(agentRankingBoost({ kind: "break_test", tier: "signal" })).toBeLessThan(agentRankingBoost({ kind: "confirmed", tier: "supported" }));
+  });
+  it("loads the teardown test even when the founder has run no agent mission", async () => {
+    const sb = { from: (t: string) => t === "break_predictions"
+      ? { select: () => ({ eq: () => ({ order: () => ({ limit: async () => ({ data: rows, error: null }) }) }) }) }
+      : { select: () => ({ eq: () => ({ eq: () => ({ gte: () => ({ limit: async () => ({ data: [], error: null }) }) }) }) }) } };
+    const ev = await loadAgentEvidence(sb, "u", "p1", now);
+    expect(ev.breakTest?.kind).toBe("break_test");
+    expect(ev.key).toContain("b");
+  });
+  it("is ranked as a candidate for a founder with no other signal, carrying its evidence", () => {
+    const breakTest = selectBreakTest(rows, "p1", now);
+    const base: any = {
+      execution_state: {}, founder: { avoidance_patterns: [], strengths: [] }, startup: { assumptions: [], current_goal: "Validate pricing" },
+      strategy: {}, execution: { repeated_actions: [], execution_velocity: 60 }, temporal: {}, signals: [], archetype_stats: {},
+      generated_at: now.toISOString(), agent_evidence: { confirmed: [], recheck: [], breakTest, key: "b" }, decision: { candidates: [], top_candidate: null, decision_basis: [] },
+    };
+    const c = buildDecisionState(base).candidates.find((x) => x.id === "break_test");
+    expect(c?.evidence?.kind).toBe("break_test");
   });
 });
