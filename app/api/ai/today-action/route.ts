@@ -1,6 +1,7 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
 import { fallbackForKind } from "@/lib/todayFallbacks";
+import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
 import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
 import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
@@ -675,12 +676,11 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
     if (swapPlan) lastReflectionContext += `\n\n${[swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n")}`;
     if (missionGrounding.length) lastReflectionContext += `\n\n${groundingPromptBlock(missionGrounding)}`;
-    const kindFallback = fallbackForKind(
-      mission.kind,
-      { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: problem || title || "this problem", productName: title?.trim() || "your product", stage },
-      `${userId}:${new Date().toISOString().slice(0, 10)}`,
-      personalisationCtx.ledger,
-    );
+    const fallbackInput = { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: problem || title || "this problem", productName: title?.trim() || "your product", stage };
+    const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
+    // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
+    const curated = isFirstRun(recentTasksParsed) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction) : null;
+    const kindFallback = curated ?? fallbackForKind(mission.kind, fallbackInput, fallbackSeed, personalisationCtx.ledger);
 
     // NOTE: founderIntelligence loading + prediction recording already
     // happened inside loadTodayActionContext() above (tctx.founderIntelligence,
@@ -1014,12 +1014,14 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     });
     const swapIssues = swapProblems(finalResult.action, swapPlan);
     if (swapIssues.length) preScreen.failed_checks.push(...swapIssues.map((i) => `swap_${i}`));
-    const wasHardFallback = preScreen.fails || swapIssues.length > 0;
+    if (curated) preScreen.failed_checks = ["first_run_curated", ...preScreen.failed_checks];
+    const wasHardFallback = Boolean(curated) || preScreen.fails || swapIssues.length > 0;
     if (wasHardFallback) {
       // Quality telemetry: which deterministic rule rejected the AI's task.
       void logQualityEvent(supabase, { userId, projectId, kind: "fallback", rules: preScreen.failed_checks, task: finalResult.action, missionKind: mission.kind, stage });
       finalResult.action = kindFallback.action;
       finalResult.message = kindFallback.message;
+      if (curated) { finalResult.why = kindFallback.why; finalResult.platform = kindFallback.platform; }
     } else if (!mission.requires.draft) {
       finalResult.message = "";
     }
@@ -1127,4 +1129,4 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const message = error instanceof Error ? error.message : "Today action failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-  }
+}
