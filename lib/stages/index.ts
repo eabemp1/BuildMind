@@ -250,4 +250,20 @@ export function effectiveBand(raw: string | null | undefined, facts: { noUsers?:
   const band = stageBand(raw);
   if (band === "growth" && facts.noUsers) return { band: "launch", adjusted: true };
   return { band, adjusted: false };
+}
+
+const PLAIN: Record<StartupStage, { long: string; short: string }> = {
+  Idea: { long: "Exploring the idea", short: "Idea" },
+  Validation: { long: "Checking people want it", short: "Talk to people" },
+  MVP: { long: "Building it", short: "Build" },
+  Launch: { long: "Getting first users", short: "First users" },
+  Growth: { long: "Growing", short: "Grow" },
+  Revenue: { long: "Earning revenue", short: "Earn" },
+};
+
+/** What the stage means in everyday words, for founders who don't know the startup vocabulary. Unknown values are returned unchanged. */
+export function plainStage(raw: string | null | undefined, form: "long" | "short" = "long"): string {
+  const v = String(raw ?? "").trim();
+  const exact = STAGE_ORDER.find((s) => s.toLowerCase() === v.toLowerCase());
+  return exact ? PLAIN[exact][form] : v;
     }
