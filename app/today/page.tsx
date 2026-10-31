@@ -1,6 +1,7 @@
 "use client";
 
-import { plainStage } from "@/lib/stages";
+import { plainStage, stageBand } from "@/lib/stages";
+import { FinishExtras } from "@/components/today/FinishExtras";
 import { classifyAiFailure, type AiFailure } from "@/lib/aiFailure";
 import FollowUpCard from "@/components/today/FollowUpCard";
 import WeeklyNote from "@/components/today/WeeklyNote";
@@ -1986,6 +1987,13 @@ function TodayContent() {
             );
           })()}
 
+          <FinishExtras
+            startup={project?.name ?? project?.title ?? ""}
+            band={stageBand(project?.startup_stage)}
+            outcome={doneInfo.outcome}
+            tasksCompleted={Math.max(1, parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0)}
+          />
+
           {activePattern && (
             <div style={{ marginBottom: 20, textAlign: "left" }}>
               <PaywallMoment
@@ -3100,4 +3108,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-                                                                                                                                                                        }
+             }
