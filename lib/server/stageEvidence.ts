@@ -264,10 +264,8 @@ export interface StageEvidenceCompleteness {
 }
 
 /**
- * A slot is filled if at least one submitted row's type matches one of the
- * slot's accepted types. This is intentionally lenient about which specific
- * row satisfies which slot — founders shouldn't have to tag evidence
- * against a slot ID, the type alone is enough signal.
+ * A slot is filled when a submitted row of one of its accepted types is available. Each row fills at
+ * most one slot. Founders don't tag evidence to a slot: the type alone decides.
  */
 export function computeStageEvidenceCompleteness(
   requirement: StageEvidenceRequirement,
@@ -275,13 +273,22 @@ export function computeStageEvidenceCompleteness(
   /** Slots already satisfied by data BuildMind holds elsewhere (for example recorded MRR). */
   derivedSlotKeys: readonly string[] = [],
 ): StageEvidenceCompleteness {
-  const submittedTypes = new Set(rows.map(r => r.evidence_type));
+  // One piece of evidence fills one slot. Before, a single note could satisfy every slot that accepted
+  // its type, so one sentence of opinion counted as two items. Slots that accept fewer types choose first.
+  const available = new Map<StageEvidenceType, number>();
+  for (const r of rows) available.set(r.evidence_type, (available.get(r.evidence_type) ?? 0) + 1);
+  const filledSet = new Set<string>(derivedSlotKeys);
+  const byFlexibility = [...requirement.slots].sort((a, b) => a.acceptedTypes.length - b.acceptedTypes.length);
+  for (const slot of byFlexibility) {
+    if (filledSet.has(slot.key)) continue;
+    const type = slot.acceptedTypes.find((t) => (available.get(t) ?? 0) > 0);
+    if (!type) continue;
+    available.set(type, (available.get(type) ?? 0) - 1);
+    filledSet.add(slot.key);
+  }
   const filledSlotKeys: string[] = [];
   const missingSlotKeys: string[] = [];
-  for (const slot of requirement.slots) {
-    const filled = derivedSlotKeys.includes(slot.key) || slot.acceptedTypes.some(t => submittedTypes.has(t));
-    (filled ? filledSlotKeys : missingSlotKeys).push(slot.key);
-  }
+  for (const slot of requirement.slots) (filledSet.has(slot.key) ? filledSlotKeys : missingSlotKeys).push(slot.key);
   return {
     requirement,
     filledSlotKeys,
@@ -318,4 +325,4 @@ export function validateStageEvidenceInput(input: {
       break;
   }
   return null;
-}
+    }
