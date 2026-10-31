@@ -8,6 +8,7 @@ import { buildLedger, findContradictions, factsPromptBlock, type ReflectionText 
 import { checkOutcome } from "@/lib/today/outcomeCheck";
 import { planTodayMission, assessTaskQuality, failsMissionPreScreen } from "@/lib/todayMission";
 import { splitRegenerated, REGENERATE_WINDOW_MS } from "@/lib/learning";
+import { guardRules } from "@/lib/today/rules";
 
 const r = (created_at: string, o: Partial<ReflectionText>): ReflectionText => ({ created_at, ...o });
 
@@ -186,5 +187,19 @@ describe("new founder: first task (a real signup, Oct 30)", () => {
 
   it("allows a task that works from a group the founder is already in", () => {
     expect(findContradictions("Ask one person in a group you're already in to try the product for 5 minutes", fresh)).toEqual([]);
+  });
+});
+
+describe("platform debugging is not a task", () => {
+  const rules = (t: string) => guardRules(t);
+  it("rejects tasks that ask the founder to debug someone else's platform", () => {
+    expect(rules("Troubleshoot why you can't join the Discord server and fix the verification problem")).toContain("platform_debugging");
+    expect(rules("Fix the DNS errors on your domain so the site loads")).toContain("platform_debugging");
+    expect(rules("Investigate why your LinkedIn account was suspended and resolve it")).toContain("platform_debugging");
+  });
+  it("leaves ordinary platform tasks alone", () => {
+    expect(rules("Post one question in the r/startups weekly thread and note the first 3 replies")).not.toContain("platform_debugging");
+    expect(rules("Fix your LinkedIn headline so it says who you help")).not.toContain("platform_debugging");
+    expect(rules("Send the link to 3 people on WhatsApp and ask what they would use it for")).not.toContain("platform_debugging");
   });
 });
