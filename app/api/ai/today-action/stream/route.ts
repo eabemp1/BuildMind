@@ -544,6 +544,7 @@ export async function POST(request: Request) {
         // ── Mission planning (lib/todayMission.ts) ────────────────────────
         const recentTasks = parseRecentTasks(personalisationCtx.recentActionsBlock);
         const plannedMission = planTodayMission({
+          noUsers: personalisationCtx.ledger?.facts.some((f) => f.kind === "no_users"),
           stage,
           recentTasks,
           avoidance: cognitionAvoidanceSignals,
@@ -1048,4 +1049,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-                                                               }
+}
