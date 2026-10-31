@@ -40,7 +40,7 @@ function isCronRequest(req: Request): boolean {
 }
 
 /** Minimal HTML shell for the AI-generated re-engagement email body */
-function buildReEngagementHTML(name: string | undefined, startupName: string | undefined, daysInactive: number, aiBody: string): string {
+function buildReEngagementHTML(name: string | undefined, startupName: string | undefined, daysInactive: number, aiBody: string, wording?: { heading: string; cta: string }): string {
   const firstName = escapeHtml(name?.split(" ")[0] ?? "Founder");
   const startup   = escapeHtml(startupName ?? "your startup");
   const paragraphs = aiBody.split("\n").filter(p => p.trim()).map(p =>
@@ -51,11 +51,11 @@ function buildReEngagementHTML(name: string | undefined, startupName: string | u
     <div style="margin-bottom:24px;">
       <span style="display:inline-block;padding:5px 12px;background:rgba(232,197,71,0.1);border:1px solid rgba(232,197,71,0.25);border-radius:99px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#E8C547;">BuildMind</span>
     </div>
-    <h1 style="font-size:26px;font-weight:800;color:#ECECEC;letter-spacing:-0.03em;margin:0 0 8px;">${daysInactive} days. ${startup} is still waiting.</h1>
+    <h1 style="font-size:26px;font-weight:800;color:#ECECEC;letter-spacing:-0.03em;margin:0 0 8px;">${wording ? escapeHtml(wording.heading) : `${daysInactive} days. ${startup} is still waiting.`}</h1>
     <p style="font-size:12px;color:#56565E;margin:0 0 28px;">${firstName} · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long" })}</p>
     <div style="margin-bottom:28px;">${paragraphs}</div>
     <a href="${process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live"}/today" style="display:inline-block;padding:13px 28px;background:#E8C547;color:#000;font-size:14px;font-weight:700;text-decoration:none;border-radius:10px;letter-spacing:-0.01em;">
-      Resume where you left off →
+      ${wording ? escapeHtml(wording.cta) : "Resume where you left off →"}
     </a>
     <p style="margin:32px 0 0;font-size:11px;color:#3A3A42;line-height:1.6;">
       You're receiving this because you signed up for BuildMind. <a href="${process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live"}/settings" style="color:#56565E;">Manage notifications</a>
@@ -284,6 +284,55 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Day-2 nudge ────────────────────────────────────────────────────────────
+  // The 7 and 14 day waves miss the real drop-off: a new founder who looked once and never came back.
+  // This one goes to accounts under a week old who have not finished a task and have been away 2-3 days.
+  // Fixed wording, no AI call. It sends only when DAY2_NUDGE=on; a dry run lists who would get it.
+  let day2Sent = 0;
+  const day2On = process.env.DAY2_NUDGE === "on";
+  if (day2On || dryRun) {
+    const { data: fresh } = await supabase
+      .from("projects")
+      .select("user_id, name, title, created_at")
+      .gte("created_at", new Date(todayUtc - 6 * DAY).toISOString())
+      .order("created_at", { ascending: true })
+      .limit(200);
+    const firstProject = new Map<string, { name?: string; title?: string }>();
+    for (const p of fresh ?? []) if (p.user_id && !firstProject.has(p.user_id)) firstProject.set(p.user_id, p);
+    const day2Ids: string[] = [];
+    for (const uid of firstProject.keys()) {
+      const { data: ctx } = await supabase.from("founder_context").select("last_active, last_checkin_date, last_task_date").eq("user_id", uid).maybeSingle();
+      const dates = [ctx?.last_active, ctx?.last_checkin_date, ctx?.last_task_date].map(toDay).filter((x): x is number => x !== null);
+      if (dates.length === 0) continue;
+      const away = Math.round((todayUtc - Math.max(...dates)) / DAY);
+      if (away < 2 || away > 3) continue;
+      const { count } = await supabase.from("reflexion_learning_log").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("outcome", "completed");
+      if ((count ?? 0) === 0) day2Ids.push(uid);
+    }
+    const claimed = dryRun ? day2Ids : await claimSendSlots(day2Ids, "day2_nudge", CLAIM_SENTINEL_DATE);
+    for (const uid of claimed) {
+      const { data: au } = await supabase.auth.admin.getUserById(uid);
+      const email = au?.user?.email;
+      if (!email) continue;
+      const proj = firstProject.get(uid);
+      const startup = proj?.name ?? proj?.title ?? "your startup";
+      if (dryRun) { details.push({ userId: uid, result: `dry_run:day2:${email}` }); day2Sent++; continue; }
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live";
+        await sendEmail({
+          to: email,
+          subject: `Your first step on ${startup} takes about 10 minutes`,
+          html: buildReEngagementHTML(undefined, startup, 2, [
+            "Your first task is ready. It takes about 10 minutes.",
+            "It needs no email addresses and no contacts, so you can do it from wherever you are.",
+            "When you finish it, tomorrow's task starts from what you did.",
+          ].join("\n"), { heading: `Your first step on ${startup} is ready.`, cta: "Open my first task →" }),
+        });
+        day2Sent++;
+      } catch { failed++; }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     dryRun,
@@ -291,8 +340,9 @@ export async function GET(req: NextRequest) {
     processed: totalRows,
     durationMs: Date.now() - start,
     sent,
+    day2Sent,
     skipped,
     failed,
     details: dryRun ? details : undefined, // Only expose details in dry-run to avoid PII in logs
   });
-    }
+      }
