@@ -72,17 +72,22 @@ describe("getStageEvidenceRequirement — every forward transition is built", ()
 });
 
 describe("computeStageEvidenceCompleteness — works identically across transitions", () => {
-  it("is complete once one row of each of the 4 types is present, for any transition", () => {
+  it("is complete once every slot has its own piece of evidence, for any transition", () => {
     for (const [from, to] of [["Idea", "Validation"], ["Growth", "Revenue"]] as const) {
       const req = getStageEvidenceRequirement(from, to)!;
-      const result = computeStageEvidenceCompleteness(req, [
-        { evidence_type: "metric" },
-        { evidence_type: "artifact" },
-        { evidence_type: "experiment" },
-        { evidence_type: "founder_judgment" },
-      ]);
-      expect(result.isComplete, `${from} -> ${to}`).toBe(true);
+      const rows = req.slots.map((s) => ({ evidence_type: s.acceptedTypes[0] }));
+      expect(computeStageEvidenceCompleteness(req, rows).isComplete, `${from} -> ${to}`).toBe(true);
     }
+  });
+
+  it("one piece of evidence fills one slot, not every slot that accepts its type", () => {
+    const req = getStageEvidenceRequirement("Idea", "Validation")!;
+    const one = computeStageEvidenceCompleteness(req, [{ evidence_type: "founder_judgment" }]);
+    expect(one.filledSlotKeys).toHaveLength(1);
+    const two = computeStageEvidenceCompleteness(req, [{ evidence_type: "founder_judgment" }, { evidence_type: "founder_judgment" }]);
+    expect(two.filledSlotKeys).toHaveLength(2);
+    const launch = getStageEvidenceRequirement("MVP", "Launch")!;
+    expect(computeStageEvidenceCompleteness(launch, [{ evidence_type: "artifact" }]).filledSlotKeys).toHaveLength(1);
   });
 
   it("is incomplete with no rows", () => {
