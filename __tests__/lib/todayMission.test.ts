@@ -90,3 +90,14 @@ describe("fallbackForKind", () => {
     }
   });
 });
+
+describe("planTodayMission: stage vs what the founder said", () => {
+  it("explains why a Growth founder with no users is planned for first users", () => {
+    const m = planTodayMission({ stage: "Growth", recentTasks: [], avoidance: [], blockers: [], activeGoals: [], noUsers: true });
+    expect(m.reasons.join(" ")).toMatch(/no users yet/i);
+  });
+  it("does not add that line for MVP", () => {
+    const m = planTodayMission({ stage: "MVP", recentTasks: [], avoidance: [], blockers: [], activeGoals: [], noUsers: true });
+    expect(m.reasons.join(" ")).not.toMatch(/no users yet/i);
+  });
+});
