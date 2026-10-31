@@ -657,6 +657,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     // ── Mission planning (lib/todayMission.ts) — same planner as the stream route ──
     const recentTasksParsed = parseRecentTasks(personalisationCtx.recentActionsBlock);
     const plannedMission = planTodayMission({
+      noUsers: personalisationCtx.ledger?.facts.some((f) => f.kind === "no_users"),
       stage,
       recentTasks: recentTasksParsed,
       avoidance: cognitionAvoidanceSignals,
