@@ -183,8 +183,8 @@ export function parseRecentTasks(block: string | undefined | null): RecentTask[]
 
 // ── Planning ────────────────────────────────────────────────────────────────
 
-type StageBand = "idea" | "validation" | "building" | "launch" | "growth";
-function stageBand(stage: string): StageBand {
+export type StageBand = "idea" | "validation" | "building" | "launch" | "growth";
+export function stageBand(stage: string): StageBand {
   const s = stage.toLowerCase();
   if (/idea|concept|explor/.test(s)) return "idea";
   if (/valid|discover|problem/.test(s)) return "validation";
@@ -502,4 +502,4 @@ export function failsMissionPreScreen(task: string, mission: Mission, ctx: Quali
   const q = assessTaskQuality({ task, done_when: "placeholder-ok", first_step: "placeholder-ok", draft: "x".repeat(30) }, mission, ctx);
   const failed = q.hardFails.filter((f) => f !== "no_done_when");
   return { fails: failed.length > 0, failed_checks: failed };
-}
+                                      }
