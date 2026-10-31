@@ -46,9 +46,11 @@ describe("curated first tasks", () => {
     }
   });
 
-  it("a founder with no users is never given a task that assumes users", () => {
-    const g = firstRunTask("Growth", { ...input, stage: "Growth" }, "u:2026-10-30", ledger);
-    expect(g === null || !/\bused\b|\busers? of\b/i.test(g.action)).toBe(true);
+  it("a Growth founder who has said they have no users gets Launch tasks, never ones that assume users", () => {
+    const g = firstRunTask("Growth", { ...input, stage: "Growth" }, "u:2026-10-30", ledger)!;
+    expect(g).not.toBeNull();
+    expect(/last 5 users|most recent person who used/i.test(g.action)).toBe(false);
+    expect(guardRules(`${g.action} ${g.first_step}`, ledger, g.message)).toEqual([]);
   });
 
   it("Replace never returns the task just replaced", () => {
