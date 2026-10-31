@@ -162,3 +162,29 @@ describe("regenerated tasks are not 'ignored'", () => {
     expect(REGENERATE_WINDOW_MS).toBe(90 * 60 * 1000);
   });
 });
+
+describe("new founder: first task (a real signup, Oct 30)", () => {
+  // Chose MVP, had built an unlaunched product, had no users and no contact list.
+  // First task shown: "Email three founders asking how they previously handled this problem".
+  const fresh = buildLedger([], { now: at("2026-10-30T20:00:00Z"), knownContacts: 0 });
+
+  it("a new account with no recorded people starts with a 'no users' fact", () => {
+    expect(fresh.facts.some((f) => f.kind === "no_users")).toBe(true);
+    expect(buildLedger([], { now: at("2026-10-30T20:00:00Z") }).facts.some((f) => f.kind === "no_users")).toBe(false);
+  });
+
+  it("rejects an email to strangers when nothing says the founder has their addresses", () => {
+    const bad = findContradictions("Email three founders asking how they previously handled this problem", fresh);
+    expect(bad.some((c) => c.fact === "no_contacts")).toBe(true);
+    expect(findContradictions("Send 5 personalized emails to potential customers", fresh).some((c) => c.fact === "no_contacts")).toBe(true);
+  });
+
+  it("still allows email to people the founder already holds an address for", () => {
+    expect(findContradictions("Email three people from your waitlist asking what they hoped to do first", fresh).some((c) => c.fact === "no_contacts")).toBe(false);
+    expect(findContradictions("Email 3 people who replied to your post and ask one follow-up question", fresh).some((c) => c.fact === "no_contacts")).toBe(false);
+  });
+
+  it("allows a task that works from a group the founder is already in", () => {
+    expect(findContradictions("Ask one person in a group you're already in to try the product for 5 minutes", fresh)).toEqual([]);
+  });
+});
