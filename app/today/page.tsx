@@ -1,5 +1,6 @@
 "use client";
 
+import { plainStage } from "@/lib/stages";
 import { classifyAiFailure, type AiFailure } from "@/lib/aiFailure";
 import FollowUpCard from "@/components/today/FollowUpCard";
 import WeeklyNote from "@/components/today/WeeklyNote";
@@ -69,6 +70,13 @@ import { UIModeToggle } from "@/components/ui/UIModeToggle";
 import { RadialGauge } from "@/components/charts/RadialGauge";
 
 type Outcome = "completed" | "blocked" | "partial" | "learned";
+
+const DONE_HEADLINE: Record<Outcome, string> = {
+  completed: "Done. That was a real step.",
+  partial: "Good start. Partly done still counts.",
+  learned: "You learned something. That counts.",
+  blocked: "Blocked is useful to know.",
+};
 type ReflexionMeta = {
   verdict: string;
   criticPersona: string;
@@ -437,6 +445,7 @@ function TodayContent() {
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [doneInfo, setDoneInfo] = useState<{ outcome: Outcome | null; first: boolean }>({ outcome: null, first: false });
   const [streak, setStreak] = useState(0);
   // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
   const checkInFired = useRef(false);
@@ -1540,6 +1549,7 @@ function TodayContent() {
       storage.set(todayKey, "1");
 
       let serverStreak: number | null = null;
+      let firstFinished = false;
       try {
         const tcRes = await fetch("/api/founder-context/task-complete", {
           method: "POST",
@@ -1565,6 +1575,7 @@ function TodayContent() {
             const localTotal = parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0;
             const resolved = Math.max(tcData.tasksCompletedTotal, localTotal);
             storage.set("bm_tasks_completed_total", String(resolved));
+            firstFinished = selectedOutcome === "completed" && resolved <= 1;
           }
           if (typeof tcData.streak === "number") {
             serverStreak = tcData.streak;
@@ -1613,6 +1624,7 @@ function TodayContent() {
         checkin_done_date: todayDate,
         today_action_cache: null,
       });
+      setDoneInfo({ outcome: selectedOutcome, first: firstFinished });
       setDone(true);
 
       // Show push permission prompt if not already granted
@@ -1941,10 +1953,13 @@ function TodayContent() {
             <CheckCircle2 size={28} color="var(--bm-green)" />
           </div>
           <h2 style={{ fontSize: isMobile ? 20 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
-            Insight logged. BuildMind adapts.
+            {doneInfo.first ? "First task done." : doneInfo.outcome ? DONE_HEADLINE[doneInfo.outcome] : "Today is done."}
           </h2>
           <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: isFirstSession ? 16 : 20, lineHeight: 1.6 }}>
-            {displayName ? `Come back tomorrow, ${displayName.split(" ")[0]}. Consistency compounds.` : "Come back tomorrow. Consistency compounds."}
+            {doneInfo.first
+              ? "Most people never get this far. Tomorrow's task starts from what you just did."
+              : "Tomorrow's task starts from what you just did."}
+            {displayName ? ` See you tomorrow, ${displayName.split(" ")[0]}.` : ""}
           </p>
 
           {/* ── First-session: 7-day projection ── */}
@@ -2299,7 +2314,7 @@ function TodayContent() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             {project?.startup_stage && (
               <span className="bm-badge bm-badge-accent" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                {project.startup_stage} stage
+                {plainStage(project.startup_stage)}
               </span>
             )}
             {actionData.isAI && !actionLoading && (
@@ -2795,7 +2810,7 @@ function TodayContent() {
               textTransform: "uppercase",
               letterSpacing: "0.08em",
             }}>
-              {project.startup_stage}
+              {plainStage(project.startup_stage)}
             </span>
           )}
           <GhostGoalBanner
@@ -3085,4 +3100,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-      }
+                                                                                                                                                                        }
