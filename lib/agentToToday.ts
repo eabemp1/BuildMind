@@ -35,7 +35,7 @@ export interface AgentFindingRow {
   caveat?: string | null;
 }
 
-export type AgentEvidenceKind = "confirmed" | "recheck";
+export type AgentEvidenceKind = "confirmed" | "recheck" | "break_test";
 
 export interface AgentEvidenceItem {
   finding_id: string;
@@ -51,11 +51,13 @@ export interface AgentEvidenceItem {
 export interface AgentTodayEvidence {
   confirmed: AgentEvidenceItem[];
   recheck: AgentEvidenceItem[];
+  /** The riskiest open test from the founder's latest Break My Startup analysis. A prediction, not a verified fact. */
+  breakTest: AgentEvidenceItem | null;
   /** Changes whenever the set of findings changes; a cached same-day decision is dropped when it differs. */
   key: string;
 }
 
-export const EMPTY_AGENT_EVIDENCE: AgentTodayEvidence = { confirmed: [], recheck: [], key: "" };
+export const EMPTY_AGENT_EVIDENCE: AgentTodayEvidence = { confirmed: [], recheck: [], breakTest: null, key: "" };
 
 /** A confirmed finding stops steering Today after this long: the market moves. */
 export const CONFIRMED_MAX_AGE_DAYS = 21;
@@ -126,11 +128,54 @@ export function selectAgentEvidence(rows: AgentFindingRow[], now: Date = new Dat
   const topConfirmed = confirmed.slice(0, 3);
   const topRecheck = recheck.slice(0, 2);
   const key = [...topConfirmed, ...topRecheck].map((i) => `${i.kind[0]}${i.finding_id.slice(0, 8)}`).join(",");
-  return { confirmed: topConfirmed, recheck: topRecheck, key };
+  return { confirmed: topConfirmed, recheck: topRecheck, breakTest: null, key };
+}
+
+/** A saved Break My Startup analysis (table break_predictions). */
+export interface BreakPredictionRow {
+  id: string;
+  project_id?: string | null;
+  created_at?: string | null;
+  tests?: Array<{ id?: string; assumption?: string; test?: string; provenWrongIf?: string; predictedHold?: number; status?: string }> | null;
+}
+
+/** A teardown test stops steering Today after this long. */
+export const BREAK_TEST_MAX_AGE_DAYS = 21;
+
+/**
+ * The riskiest open test from the newest analysis (the assumption the teardown itself rated least likely to hold).
+ * It is the system's own prediction, so it is offered as something to test, never presented as established.
+ */
+export function selectBreakTest(rows: BreakPredictionRow[], projectId: string | null | undefined, now: Date = new Date()): AgentEvidenceItem | null {
+  const fresh = (rows ?? [])
+    .filter((r) => r && r.id && (!r.project_id || !projectId || r.project_id === projectId))
+    .filter((r) => { const t = Date.parse(r.created_at ?? ""); return Number.isFinite(t) && (now.getTime() - t) / DAY <= BREAK_TEST_MAX_AGE_DAYS; })
+    .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""));
+  const row = fresh[0];
+  if (!row) return null;
+  const open = (row.tests ?? [])
+    .filter((t) => t && t.status === "open" && clean(t.test, 300).length >= 15 && clean(t.assumption, 200).length >= 5)
+    .sort((a, b) => (Number(a.predictedHold) || 0.5) - (Number(b.predictedHold) || 0.5));
+  const t = open[0];
+  if (!t) return null;
+  const hold = Math.max(0, Math.min(1, Number(t.predictedHold) || 0.5));
+  return {
+    finding_id: `break:${row.id.slice(0, 8)}:${clean(t.id, 20) || "t"}`,
+    kind: "break_test",
+    title: clean(t.assumption, 140),
+    action_hint: clean(t.test, 220),
+    tier: "signal",
+    source_count: 0,
+    confidence: 0.8,
+    confirmed_at: row.created_at ?? null,
+    // Carried for the rationale, not shown as a score.
+    ...( { predictedHold: hold, provenWrongIf: clean(t.provenWrongIf, 200) } as object ),
+  } as AgentEvidenceItem;
 }
 
 /** Ranking boost for a finding-backed task: a verified, decision-grade finding outranks a generic probe. */
 export function agentRankingBoost(item: Pick<AgentEvidenceItem, "kind" | "tier">): number {
+  if (item.kind === "break_test") return 4;
   if (item.kind === "recheck") return 0;
   return item.tier === "decision_grade" ? 8 : item.tier === "supported" ? 5 : 3;
 }
@@ -148,7 +193,7 @@ function sentence(s: string): string {
 
 /** Candidate templates for buildDecisionState. At most one of each. */
 export function agentCandidateTemplates(ev: AgentTodayEvidence | null | undefined): Array<{
-  id: "agent_finding" | "agent_recheck";
+  id: "agent_finding" | "agent_recheck" | "break_test";
   action: string;
   rationale: string;
   expected_evidence: string;
@@ -178,30 +223,60 @@ export function agentCandidateTemplates(ev: AgentTodayEvidence | null | undefine
       evidence: r,
     });
   }
+  const b = ev?.breakTest as (AgentEvidenceItem & { predictedHold?: number; provenWrongIf?: string }) | null | undefined;
+  if (b) {
+    const pct = typeof b.predictedHold === "number" ? Math.round(b.predictedHold * 100) : null;
+    out.push({
+      id: "break_test",
+      action: sentence(b.action_hint),
+      rationale: `Your Break My Startup teardown flagged this assumption${pct !== null ? ` (rated about ${pct}% likely to hold)` : ""}: "${b.title}". It is a prediction, not a fact, so the way to settle it is to run the test.`,
+      expected_evidence: b.provenWrongIf ? `A real result. It would be proven wrong if: ${b.provenWrongIf}` : "A real result that supports or contradicts the assumption.",
+      supporting_signals: [],
+      evidence: b,
+    });
+  }
   return out;
 }
 
 /** Prompt block so the task writer sees the evidence and cites it. Empty when there is none. */
 export function agentPromptBlock(ev: AgentTodayEvidence | null | undefined): string {
-  if (!ev || (!ev.confirmed.length && !ev.recheck.length)) return "";
+  if (!ev || (!ev.confirmed.length && !ev.recheck.length && !ev.breakTest)) return "";
   const lines = ["AGENT CREW EVIDENCE (findings the founder reviewed; treat tier and source count as the limit of what can be claimed):"];
   for (const i of ev.confirmed) lines.push(`- CONFIRMED (${tierPhrase(i)}): ${i.title}. Suggested move: ${i.action_hint}`);
   for (const i of ev.recheck) lines.push(`- NEEDS RE-CHECK (${tierPhrase(i)}): ${i.title}. Do not build on it until a second source or two direct answers agree.`);
-  lines.push("INSTRUCTION: if today's task is based on one of these findings, name it. Never present a re-check item as established fact.");
+  if (ev.breakTest) lines.push(`- FROM THEIR BREAK MY STARTUP TEARDOWN (a prediction, not a fact): assumption "${ev.breakTest.title}". Suggested test: ${ev.breakTest.action_hint}`);
+  lines.push("INSTRUCTION: if today's task is based on one of these findings, name it (for the teardown, say 'from your teardown'). Never present a re-check item or a teardown prediction as established fact.");
   return lines.join("\n");
 }
 
 type SupabaseLike = { from: (table: string) => any };
 
-/** Reads the founder's reviewed findings for one project. Never throws; returns empty evidence on any failure. */
+/** Reads the founder's reviewed findings for one project, plus the riskiest open test from their latest teardown. Never throws; returns empty evidence on any failure. */
 export async function loadAgentEvidence(
   supabase: SupabaseLike,
   userId: string,
   projectId: string | null | undefined,
   now: Date = new Date(),
 ): Promise<AgentTodayEvidence> {
+  if (!userId) return EMPTY_AGENT_EVIDENCE;
+  const [found, breakTest] = await Promise.all([loadFindings(supabase, userId, projectId, now), loadBreakTest(supabase, userId, projectId, now)]);
+  if (!breakTest) return found;
+  return { ...found, breakTest, key: [found.key, `b${breakTest.finding_id}`].filter(Boolean).join(",") };
+}
+
+async function loadBreakTest(supabase: SupabaseLike, userId: string, projectId: string | null | undefined, now: Date): Promise<AgentEvidenceItem | null> {
   try {
-    if (!userId || !projectId) return EMPTY_AGENT_EVIDENCE;
+    const res = await supabase.from("break_predictions").select("id, project_id, tests, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(3);
+    if (res?.error) return null;
+    return selectBreakTest((res?.data ?? []) as BreakPredictionRow[], projectId, now);
+  } catch {
+    return null;
+  }
+}
+
+async function loadFindings(supabase: SupabaseLike, userId: string, projectId: string | null | undefined, now: Date): Promise<AgentTodayEvidence> {
+  try {
+    if (!projectId) return EMPTY_AGENT_EVIDENCE;
     const since = new Date(now.getTime() - (CONFIRMED_MAX_AGE_DAYS + 9) * DAY).toISOString();
     const runsRes = await supabase
       .from("agent_runs")
