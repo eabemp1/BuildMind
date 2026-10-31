@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readSharePayload, SEVERITY_HEX, shareHeadline } from "@/lib/breakShare";
+import { ShareFeedback } from "@/components/break-my-startup/ShareFeedback";
 
 export const dynamic = "force-dynamic";
 const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://buildmind.live";
@@ -52,15 +53,40 @@ export default async function Page({ params }: { params: Promise<{ token: string
           ))}
         </section>
       )}
-      <h2 style={{ fontSize: 16 }}>Top risks</h2>
-      {p.risks.map((r, i) => (
+      <h2 style={{ fontSize: 16 }}>{p.full ? "Risks" : "Top risks"}</h2>
+      {(p.full?.risks.length ? p.full.risks : p.risks.map((r) => ({ ...r, fix: "" }))).map((r, i) => (
         <div key={i} style={{ borderLeft: `3px solid ${SEVERITY_HEX[r.severity] ?? "#8B8774"}`, padding: "4px 12px", margin: "10px 0" }}>
           <strong>{r.category}</strong> <span style={{ color: "#8B8774", fontSize: 12 }}>{r.severity}</span>
           <div style={{ color: "#B9B5A5", fontSize: 14 }}>{r.text}</div>
+          {r.fix && <div style={{ color: "#8B8774", fontSize: 13, marginTop: 4 }}>Fix: {r.fix}</div>}
         </div>
       ))}
-      {p.pivot && <p style={{ color: "#E8C547" }}>Best pivot: <strong>{p.pivot.title}</strong> — {p.pivot.why}</p>}
+      {p.full && p.full.survive.length > 0 && (<>
+        <h2 style={{ fontSize: 16, marginTop: 28 }}>Why it could survive</h2>
+        <ul style={{ color: "#B9B5A5", fontSize: 14, lineHeight: 1.6, paddingLeft: 18 }}>{p.full.survive.map((x, i) => <li key={i}>{x}</li>)}</ul>
+      </>)}
+      {p.full && p.full.competitors.length > 0 && (<>
+        <h2 style={{ fontSize: 16, marginTop: 28 }}>Who it is up against</h2>
+        {p.full.competitors.map((c, i) => (
+          <div key={i} style={{ margin: "8px 0", fontSize: 14 }}>
+            <strong>{c.name}</strong> <span style={{ color: "#8B8774", fontSize: 12 }}>{c.threat} threat</span>
+            <div style={{ color: "#B9B5A5" }}>{c.weakness}</div>
+          </div>
+        ))}
+      </>)}
+      {p.full && p.full.pivots.length > 0 ? (<>
+        <h2 style={{ fontSize: 16, marginTop: 28 }}>Ways to change direction</h2>
+        {p.full.pivots.map((x, i) => (
+          <div key={i} style={{ margin: "10px 0", fontSize: 14 }}>
+            <strong style={{ color: "#E8C547" }}>{x.title}</strong>
+            <div style={{ color: "#B9B5A5" }}>{x.why}</div>
+            {x.step && <div style={{ color: "#8B8774", fontSize: 13, marginTop: 4 }}>First step: {x.step}</div>}
+          </div>
+        ))}
+      </>) : p.pivot && <p style={{ color: "#E8C547" }}>Best pivot: <strong>{p.pivot.title}</strong> — {p.pivot.why}</p>}
+      {p.full?.advice && <p style={{ margin: "24px 0 0", padding: "14px 16px", borderRadius: 10, background: "#131316", color: "#F2EFE6", lineHeight: 1.6 }}>{p.full.advice}</p>}
+      <ShareFeedback token={token.replace(/[^a-f0-9]/gi, "").slice(0, 32)} />
       <a href="/break" style={{ display: "inline-block", marginTop: 24, padding: "12px 20px", borderRadius: 10, background: "#E8C547", color: "#09090A", fontWeight: 700, textDecoration: "none" }}>Break your own idea</a>
     </main>
   );
-}
+      }
