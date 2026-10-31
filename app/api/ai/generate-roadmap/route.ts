@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createUserNotification, enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { STAGE_ORDER } from "@/lib/stages";
 
 const FALLBACK_ROADMAP = [
   { milestone: "Idea", tasks: ["Define core value proposition in one sentence", "Draft one-line pitch", "Identify 3 competitor alternatives and what they miss"] },
@@ -11,7 +12,6 @@ const FALLBACK_ROADMAP = [
   { milestone: "Growth", tasks: ["Define the single metric that predicts retention", "Run one growth experiment per week", "Talk to churned users to understand why they left"] },
 ];
 
-const STAGE_ORDER = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"];
 
 // Provisional (heuristic) estimates for stages the AI hasn't generated real
 // tasks for yet — later stages beyond currentStage+1 (see detailedStages
@@ -369,4 +369,4 @@ Generate a specific roadmap for THIS founder's current and immediate-next stage 
     const status = message.toLowerCase().includes("limit") ? 429 : 500;
     return NextResponse.json({ success: false, error: message }, { status });
   }
-}
+          }
