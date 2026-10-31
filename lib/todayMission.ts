@@ -18,6 +18,7 @@
  * Pure, no I/O, client-safe.
  */
 
+import { effectiveBand, type StageBand } from "@/lib/stages";
 import { guardRules } from "@/lib/today/rules";
 import { classifyTask, tokenize, stem, type Purpose, type Domain } from "@/lib/taxonomy/taskTaxonomy";
 
@@ -49,6 +50,8 @@ export interface MissionSignals {
   cognitiveLoad?: "fresh" | "drained" | "autopilot";
   momentum?: number;           // 0-100
   isLowConfidence?: boolean;
+  /** The founder has said they have no users yet (fact ledger). */
+  noUsers?: boolean;
   /** Decision-layer candidate id (lib/founderIntelligence.ts), used as a nudge, not an override. */
   candidateId?: string | null;
   excludeAction?: string;
@@ -183,16 +186,7 @@ export function parseRecentTasks(block: string | undefined | null): RecentTask[]
 
 // ── Planning ────────────────────────────────────────────────────────────────
 
-export type StageBand = "idea" | "validation" | "building" | "launch" | "growth";
-export function stageBand(stage: string): StageBand {
-  const s = stage.toLowerCase();
-  if (/idea|concept|explor/.test(s)) return "idea";
-  if (/valid|discover|problem/.test(s)) return "validation";
-  if (/build|mvp|prototype|develop/.test(s)) return "building";
-  if (/launch|beta|early/.test(s)) return "launch";
-  if (/grow|revenue|scale|traction|paying/.test(s)) return "growth";
-  return "validation";
-}
+export { stageBand, type StageBand } from "@/lib/stages";
 
 const BASE: Record<StageBand, Record<MissionKind, number>> = {
   idea:       { interview: 6, outreach: 4, follow_up: 1, build: 0.5, publish: 1, pricing: 0.5, analyze: 2, unblock: 1, reset: 0.5 },
@@ -227,9 +221,10 @@ const FI_NUDGE: Record<string, Partial<Record<MissionKind, number>>> = {
 const OUTCOME_GOOD = new Set(["completed", "learned"]);
 
 export function planTodayMission(s: MissionSignals): Mission {
-  const band = stageBand(s.stage || "");
+  const { band, adjusted } = effectiveBand(s.stage, { noUsers: s.noUsers });
   const w: Record<MissionKind, number> = { ...BASE[band] };
   const reasons: string[] = [];
+  if (adjusted) reasons.push("You said you have no users yet, so this is planned as getting your first users, not growing.");
   const bump = (k: MissionKind, n: number) => { w[k] += n; };
 
   const recent = s.recentTasks.slice(0, 8);
@@ -502,4 +497,4 @@ export function failsMissionPreScreen(task: string, mission: Mission, ctx: Quali
   const q = assessTaskQuality({ task, done_when: "placeholder-ok", first_step: "placeholder-ok", draft: "x".repeat(30) }, mission, ctx);
   const failed = q.hardFails.filter((f) => f !== "no_done_when");
   return { fails: failed.length > 0, failed_checks: failed };
-                                      }
+                                            }
