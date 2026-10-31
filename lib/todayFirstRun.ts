@@ -15,7 +15,8 @@
 import type { FallbackInput, KindFallback } from "@/lib/todayFallbacks";
 import type { Ledger } from "@/lib/today/facts";
 import { guardRules } from "@/lib/today/rules";
-import { stageBand, type RecentTask } from "@/lib/todayMission";
+import { effectiveBand } from "@/lib/stages";
+import type { RecentTask } from "@/lib/todayMission";
 
 const DONE = new Set(["completed", "partial", "learned"]);
 
@@ -24,7 +25,7 @@ export function isFirstRun(recent: RecentTask[]): boolean {
   return recent.length < 3 && !recent.some((t) => DONE.has(t.outcome ?? ""));
 }
 
-type Band = ReturnType<typeof stageBand>;
+type Band = ReturnType<typeof effectiveBand>["band"];
 type Variant = (i: FallbackInput) => KindFallback;
 
 const BANK: Record<Band, Variant[]> = {
@@ -135,9 +136,8 @@ const BANK: Record<Band, Variant[]> = {
  * `excludeAction` is the task they just replaced, so Replace never shows the same one back.
  */
 export function firstRunTask(stage: string, input: FallbackInput, seed: string, ledger?: Ledger, excludeAction?: string): KindFallback | null {
-  const band = stageBand(stage || "");
-  // Every growth-stage task here starts from existing users. If the founder has none, normal generation (which reads the ledger) runs instead.
-  if (band === "growth" && ledger?.facts.some((f) => f.kind === "no_users")) return null;
+  // Growth tasks start from existing users; a founder who has said they have none is planned as Launch.
+  const { band } = effectiveBand(stage, { noUsers: ledger?.facts.some((f) => f.kind === "no_users") });
   const variants = BANK[band].map((v) => v(input)).filter((v) => v.action !== excludeAction);
   if (variants.length === 0) return null;
   let h = 0;
