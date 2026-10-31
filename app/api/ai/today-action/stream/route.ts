@@ -50,6 +50,7 @@ import { formatRegionalContextBlock } from "@/lib/regionalContext";
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta, type Mission } from "@/lib/todayMission";
 import { fallbackForKind } from "@/lib/todayFallbacks";
+import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
 import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
 import { fitMissionToState } from "@/lib/founderState";
@@ -569,12 +570,11 @@ export async function POST(request: Request) {
           swapPlan ? [swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n") : "",
           personalisationCtx.recoveryBlock ?? "",
         ].filter(Boolean).join("\n\n");
-        const kindFallback = fallbackForKind(
-          mission.kind,
-          { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage },
-          `${userId}:${new Date().toISOString().slice(0, 10)}`,
-          personalisationCtx.ledger,
-        );
+        const fallbackInput = { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage };
+        const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
+        // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
+        const curated = isFirstRun(recentTasks) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction) : null;
+        const kindFallback = curated ?? fallbackForKind(mission.kind, fallbackInput, fallbackSeed, personalisationCtx.ledger);
         const qualityCtx = {
           ledger: personalisationCtx.ledger,
           title, targetUsers, problem,
@@ -857,7 +857,8 @@ ${JSON.stringify(structuredA)}`,
         const preScreen = { fails: !finalQuality.pass, failed_checks: finalQuality.hardFails.length ? finalQuality.hardFails : finalQuality.softFails };
         const swapIssues = swapProblems(agentCFields.task, swapPlan);
         if (swapIssues.length) preScreen.failed_checks = [...preScreen.failed_checks, ...swapIssues.map((i) => `swap_${i}`)];
-        const wasHardFallback = preScreen.fails || swapIssues.length > 0;
+        if (curated) preScreen.failed_checks = ["first_run_curated", ...preScreen.failed_checks];
+        const wasHardFallback = Boolean(curated) || preScreen.fails || swapIssues.length > 0;
         if (wasHardFallback) void logQualityEvent(hasAdminEnv() ? createAdminClient() : null, { userId, projectId, kind: "fallback", rules: preScreen.failed_checks, task: agentCFields.task, missionKind: mission.kind, stage });
         else if (!qualityA.pass) void logQualityEvent(hasAdminEnv() ? createAdminClient() : null, { userId, projectId, kind: "rejected", rules: qualityA.hardFails.length ? qualityA.hardFails : qualityA.softFails, task: agentAFields.task, missionKind: mission.kind, stage });
         const finalAction = wasHardFallback ? kindFallback.action : agentCFields.task;
@@ -915,7 +916,7 @@ ${JSON.stringify(structuredA)}`,
           qualityScore: wasHardFallback ? undefined : finalQuality.score,
           groundedIn: grounding.map((g) => ({ title: g.title, url: g.url })),
           message: finalDraft,  // ← AI-written DRAFT, unless the hard pre-screen rejected it
-          why: decisionReason ? `${rationale} ${decisionReason}` : rationale,
+          why: curated ? kindFallback.why : decisionReason ? `${rationale} ${decisionReason}` : rationale,
           stage,
           isAI: true,
           // Confidence as a branch, not a hidden number — see the
@@ -1047,4 +1048,4 @@ ${JSON.stringify(structuredA)}`,
 
 export async function GET() {
   return NextResponse.json({ error: "Use POST" }, { status: 405 });
-    }
+                                                               }
