@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { plainStage } from "@/lib/stages";
 
 type Goal = { vision: string; label: string; target: number; current: number; daysLeft: number };
 type Data = { goal: Goal | null; setup: boolean; stage: string; stages: string[] };
@@ -61,11 +62,11 @@ export default function PathCard({ projectId }: { projectId?: string | null }) {
     <div style={card}>
       <div style={eyebrow}>YOUR PATH</div>
       {goal.vision && <p style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 16, lineHeight: 1.35, margin: "6px 0 12px", color: "var(--bm-text)" }}>{goal.vision}</p>}
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${stages.length}, 1fr)`, gap: 4 }} aria-label={`You are at the ${stage} stage`}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${stages.length}, 1fr)`, gap: 4 }} aria-label={`You are at the ${plainStage(stage)} stage`}>
         {stages.map((s, i) => (
           <div key={s} style={{ textAlign: "center" }}>
             <div style={{ height: 4, borderRadius: 2, background: i <= at ? "var(--bm-accent)" : "var(--bm-border2)", opacity: i < at ? 0.55 : 1 }} />
-            <div style={{ fontSize: 10, marginTop: 5, color: i === at ? "var(--bm-text)" : "var(--bm-text3)", fontWeight: i === at ? 600 : 400 }}>{s}</div>
+            <div style={{ fontSize: 10, marginTop: 5, color: i === at ? "var(--bm-text)" : "var(--bm-text3)", fontWeight: i === at ? 600 : 400 }}>{plainStage(s, "short")}</div>
           </div>
         ))}
       </div>
