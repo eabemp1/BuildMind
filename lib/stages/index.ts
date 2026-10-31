@@ -206,3 +206,48 @@ export function shouldPromptStageTransition(params: {
     reason: `all_signals_aligned:confidence=${avgConfidence.toFixed(1)},overrides=${recentOverrides}`,
   };
 }
+
+/**
+ * The five bands the daily-task planner works in. One place decides which band a stage belongs to,
+ * so the planner, the first-run bank and the roadmap can't drift apart.
+ * Revenue shares the growth band: both are about people who already use the product.
+ */
+export type StageBand = "idea" | "validation" | "building" | "launch" | "growth";
+
+const BAND_OF: Record<StartupStage, StageBand> = {
+  Idea: "idea",
+  Validation: "validation",
+  MVP: "building",
+  Launch: "launch",
+  Growth: "growth",
+  Revenue: "growth",
+};
+
+/**
+ * Band for a stored stage. Canonical names map exactly; free text (older rows, the chip labels shown
+ * before the stage screen) falls back to keywords. Anything unrecognised is "validation": the safest
+ * default is to talk to people, never to assume traction.
+ */
+export function stageBand(raw: string | null | undefined): StageBand {
+  const v = String(raw ?? "").trim();
+  const exact = STAGE_ORDER.find((s) => s.toLowerCase() === v.toLowerCase());
+  if (exact) return BAND_OF[exact];
+  const s = v.toLowerCase();
+  if (/idea|concept|explor/.test(s)) return "idea";
+  if (/valid|discover|problem/.test(s)) return "validation";
+  if (/build|mvp|prototype|develop/.test(s)) return "building";
+  if (/launch|beta|early/.test(s)) return "launch";
+  if (/grow|revenue|scale|traction|paying/.test(s)) return "growth";
+  return "validation";
+}
+
+/**
+ * The band to plan for. The stated stage stands, with one exception: Growth or Revenue means people
+ * already use the product, so a founder who has said they have no users is planned as Launch
+ * (getting the first users). MVP and Launch with no users are real states and are left alone.
+ */
+export function effectiveBand(raw: string | null | undefined, facts: { noUsers?: boolean } = {}): { band: StageBand; adjusted: boolean } {
+  const band = stageBand(raw);
+  if (band === "growth" && facts.noUsers) return { band: "launch", adjusted: true };
+  return { band, adjusted: false };
+    }
