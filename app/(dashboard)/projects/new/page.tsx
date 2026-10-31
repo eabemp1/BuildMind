@@ -14,8 +14,9 @@ import { useProjectSummariesQuery } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
+import { STAGE_ORDER } from "@/lib/stages";
 
-const STAGE_OPTIONS = ["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"] as const;
+const STAGE_OPTIONS = STAGE_ORDER;
 type StartupStage = typeof STAGE_OPTIONS[number];
 
 const STAGE_COLORS: Record<string, string> = {
@@ -216,4 +217,4 @@ export default function NewProjectPage() {
       </div>
     </div>
   );
-                }
+}
