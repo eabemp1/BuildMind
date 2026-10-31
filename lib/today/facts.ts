@@ -326,9 +326,14 @@ export function overlap(a: string, b: string): number {
 }
 
 export interface Contradiction {
-  fact: FactKind;
+  fact: FactKind | "no_contacts";
   why: string;
 }
+
+// "Email three founders…", "Send 5 emails to…": a first touch by email to a class of strangers.
+const COLD_EMAIL_RE = /\b(?:e-?mail|cold[- ]email)\s+(?:\d+|one|two|three|four|five|six|ten|a few|some)\s+(?:\w+\s+){0,2}(?:founders?|people|users?|customers?|prospects?|leads?|owners?|managers?|operators?)\b|\bsend\s+(?:\d+|one|two|three|four|five|six|ten)\s+(?:\w+\s+){0,2}e-?mails?\s+to\b/i;
+// People the founder already holds an address for.
+const KNOWN_ADDRESS_RE = /\b(?:wait-?list|your list|replied|signed up|sign-?ups?|your contacts|your network|people you know|you already know|who (?:messaged|wrote to|emailed) you)\b/i;
 
 /** Deterministic check of a generated task against the ledger. */
 export function findContradictions(task: string, ledger: Ledger): Contradiction[] {
@@ -337,6 +342,10 @@ export function findContradictions(task: string, ledger: Ledger): Contradiction[
   for (const f of ledger.facts) {
     if (f.kind === "no_users" && (USERS_STRONG_RE.test(t) || (USERS_WEAK_RE.test(t) && !ACQUIRE_RE.test(t)) || (CONTACT_USERS_RE.test(t) && !NEW_WORD_RE.test(t) && !ACQUIRE_RE.test(t)))) {
       out.push({ fact: "no_users", why: "Task assumes users/beta founders exist, but the founder said they have none." });
+    }
+    // No users and nobody recorded: an email to strangers has no address to go to.
+    if (f.kind === "no_users" && COLD_EMAIL_RE.test(t) && !KNOWN_ADDRESS_RE.test(t)) {
+      out.push({ fact: "no_contacts", why: "Task emails people the founder has no address for. Nothing recorded says they have any." });
     }
     if (f.kind === "no_access" && f.subject) {
       const platformHit = new RegExp(`\\b${f.subject.replace(/ /g, "\\s+")}\\b`, "i").test(t);
@@ -355,4 +364,4 @@ export function findContradictions(task: string, ledger: Ledger): Contradiction[
     }
   }
   return out;
-        }
+  }
