@@ -151,3 +151,48 @@ describe("inferStageFromMilestones", () => {
     expect(result).toBe("Launch");
   });
 });
+
+import { stageBand, effectiveBand } from "@/lib/stages";
+
+describe("stageBand", () => {
+  it("maps every canonical stage to a band, Revenue sharing growth", () => {
+    expect(["Idea", "Validation", "MVP", "Launch", "Growth", "Revenue"].map((s) => stageBand(s))).toEqual(["idea", "validation", "building", "launch", "growth", "growth"]);
+  });
+  it("understands older free-text stages", () => {
+    expect(stageBand("First paying customers")).toBe("growth");
+    expect(stageBand("Building the MVP")).toBe("building");
+    expect(stageBand("Just an idea")).toBe("idea");
+  });
+  it("defaults to validation for anything unknown or empty, never to traction", () => {
+    expect(stageBand("???")).toBe("validation");
+    expect(stageBand(null)).toBe("validation");
+  });
+});
+
+describe("effectiveBand", () => {
+  it("plans Growth and Revenue founders with no users as Launch", () => {
+    expect(effectiveBand("Growth", { noUsers: true })).toEqual({ band: "launch", adjusted: true });
+    expect(effectiveBand("Revenue", { noUsers: true }).band).toBe("launch");
+  });
+  it("leaves MVP and Launch alone: no users is a normal state there", () => {
+    expect(effectiveBand("MVP", { noUsers: true })).toEqual({ band: "building", adjusted: false });
+    expect(effectiveBand("Launch", { noUsers: true })).toEqual({ band: "launch", adjusted: false });
+  });
+  it("changes nothing without the fact", () => {
+    expect(effectiveBand("Growth")).toEqual({ band: "growth", adjusted: false });
+  });
+});
+
+import { plainStage } from "@/lib/stages";
+
+describe("plainStage", () => {
+  it("says what each stage means in everyday words", () => {
+    expect(plainStage("Validation")).toBe("Checking people want it");
+    expect(plainStage("MVP", "short")).toBe("Build");
+    expect(plainStage("mvp")).toBe("Building it");
+  });
+  it("returns an unknown value unchanged and an empty one as empty", () => {
+    expect(plainStage("Pre-seed")).toBe("Pre-seed");
+    expect(plainStage(null)).toBe("");
+  });
+});
