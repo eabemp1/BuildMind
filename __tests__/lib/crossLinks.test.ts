@@ -4,6 +4,14 @@ import { pickCrossLink, type CrossLinkInput } from "@/lib/today/crossLinks";
 const base: CrossLinkInput = { tasksCompleted: 1, outcome: "completed", band: "validation", breakAgeDays: null, hasAgentRun: false, startup: "Nevrix", seen: {}, today: "2026-10-31" };
 
 describe("Today cross links", () => {
+  it("points to the follow-ups when people have gone quiet, even if a teardown was never run", () => {
+    const l = pickCrossLink({ ...base, followUps: 2 });
+    expect(l?.id).toBe("followups");
+    expect(l?.href).toBe("/work/conversations");
+    expect(pickCrossLink({ ...base, followUps: 2, tasksCompleted: 0 })).toBeNull();
+    expect(pickCrossLink({ ...base, followUps: 2, seen: { followups: "2026-10-31" } })).toBeNull();
+    expect(pickCrossLink({ ...base, followUps: 2, seen: { followups: "2026-10-30" } })).toBeNull();
+  });
   it("points a founder who has never run a teardown to Break My Startup after a finished task", () => {
     expect(pickCrossLink(base)?.id).toBe("break");
     expect(pickCrossLink(base)?.text).toContain("Nevrix");

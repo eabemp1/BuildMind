@@ -7,7 +7,8 @@ import Catalog from "./Catalog";
 import BriefForm from "./BriefForm";
 import ResultView, { type WorkItem } from "./ResultView";
 import Library, { type LibraryRow } from "./Library";
-import { api, btn, muted } from "./ui";
+import Link from "next/link";
+import { api, btn, card, muted } from "./ui";
 
 type Project = { name: string; targetUsers: string; problem: string; description: string } | null;
 type View =
@@ -74,6 +75,12 @@ export default function WorkApp() {
       )}
       {error && view.name === "catalog" && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{error}</p>}
 
+      {view.name === "catalog" && tab === "new" && (
+        <Link href="/work/conversations" style={{ ...card, textDecoration: "none", display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)" }}>Get 5 customer conversations</span>
+          <span style={muted}>Add people, write to them, track replies and learn from each talk. One goal, start to finish.</span>
+        </Link>
+      )}
       {view.name === "catalog" && tab === "new" && (
         <Catalog entries={entries} recent={rows.slice(0, 3).map((r) => ({ id: r.id, title: r.title, kind: r.kind }))} onPick={pick} onOpenItem={(id) => void openItem(id)} />
       )}

@@ -44,7 +44,7 @@ export const APP_OVERVIEW = `BUILDMIND APP MAP (you know this product completely
 - AI Coach (/ai-coach): this chat. Instant one-tap actions that cost no AI message: open tasks, signals, decision reasoning, beliefs about the founder, momentum, milestones, execution log, export of Founder Intelligence data.
 - Founder Mirror (/founder-mirror): what BuildMind believes about the founder (with "Correct this"), behavioral archetype, signals, decision reasoning, relationship graph.
 - Break My Startup (/break-my-startup): adversarial stress test of the idea (survival reasons, competitor table, pivot suggestion).
-- Work (/work): pick a job (outreach, landing copy, interview kit, pitch, posts and more); BuildMind prepares it from the project, the founder edits it and does the sending. Saved in a library.
+- Work (/work): pick a job (outreach, landing copy, interview kit, pitch, posts and more); BuildMind prepares it from the project, the founder edits it and does the sending. Saved in a library. Work also has "Get 5 customer conversations" (/work/conversations): a tracker for people the founder wants to talk to, with message drafts, follow-ups and points pulled from their own notes.
 - Agent Workforce (/agents): Builder-only AI agents that run tasks and return findings.
 - Achievements (/achievements): tracks, levels and unlock badges. Weekly Report (/reports): export (PDF/CSV/image) and 4-week heatmap, reachable from Progress.
 - Also routable: Ventures (/ventures), Startup Kit (/startup-kit), Journey (/journey), Invite (/invite), Notifications (/notifications), Upgrade (/upgrade), Pricing (/pricing). The bell icon in the top bar opens notifications.

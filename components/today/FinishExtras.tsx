@@ -30,7 +30,7 @@ export function FinishExtras({ startup, band, outcome, tasksCompleted }: { start
         if (!live || !d?.ok) return;
         if (d.week?.finished >= 1) setWeek(d.week);
         const today = new Date().toISOString().slice(0, 10);
-        const pick = pickCrossLink({ tasksCompleted, outcome, band, breakAgeDays: d.breakAgeDays ?? null, hasAgentRun: Boolean(d.hasAgentRun), startup, seen: readSeen(), today });
+        const pick = pickCrossLink({ tasksCompleted, outcome, band, breakAgeDays: d.breakAgeDays ?? null, hasAgentRun: Boolean(d.hasAgentRun), followUps: Number(d.followUps) || 0, startup, seen: readSeen(), today });
         if (pick) { setLink(pick); markSeen(pick.id, today); }
       })
       .catch(() => {});

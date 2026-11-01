@@ -40,6 +40,7 @@ export const EXPORT_CATEGORIES: ReadonlyArray<ExportCategory> = [
   { table: "projects", ownerCol: "user_id", group: "work", label: "Projects", orderBy: "created_at" },
   { table: "milestones", ownerCol: "user_id", group: "work", label: "Milestones", orderBy: "created_at" },
   { table: "tasks", ownerCol: "user_id", group: "work", label: "Tasks", orderBy: "created_at" },
+  { table: "conversation_people", ownerCol: "user_id", group: "work", label: "Customer conversations (people and notes)", orderBy: "created_at", aiGenerated: false },
   { table: "work_items", ownerCol: "user_id", group: "work", label: "Work library (prepared drafts and documents)", orderBy: "created_at", aiGenerated: true },
   { table: "prepared_work", ownerCol: "user_id", group: "work", label: "Prepared work (drafts and kits)", orderBy: "created_at", aiGenerated: true },
   { table: "reflections", ownerCol: "user_id", group: "history", label: "Reflections", orderBy: "created_at" },

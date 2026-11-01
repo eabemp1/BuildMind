@@ -6,7 +6,7 @@
  * screen after a task. Pure, so the rules are easy to test.
  */
 
-export type CrossLinkId = "break" | "break_blocked" | "break_rerun" | "validate";
+export type CrossLinkId = "break" | "break_blocked" | "break_rerun" | "validate" | "followups";
 
 export interface CrossLink { id: CrossLinkId; text: string; cta: string; href: string }
 
@@ -20,6 +20,8 @@ export interface CrossLinkInput {
   breakAgeDays: number | null;
   /** They have already run an Agent workspace mission. */
   hasAgentRun: boolean;
+  /** People in the conversations tracker who were messaged 3+ days ago and have not replied. */
+  followUps?: number;
   startup: string;
   /** id -> YYYY-MM-DD the suggestion was last shown, kept on the device. */
   seen: Record<string, string>;
@@ -38,6 +40,11 @@ export function pickCrossLink(i: CrossLinkInput): CrossLink | null {
   if (Object.values(i.seen).some((d) => d === i.today)) return null;
   const name = i.startup.trim() || "your startup";
   const unseen = (id: CrossLinkId) => !i.seen[id];
+
+  if ((i.followUps ?? 0) > 0 && unseen("followups")) {
+    const n = i.followUps as number;
+    return { id: "followups", text: `${n} ${n > 1 ? "people haven't" : "person hasn't"} replied yet. A short follow-up often gets the answer.`, cta: "See who", href: "/work/conversations" };
+  }
 
   if (i.breakAgeDays === null) {
     if (i.outcome === "blocked" && unseen("break_blocked")) {
