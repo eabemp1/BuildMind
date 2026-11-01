@@ -50,7 +50,11 @@ export function dueAtFor(choice: DurationChoice, now = Date.now()): string {
 
 export interface ClockTime { h: number; m: number; tomorrow: boolean }
 
-/** A wall-clock reminder time in the founder's timezone (offset is UTC minus local, in minutes). */
+/**
+ * A wall-clock time the founder asked for ("at 5pm", "tonight", "tomorrow at 9"), read in THEIR timezone.
+ * tzOffset is Date.getTimezoneOffset() from their browser (UTC minus local, in minutes). Without "tomorrow",
+ * a time that has already passed today rolls to tomorrow; one still ahead stays today.
+ */
 export function dueAtClock(at: ClockTime, tzOffset: number, now = Date.now()): string {
   const local = new Date(now - tzOffset * 60_000);
   const base = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), at.h, at.m) + tzOffset * 60_000;
