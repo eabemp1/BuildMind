@@ -153,6 +153,41 @@ export function SidebarLogo({ streakDays }: { streakDays: number }) {
   );
 }
 
+// ── Hover micro-animations: one small motion per icon, played once on hover ──
+const ICON_ANIM: Record<string, string> = {
+  "/today": "pulse", "/work": "lift", "/overview": "swing", "/progress": "nudge", "/projects": "tilt",
+  "/settings": "spin", "/ai-coach": "pulse", "/founder-mirror": "lift", "/break-my-startup": "hammer",
+  "/agents": "wiggle", "/achievements": "bounce", "/upgrade": "fly",
+};
+const iconAnim = (href: string) => `nav-a nav-a-${ICON_ANIM[href] ?? "lift"}`;
+
+export const NAV_ANIM_CSS = `
+.nav-a .nav-ico{display:inline-flex;transform-origin:50% 50%}
+@media (prefers-reduced-motion:no-preference){
+.nav-a:hover .nav-ico,.nav-a:focus-visible .nav-ico{animation:.55s ease-out 1 both}
+.nav-a-pulse:hover .nav-ico,.nav-a-pulse:focus-visible .nav-ico{animation-name:navPulse}
+.nav-a-lift:hover .nav-ico,.nav-a-lift:focus-visible .nav-ico{animation-name:navLift}
+.nav-a-swing:hover .nav-ico,.nav-a-swing:focus-visible .nav-ico{animation-name:navSwing}
+.nav-a-nudge:hover .nav-ico,.nav-a-nudge:focus-visible .nav-ico{animation-name:navNudge}
+.nav-a-tilt:hover .nav-ico,.nav-a-tilt:focus-visible .nav-ico{animation-name:navTilt}
+.nav-a-spin:hover .nav-ico,.nav-a-spin:focus-visible .nav-ico{animation-name:navSpin}
+.nav-a-hammer:hover .nav-ico,.nav-a-hammer:focus-visible .nav-ico{animation-name:navHammer;transform-origin:80% 80%}
+.nav-a-wiggle:hover .nav-ico,.nav-a-wiggle:focus-visible .nav-ico{animation-name:navWiggle}
+.nav-a-bounce:hover .nav-ico,.nav-a-bounce:focus-visible .nav-ico{animation-name:navBounce}
+.nav-a-fly:hover .nav-ico,.nav-a-fly:focus-visible .nav-ico{animation-name:navFly}
+}
+@keyframes navPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
+@keyframes navLift{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes navSwing{0%{transform:rotate(0)}25%{transform:rotate(-22deg)}75%{transform:rotate(22deg)}100%{transform:rotate(0)}}
+@keyframes navNudge{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-3px)}}
+@keyframes navTilt{0%,100%{transform:rotate(0)}40%{transform:rotate(-12deg)}70%{transform:rotate(6deg)}}
+@keyframes navSpin{0%{transform:rotate(0)}100%{transform:rotate(180deg)}}
+@keyframes navHammer{0%,100%{transform:rotate(0)}35%{transform:rotate(-35deg)}60%{transform:rotate(10deg)}}
+@keyframes navWiggle{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg)}50%{transform:rotate(12deg)}80%{transform:rotate(-6deg)}}
+@keyframes navBounce{0%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}60%{transform:translateY(0)}80%{transform:translateY(-2px)}}
+@keyframes navFly{0%,100%{transform:translate(0,0)}50%{transform:translate(3px,-4px) rotate(8deg)}}
+`;
+
 // ── Single nav link ───────────────────────────────────────────────────────────
 export function NavItem({
   href,
@@ -188,10 +223,10 @@ export function NavItem({
         title={label}
         aria-label={label}
         data-tour={`nav-${href.replace("/", "")}`}
-        className="group relative mx-2 flex items-center justify-center rounded-md py-[9px] transition-colors duration-150"
+        className={`group relative mx-2 flex items-center justify-center rounded-md py-[9px] transition-colors duration-150 ${iconAnim(href)}`}
         style={active ? { background: "color-mix(in srgb, var(--bm-bg3) 64%, transparent)" } : undefined}
       >
-        <Icon size={16} strokeWidth={1.7} style={{ color: active ? "var(--bm-accent)" : "var(--bm-text3)", opacity: active ? 0.95 : 0.7 }} />
+        <span className="nav-ico"><Icon size={16} strokeWidth={1.7} style={{ color: active ? "var(--bm-accent)" : "var(--bm-text3)", opacity: active ? 0.95 : 0.7 }} /></span>
         {hasBadge && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full" style={{ background: "var(--bm-accent)" }} />}
       </Link>
     );
@@ -202,7 +237,7 @@ export function NavItem({
       href={href}
       onClick={onClick}
       data-tour={`nav-${href.replace("/", "")}`}
-      className="group relative mx-2 flex items-center gap-3 rounded-md px-4 py-[9px] text-[13.5px] transition-colors duration-150"
+      className={`group relative mx-2 flex items-center gap-3 rounded-md px-4 py-[9px] text-[13.5px] transition-colors duration-150 ${iconAnim(href)}`}
       style={
         active
           ? {
@@ -215,7 +250,7 @@ export function NavItem({
             }
       }
     >
-      <div className="relative shrink-0">
+      <div className="nav-ico relative shrink-0">
         <Icon
           size={15}
           strokeWidth={1.7}
