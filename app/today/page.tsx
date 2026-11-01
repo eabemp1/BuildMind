@@ -10,7 +10,6 @@ import PathCard from "@/components/today/PathCard";
 import EnergyCheck from "@/components/today/EnergyCheck";
 import TrackedLinks from "@/components/today/TrackedLinks";
 import { inferSource, needsTrackedLink } from "@/lib/linkNudge";
-import Link from "next/link";
 import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
 import MoodStrip from "@/components/today/MoodStrip";
@@ -1314,6 +1313,10 @@ function TodayContent() {
   // generic message box and channel picker (which only make sense for outreach)
   // step aside.
   const prepKind = actionData?.action ? prepKindFor(actionData.action, actionData.missionKind ?? null) : null;
+  // Everything that opens the prepared work goes to the Work page, on this task.
+  const workHref = actionData?.action
+    ? `/work?${new URLSearchParams({ task: actionData.action, ...(actionData.missionKind ? { mk: actionData.missionKind } : {}), ...(actionData.firstStep ? { step: actionData.firstStep } : {}) }).toString()}`
+    : "/work";
   const mood = moodFor(actionData?.missionKind, prepKind);
   // Active mood layer (lib/today/mood.ts): focus engages the page, calm moods fold the extras away,
   // and every mood change replays the entrance.
@@ -2381,7 +2384,7 @@ function TodayContent() {
               accent={missionAccent(actionData.missionKind)}
               reasons={actionData.missionReasons}
               executeLabel={prepKind ? `Open ${PREP_META[prepKind].label.toLowerCase()}` : "Open script"}
-              onExecute={() => executionScriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              onExecute={() => router.push(workHref)}
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
               timeText={actionData?.time ?? null}
               done={done}
@@ -2476,18 +2479,6 @@ function TodayContent() {
           <div ref={hideLegacy ? executionScriptRef : undefined} style={{ scrollMarginTop: 16 }}>
           {actionData?.action && aiAction?.radarItemId && radar.signal.item?.id === aiAction.radarItemId && (
             <RadarItemCard item={radar.signal.item} onChange={radar.reload} />
-          )}
-          {actionData?.action && !aiAction?.radarItemId && (
-            <Link
-              href={`/work?${new URLSearchParams({ task: actionData.action, ...(actionData.missionKind ? { mk: actionData.missionKind } : {}), ...(actionData.firstStep ? { step: actionData.firstStep } : {}) }).toString()}`}
-              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textDecoration: "none", padding: "14px 16px", marginBottom: "var(--space-3)", border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent-dim)", borderRadius: "var(--r-xl)" }}
-            >
-              <span>
-                <span style={{ display: "block", fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--bm-text)" }}>{prepKind ? PREP_META[prepKind].headline : "Your draft"}</span>
-                <span style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginTop: 2 }}>Prepared for this task. Open it in Work.</span>
-              </span>
-              <span aria-hidden style={{ fontSize: 18, color: "var(--bm-text2)" }}>›</span>
-            </Link>
           )}
           {actionData?.action && actionData.doneWhen && (
             <p style={{ margin: "8px 2px 0", fontSize: "var(--text-sm)", color: "var(--bm-text3)", lineHeight: 1.5 }}>
@@ -3115,4 +3106,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+}
