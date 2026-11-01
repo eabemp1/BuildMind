@@ -44,13 +44,14 @@ vi.stubGlobal("localStorage", localStorageMock);
 // lib/achievements.ts for why. Mock fetch to echo back whatever ids were
 // requested as verified, matching what the real server does when the
 // stats genuinely qualify (which is what these tests seed).
+// The real server decides from its own records and asks no questions of the device's counters. The test server is
+// seeded the same way: it answers from the stats the test stored, for every id asked about.
 vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
   const body = init?.body ? JSON.parse(String(init.body)) : {};
   const ids: string[] = Array.isArray(body?.ids) ? body.ids : [];
-  return {
-    ok: true,
-    json: async () => ({ ok: true, unlocked: ids.length, rejected: 0, verifiedIds: ids, xpGranted: 0 }),
-  };
+  const stats = getAchievementStats();
+  const verified = ids.filter((id) => ACHIEVEMENTS.find((a) => a.id === id)?.condition(stats));
+  return { ok: true, json: async () => ({ ok: true, unlocked: verified.length, rejected: ids.length - verified.length, verifiedIds: verified, newIds: verified, xpGranted: 0 }) };
 }));
 
 function clearStore() {
@@ -194,11 +195,11 @@ describe("ACHIEVEMENTS — explorer and founder conditions", () => {
     expect(a.condition(statsFor({ planUpgraded: true }))).toBe(true);
   });
 
-  it("founder_max_streak fires only when maxStreak >= 30 AND maxStreak === streak", () => {
+  it("founder_max_streak (Unbroken) needs a 60-day streak, not just the 30-day one again", () => {
     const a = ACHIEVEMENTS.find(a => a.id === "founder_max_streak")!;
-    expect(a.condition(statsFor({ maxStreak: 30, streak: 30 }))).toBe(true);
-    expect(a.condition(statsFor({ maxStreak: 30, streak: 29 }))).toBe(false);
-    expect(a.condition(statsFor({ maxStreak: 29, streak: 29 }))).toBe(false);
+    expect(a.condition(statsFor({ streak: 30, maxStreak: 30 }))).toBe(false);
+    expect(a.condition(statsFor({ streak: 59 }))).toBe(false);
+    expect(a.condition(statsFor({ streak: 60 }))).toBe(true);
   });
 });
 
@@ -240,6 +241,22 @@ describe("checkAndUnlockAchievements", () => {
     const newly = await checkAndUnlockAchievements();
     const ids = newly.map(a => a.id);
     expect(ids).toContain("streak_1");
+  });
+
+  it("does not save or reward the same achievement twice when two checks run at once", async () => {
+    seedStats({ checkInsDone: 1 });
+    store["bm_xp"] = "0";
+    await Promise.all([checkAndUnlockAchievements(), checkAndUnlockAchievements()]);
+    expect(getUnlocked().filter(u => u.id === "streak_1")).toHaveLength(1);
+    expect(getTotalXP()).toBe(ACHIEVEMENTS.find(a => a.id === "streak_1")!.xp);
+  });
+
+  it("asks the server about every locked achievement, not only the ones local counters call earned", async () => {
+    seedStats({});
+    await checkAndUnlockAchievements();
+    const sent = JSON.parse(String((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body)).ids as string[];
+    expect(sent).toContain("explorer_report");
+    expect(sent).toContain("founder_upgraded");
   });
 
   it("does NOT re-unlock an already-unlocked achievement", async () => {
