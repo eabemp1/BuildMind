@@ -10,7 +10,7 @@ import PathCard from "@/components/today/PathCard";
 import EnergyCheck from "@/components/today/EnergyCheck";
 import TrackedLinks from "@/components/today/TrackedLinks";
 import { inferSource, needsTrackedLink } from "@/lib/linkNudge";
-import PreparedWork from "@/components/today/PreparedWork";
+import Link from "next/link";
 import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
 import MoodStrip from "@/components/today/MoodStrip";
@@ -1310,7 +1310,7 @@ function TodayContent() {
   // they get a "how to do it" panel instead of a message box and channel picker.
   const noDraft = Boolean(actionData?.missionKind) && actionData?.hasDraft === false;
   // The Today screen reshapes itself around the kind of work the task is. When
-  // BuildMind has prepared work for it, that work is the main surface, and the
+  // BuildMind has prepared work for it, a link opens that work in the Work page, and the
   // generic message box and channel picker (which only make sense for outreach)
   // step aside.
   const prepKind = actionData?.action ? prepKindFor(actionData.action, actionData.missionKind ?? null) : null;
@@ -1323,7 +1323,7 @@ function TodayContent() {
   useEffect(() => { if (lastMood.current !== mood) { lastMood.current = mood; setMoodTick(nextTick); } }, [mood]);
   const engaged = timerRunning;
   const calm = isCalm(mood, false);
-  // Distribution Studio (PreparedWork) is the one working surface for every task, outreach included.
+  // The prepared work lives on the Work page (/work); Today only links to it.
   // The old "Execution draft/script" card was a second text box for the same message, so it is gone.
   const hideLegacy = Boolean(actionData?.action);
   const criticalSignal = actionData?.intelligence?.top_signals.find((signal) => signal.severity === "critical");
@@ -2326,6 +2326,9 @@ function TodayContent() {
                 {plainStage(project.startup_stage)}
               </span>
             )}
+            {/teardown/i.test(`${actionData?.action ?? ""} ${actionData?.why ?? ""}`) && (
+              <span className="bm-badge bm-badge-neutral">From your teardown</span>
+            )}
             {actionData.isAI && !actionLoading && (
               <span className="bm-badge bm-badge-neutral">
                 Context calibrated
@@ -2475,13 +2478,16 @@ function TodayContent() {
             <RadarItemCard item={radar.signal.item} onChange={radar.reload} />
           )}
           {actionData?.action && !aiAction?.radarItemId && (
-            <PreparedWork
-              task={actionData.action}
-              missionKind={actionData.missionKind ?? null}
-              firstStep={actionData.firstStep}
-              projectId={project?.id ?? null}
-              onUseDraft={(t) => setDraftMessage(t)}
-            />
+            <Link
+              href={`/work?${new URLSearchParams({ task: actionData.action, ...(actionData.missionKind ? { mk: actionData.missionKind } : {}), ...(actionData.firstStep ? { step: actionData.firstStep } : {}) }).toString()}`}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, textDecoration: "none", padding: "14px 16px", marginBottom: "var(--space-3)", border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent-dim)", borderRadius: "var(--r-xl)" }}
+            >
+              <span>
+                <span style={{ display: "block", fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--bm-text)" }}>{prepKind ? PREP_META[prepKind].headline : "Your draft"}</span>
+                <span style={{ display: "block", fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginTop: 2 }}>Prepared for this task. Open it in Work.</span>
+              </span>
+              <span aria-hidden style={{ fontSize: 18, color: "var(--bm-text2)" }}>›</span>
+            </Link>
           )}
           {actionData?.action && actionData.doneWhen && (
             <p style={{ margin: "8px 2px 0", fontSize: "var(--text-sm)", color: "var(--bm-text3)", lineHeight: 1.5 }}>
@@ -3109,4 +3115,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-             }
+  }
