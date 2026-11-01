@@ -14,7 +14,7 @@ import { sanitizeLine } from "@/lib/conversations/track";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 45;
+export const maxDuration = 30;
 const UUID = /^[0-9a-f-]{36}$/i;
 
 export async function POST(request: Request) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const b = (await request.json().catch(() => ({}))) as { id?: unknown; kind?: unknown; projectId?: unknown };
   if (typeof b.id !== "string" || !UUID.test(b.id) || (b.kind !== "first" && b.kind !== "followup")) return NextResponse.json({ ok: false, error: "Bad request." }, { status: 400 });
   if (!hasAdminEnv()) return NextResponse.json({ ok: false, error: "Drafting is unavailable right now." }, { status: 503 });
-  const blocked = await gateAIUsage(user.userId, "general");
+  const blocked = await gateAIUsage(user.userId, "core");
   if (blocked) return blocked;
 
   const admin = createAdminClient();
