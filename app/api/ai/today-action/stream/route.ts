@@ -48,7 +48,8 @@ import { recordFounderIntelligencePrediction } from "@/lib/learningLoop";
 import { loadTodayActionContext } from "@/lib/todayActionContext";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
-import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta, type Mission } from "@/lib/todayMission";
+import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta } from "@/lib/todayMission";
+import { ALLOWED_PLATFORMS, composeConcreteTask, type StructuredAction } from "@/lib/today/compose";
 import { fallbackForKind } from "@/lib/todayFallbacks";
 import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
@@ -326,53 +327,7 @@ function buildFallback(
 // ACTION_CHECKS. If that list changes, this must change with it — it's the
 // same list founderIntelligence.ts's OUTREACH_PLATFORMS draws from for
 // candidate templates, so all three stay aligned on one vocabulary.
-const ALLOWED_PLATFORMS = ["LinkedIn", "WhatsApp", "email", "Twitter", "phone", "in person", "Slack", "Telegram", "Instagram", "Reddit", "Product Hunt", "Indie Hackers"];
-
-function normalizePlatform(raw: string | undefined): string {
-  const found = ALLOWED_PLATFORMS.find((p) => (raw ?? "").toLowerCase().includes(p.toLowerCase()));
-  return found ?? "WhatsApp"; // safe, always-valid default — never leave platform empty
-}
-
-interface StructuredAction {
-  kind?: string;
-  platform?: string;
-  count?: number;
-  user_type?: string;
-  task: string;
-  rationale: string;
-  draft?: string;
-  done_when?: string;
-  first_step?: string;
-  minutes?: number;
-}
-
-// Structural guarantee, not a hope: if the model's own `task` sentence
-// already names the platform and a number, leave it untouched. If it
-// doesn't, splice them in deterministically rather than throwing the whole
-// generation away and falling back to the generic template. This is what
-// turns has_platform/has_number from "usually true, we grade it after" into
-// "always true by construction."
-function composeConcreteTask(structured: StructuredAction, mission?: Mission): { task: string; platform: string; count: number } {
-  // Only outreach-shaped missions need platform/number spliced in. A build,
-  // analyze or pricing task is left exactly as written.
-  if (mission && !mission.requires.platform && !mission.requires.number) {
-    return { task: (structured.task ?? "").trim(), platform: "", count: 0 };
-  }
-  const platform = normalizePlatform(structured.platform);
-  const count = Number.isFinite(structured.count) && (structured.count as number) >= 1 ? Math.round(structured.count as number) : 3;
-  let task = (structured.task ?? "").trim();
-  const hasPlatform = new RegExp(platform.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(task);
-  const hasNumber = /\b\d+\b/.test(task);
-  if (!task) {
-    task = `Advance today's goal with ${count} ${structured.user_type || "people"} on ${platform}.`;
-  } else if (!hasPlatform || !hasNumber) {
-    const missing = [!hasNumber ? `${count} ${structured.user_type || "people"}` : null, !hasPlatform ? `on ${platform}` : null]
-      .filter(Boolean)
-      .join(" ");
-    task = `${task.replace(/[.!?]\s*$/, "")} — ${missing}.`;
-  }
-  return { task, platform, count };
-}
+// Platform normalization and concrete task composition live in lib/today/compose.
 
 export async function POST(request: Request) {
   const encoder = new TextEncoder();

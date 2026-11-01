@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { isAdminUser } from "@/lib/server/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { founderStatus } from "@/lib/admin/founderStatus";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -37,27 +38,44 @@ export async function GET(request: Request) {
   const [logs, events] = await Promise.all([
     admin.from("reflexion_learning_log").select("user_id, action_shown, outcome, created_at")
       .in("user_id", users).like("session_id", "today_action:%").gte("created_at", since).order("created_at", { ascending: true }).limit(2000),
-    admin.from("today_quality_events").select("user_id, task, rules, created_at")
+    admin.from("today_quality_events").select("user_id, rules, created_at")
       .in("user_id", users).eq("kind", "fallback").gte("created_at", since).limit(2000),
   ]);
 
-  const curated = new Set<string>();
-  for (const e of (events.data ?? []) as Array<{ user_id: string; task: string | null; rules: string[] | null }>) {
-    if ((e.rules ?? []).includes("first_run_curated") && e.task) curated.add(`${e.user_id}|${e.task.slice(0, 80)}`);
+  // The quality event's `task` is the AI task that was REJECTED, not the one shown, so a shown task is marked curated
+  // when a first_run_curated event for the same founder was logged within two minutes of it.
+  const curatedAt = new Map<string, number[]>();
+  for (const e of (events.data ?? []) as Array<{ user_id: string; rules: string[] | null; created_at: string }>) {
+    if (!(e.rules ?? []).includes("first_run_curated")) continue;
+    const list = curatedAt.get(e.user_id) ?? [];
+    list.push(Date.parse(e.created_at)); curatedAt.set(e.user_id, list);
   }
+  const isCurated = (userId: string, at: string) => (curatedAt.get(userId) ?? []).some((t) => Math.abs(t - Date.parse(at)) <= 120_000);
   const tasksBy = new Map<string, Array<{ task: string; outcome: string | null; curated: boolean }>>();
-  for (const r of (logs.data ?? []) as Array<{ user_id: string; action_shown: string | null; outcome: string | null }>) {
+  const daysSeen = new Map<string, Set<string>>();
+  const lastSeen = new Map<string, number>();
+  for (const r of (logs.data ?? []) as Array<{ user_id: string; action_shown: string | null; outcome: string | null; created_at: string }>) {
+    const set = daysSeen.get(r.user_id) ?? new Set<string>();
+    set.add(String(r.created_at).slice(0, 10)); daysSeen.set(r.user_id, set);
+    lastSeen.set(r.user_id, Math.max(lastSeen.get(r.user_id) ?? 0, Date.parse(r.created_at)));
     if (!r.action_shown) continue;
     const list = tasksBy.get(r.user_id) ?? [];
     if (list.length >= 3 || list.some((t) => t.task === r.action_shown)) continue;
-    list.push({ task: r.action_shown, outcome: r.outcome, curated: curated.has(`${r.user_id}|${r.action_shown.slice(0, 80)}`) });
+    list.push({ task: r.action_shown, outcome: r.outcome, curated: isCurated(r.user_id, r.created_at) });
     tasksBy.set(r.user_id, list);
   }
 
   const founders = users.map((id, i) => {
     const p = firstByUser.get(id)!;
     const tasks = tasksBy.get(id) ?? [];
+    const finished = tasks.filter((t) => t.outcome === "completed").length;
+    const daysSince = Math.floor((Date.now() - Date.parse(p.created_at as string)) / DAY);
+    const seenAt = lastSeen.get(id);
+    const lastSeenDays = seenAt ? Math.floor((Date.now() - seenAt) / DAY) : null;
+    const activeDays = daysSeen.get(id)?.size ?? 0;
     return {
+      status: founderStatus({ daysSince, finished, activeDays, lastSeenDays }),
+      activeDays, lastSeenDays,
       label: `Founder ${i + 1}`,
       project: (p.name ?? p.title ?? "") as string,
       stage: p.startup_stage ?? null,

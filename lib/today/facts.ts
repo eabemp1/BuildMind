@@ -94,6 +94,7 @@ const NO_USERS_RE = new RegExp(
     String.raw`\b(?:i\s+have|there\s+are|got)\s+(?:no|zero|0)\s+(?:beta\s+|paying\s+|active\s+|real\s+)?(?:users?|customers?|signups?|sign-ups?|clients?|testers?)\b`,
     String.raw`\bno\s+(?:beta\s+|paying\s+|active\s+|real\s+)?(?:users?|customers?|signups?)\s+(?:yet|so\s+far)\b`,
     String.raw`\bnobody\s+(?:has\s+)?(?:signed\s+up|used\s+it|joined)\b`,
+    String.raw`\b(?:nobody|no\s*one)\s+(?:is\s+|has\s+)?(?:using|uses|tried|trying)\s+(?:it|the\s+(?:app|product|platform|tool))\b`,
   ].join("|"),
   "i",
 );
@@ -364,4 +365,4 @@ export function findContradictions(task: string, ledger: Ledger): Contradiction[
     }
   }
   return out;
-  }
+}

@@ -2,6 +2,7 @@ import React from "react";
 import { C, Panel } from "./ui";
 
 type Founder = {
+  status?: { level: "ok" | "watch" | "risk"; text: string }; activeDays?: number; lastSeenDays?: number | null;
   label: string; project: string; stage: string | null; saidWhoFor: boolean; daysSince: number; finished: number;
   tasks: Array<{ task: string; outcome: string | null; curated: boolean }>;
 };
@@ -30,6 +31,7 @@ export function NewFoundersCard() {
           <div style={{ fontSize: 12, color: C.t, fontWeight: 600 }}>
             {f.label} · {f.project || "Unnamed"} · {f.stage ?? "no stage"} · day {f.daysSince}
           </div>
+          {f.status && <div style={{ fontSize: 11, fontWeight: 600, color: f.status.level === "risk" ? C.red : f.status.level === "watch" ? C.amber : C.t3 }}>{f.status.text} · seen on {f.activeDays ?? 0} day{f.activeDays === 1 ? "" : "s"}</div>}
           <div style={{ fontSize: 11, color: f.saidWhoFor ? C.t3 : C.amber, marginBottom: 4 }}>
             {f.saidWhoFor ? "Said who they build for" : "Did not say who they build for"} · {f.finished} of {f.tasks.length} tasks finished
           </div>
