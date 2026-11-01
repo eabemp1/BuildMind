@@ -149,19 +149,19 @@ export const ACHIEVEMENTS: Achievement[] = [
 
   // ── AI ──────────────────────────────────────────────────────────────────────
   {
-    id: "ai_first", label: "First Question", description: "Asked AI Coach your first question", emoji: "🤖",
+    id: "ai_first", label: "First Question", description: "Made your first AI request", emoji: "🤖",
     rarity: "common", category: "ai", xp: 50, track: "ai", tier: 1,
     condition: s => s.aiMessages >= 1,
     progress: s => ({ current: s.aiMessages, target: 1 }),
   },
   {
-    id: "ai_10", label: "AI Native", description: "10 AI coach conversations", emoji: "🧠",
+    id: "ai_10", label: "AI Native", description: "10 AI requests", emoji: "🧠",
     rarity: "rare", category: "ai", xp: 200, track: "ai", tier: 2,
     condition: s => s.aiMessages >= 10,
     progress: s => ({ current: s.aiMessages, target: 10 }),
   },
   {
-    id: "ai_50", label: "Thought Partner", description: "50 AI conversations — you think out loud", emoji: "💭",
+    id: "ai_50", label: "Thought Partner", description: "50 AI requests. You think out loud.", emoji: "💭",
     rarity: "epic", category: "ai", xp: 700, track: "ai", tier: 3,
     condition: s => s.aiMessages >= 50,
     progress: s => ({ current: s.aiMessages, target: 50 }),
@@ -180,12 +180,12 @@ export const ACHIEVEMENTS: Achievement[] = [
     progress: s => ({ current: s.reflectionsLogged, target: 1 }),
   },
   {
-    id: "explorer_report", label: "Data Driven", description: "Viewed your weekly report", emoji: "📊",
+    id: "explorer_report", label: "Data Driven", description: "Got your first weekly report", emoji: "📊",
     rarity: "rare", category: "explorer", xp: 200,
     condition: s => s.reportViewed,
   },
   {
-    id: "explorer_share", label: "Build in Public", description: "Shared your progress publicly", emoji: "📣",
+    id: "explorer_share", label: "Build in Public", description: "Shared a report publicly", emoji: "📣",
     rarity: "rare", category: "social", xp: 250,
     condition: s => s.shareUsed,
   },
@@ -228,9 +228,10 @@ export const ACHIEVEMENTS: Achievement[] = [
     progress: s => ({ current: s.daysActive, target: 30 }),
   },
   {
-    id: "founder_max_streak", label: "Unbroken", description: "Never let your streak die (max streak ≥ current + 10)", emoji: "♾️",
+    id: "founder_max_streak", label: "Unbroken", description: "A 60-day streak", emoji: "♾️",
     rarity: "legendary", category: "streak", xp: 4000, secret: true,
-    condition: s => s.maxStreak >= 30 && s.maxStreak === s.streak,
+    condition: s => s.streak >= 60,
+    progress: s => ({ current: s.streak, target: 60 }),
   },
 ];
 
@@ -427,54 +428,61 @@ export async function syncAchievementsFromServer(): Promise<void> {
  * response and only commits to localStorage (and only returns for the
  * toast) whatever the server actually verified and persisted.
  */
-export async function checkAndUnlockAchievements(): Promise<Achievement[]> {
+let inFlight: Promise<Achievement[]> | null = null;
+
+export function checkAndUnlockAchievements(): Promise<Achievement[]> {
+  // Two checks at once (a check-in and a reflection, say) both read the same unlocked list and both wrote it,
+  // so an achievement could be saved twice and its XP added twice. Run them one after another.
+  const run = (inFlight ?? Promise.resolve([] as Achievement[])).then(() => doCheck());
+  inFlight = run.finally(() => { if (inFlight === run) inFlight = null; }) as Promise<Achievement[]>;
+  return run;
+}
+
+async function doCheck(): Promise<Achievement[]> {
   if (typeof window === "undefined") return [];
-  const stats = getAchievementStats();
   const unlocked = getUnlocked();
   const unlockedIds = new Set(unlocked.map(u => u.id));
-  const candidates: Achievement[] = [];
-
-  for (const achievement of ACHIEVEMENTS) {
-    if (!unlockedIds.has(achievement.id) && achievement.condition(stats)) {
-      candidates.push(achievement);
-    }
-  }
-
-  if (candidates.length === 0) return [];
+  // The server decides from its own records. Asking only about what this device's counters call earned meant
+  // Data Driven, Build in Public and Committed were never asked about (nothing on the device ever sets them), and
+  // streak badges waited for a reflection to refresh the local streak.
+  const locked = ACHIEVEMENTS.filter(a => !unlockedIds.has(a.id));
+  if (locked.length === 0) return [];
 
   let verifiedIds: string[] = [];
+  let newIds: string[] | null = null;
   try {
     const res = await fetch("/api/achievements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: candidates.map((a) => a.id) }),
+      body: JSON.stringify({ ids: locked.map((a) => a.id) }),
     });
     if (res.ok) {
-      const data = await res.json().catch(() => null) as { verifiedIds?: string[] } | null;
+      const data = await res.json().catch(() => null) as { verifiedIds?: string[]; newIds?: string[] } | null;
       verifiedIds = Array.isArray(data?.verifiedIds) ? data.verifiedIds : [];
+      newIds = Array.isArray(data?.newIds) ? data.newIds : null;
     }
   } catch {
-    // Network failure — don't commit anything locally that the server
-    // hasn't confirmed. Next call (next stat update) will retry.
+    // Network failure: commit nothing the server has not confirmed. The next check retries.
     return [];
   }
 
-  const newlyUnlocked = candidates.filter((a) => verifiedIds.includes(a.id));
-  if (newlyUnlocked.length > 0) {
-    for (const achievement of newlyUnlocked) {
-      unlocked.push({ id: achievement.id, unlockedAt: Date.now(), seen: false });
-      updateLocalXPDisplay(achievement.xp);
-    }
-    saveUnlocked(unlocked);
-    // Page-coherence: notify same-tab listeners (e.g. Today's header XP
-    // chip) that something changed. localStorage's own "storage" event
-    // only fires in OTHER tabs, never the tab that made the write, so
-    // without this a same-tab UI has no way to know XP/level just moved.
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("bm_achievement_unlocked", { detail: { newlyUnlocked } }));
-    }
+  const verified = locked.filter((a) => verifiedIds.includes(a.id));
+  if (verified.length === 0) return [];
+  // Earned before (for example on another device): remember it, but do not celebrate it or add XP again.
+  const fresh = newIds ? verified.filter((a) => newIds!.includes(a.id)) : verified;
+  const freshIds = new Set(fresh.map((a) => a.id));
+  for (const achievement of verified) {
+    if (unlocked.some((u) => u.id === achievement.id)) continue;
+    const isFresh = freshIds.has(achievement.id);
+    unlocked.push({ id: achievement.id, unlockedAt: Date.now(), seen: !isFresh });
+    if (isFresh) updateLocalXPDisplay(achievement.xp);
   }
-  return newlyUnlocked;
+  saveUnlocked(unlocked);
+  if (fresh.length > 0) {
+    // localStorage's "storage" event only fires in OTHER tabs, so same-tab listeners (Today's XP chip) need this.
+    window.dispatchEvent(new CustomEvent("bm_achievement_unlocked", { detail: { newlyUnlocked: fresh } }));
+  }
+  return fresh;
 }
 
 export function markAchievementSeen(id: string): void {
@@ -509,4 +517,4 @@ if (typeof window !== "undefined") {
       if (process.env.NODE_ENV === "development") console.log("Achievements reset.");
     },
   };
-              }
+     }
