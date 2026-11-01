@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import { plainStage } from "@/lib/stages";
+import { paceForecast } from "@/lib/pace";
 
-type Goal = { vision: string; label: string; target: number; current: number; daysLeft: number };
+type Goal = { vision: string; label: string; target: number; current: number; daysLeft: number; daysIn?: number };
 type Data = { goal: Goal | null; setup: boolean; stage: string; stages: string[] };
 
 const card = { background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "14px 16px", marginBottom: 12 } as const;
@@ -79,7 +80,10 @@ export default function PathCard({ projectId }: { projectId?: string | null }) {
           <div style={{ width: `${pct}%`, height: "100%", background: "var(--bm-accent)", borderRadius: 4, transition: "width .4s" }} />
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
-          <span style={{ fontSize: 12, color: "var(--bm-text3)" }}>{goal.daysLeft} days left · you log this yourself</span>
+          <span style={{ fontSize: 12, color: "var(--bm-text3)" }}>{goal.daysLeft} days left · you log this yourself{(() => {
+            const p = paceForecast({ current: goal.current, target: goal.target, daysIn: goal.daysIn ?? 0, daysLeft: goal.daysLeft });
+            return p ? ` · at this pace: about ${p.projected} by the deadline (${p.onTrack ? "on track" : "behind"})` : "";
+          })()}</span>
           <span style={{ display: "flex", gap: 6 }}>
             <button type="button" style={small} aria-label="Remove one" onClick={() => send("PATCH", { delta: -1 })}>−1</button>
             <button type="button" style={{ ...small, background: "var(--bm-accent)", borderColor: "var(--bm-accent)", color: "#09090A", fontWeight: 600 }} aria-label="Add one" onClick={() => send("PATCH", { delta: 1 })}>+1</button>

@@ -237,6 +237,7 @@ export function AgentsHeader({ stats }: { stats: Array<{ k: string; v: number }>
         <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 6px", letterSpacing: "-0.025em" }}>Your startup crew</h1>
         <p style={{ fontSize: 12.5, color: "var(--bm-text3)", margin: 0, lineHeight: 1.55 }}>
           Three specialists research, test and size up your idea. Each opens a case file. You review every finding, and your decision is saved with how well it is supported.
+          {" "}Findings you confirm shape what <a href="/today" style={{ color: "var(--bm-accent)", textDecoration: "none" }}>Today</a> asks you to do next.
         </p>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14, flex: "0 1 330px", minWidth: 0 }}>

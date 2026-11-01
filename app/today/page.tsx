@@ -2,6 +2,7 @@
 
 import { plainStage, stageBand } from "@/lib/stages";
 import { FinishExtras } from "@/components/today/FinishExtras";
+import { lessonFor } from "@/lib/today/lesson";
 import { classifyAiFailure, type AiFailure } from "@/lib/aiFailure";
 import FollowUpCard from "@/components/today/FollowUpCard";
 import WeeklyNote from "@/components/today/WeeklyNote";
@@ -2370,7 +2371,7 @@ function TodayContent() {
             <TodayCommandCenter
               action={linkifyChannels(sanitizeOutput(actionData.action))}
               lowConfidence={actionData.isLowConfidence}
-              rationale={sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why)}
+              rationale={[sanitizeOutput(actionData.reflexion?.rationale ?? actionData.why), lessonFor(actionData.missionKind, accountAgeDays, project?.tasksCompleted ?? 0)].filter(Boolean).join(" ")}
               whyMore={whyThisMarkdown(buildWhyThis({ isAI: actionData.isAI, isLowConfidence: actionData.isLowConfidence, reflexion: actionData.reflexion, intelligence: actionData.intelligence }))}
               expectedEvidence={actionData.intelligence?.decision?.top_candidate?.expected_evidence}
               kicker={actionData.missionLabel}

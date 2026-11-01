@@ -29,6 +29,7 @@ const shape = (g: Record<string, unknown> | null, now = Date.now()) => g && {
   target: g.goal_target as number,
   current: g.goal_current as number,
   daysLeft: Math.max(0, Math.ceil((Date.parse(String(g.ends_at)) - now) / DAY)),
+  daysIn: Number.isFinite(Date.parse(String(g.started_at ?? g.created_at))) ? Math.max(0, Math.floor((now - Date.parse(String(g.started_at ?? g.created_at))) / DAY)) : 0,
 };
 
 export async function GET(req: Request) {
