@@ -160,6 +160,8 @@ export default function BreakMyStartupPage() {
   // can abort the previous request rather than running two pipelines in parallel.
   const abortRef = useRef<AbortController | null>(null);
   const [result, setResult] = useState<BreakResult | null>(null);
+  const [pastRuns, setPastRuns] = useState<Array<{ id: string; idea: string; verdict: string | null; survival: number | null; created_at: string }>>([]);
+  const [openingRun, setOpeningRun] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -216,6 +218,40 @@ export default function BreakMyStartupPage() {
     autofilledIdeaRef.current = projectIdea;
     setCustomIdea(projectIdea);
   }, [selectedProjectId, selectedProject]);
+
+  async function loadPastRuns() {
+    try {
+      const res = await fetch("/api/break-runs");
+      const json = await res.json().catch(() => ({}));
+      if (json?.ok && Array.isArray(json.runs)) setPastRuns(json.runs);
+    } catch {}
+  }
+  useEffect(() => { void loadPastRuns(); }, []);
+
+  // Reopening a saved run reads it from the database. No AI call, no usage counted.
+  async function openPastRun(id: string) {
+    setOpeningRun(id);
+    try {
+      const res = await fetch(`/api/break-runs?id=${encodeURIComponent(id)}`);
+      const json = await res.json().catch(() => ({}));
+      if (!json?.ok || !json.run?.payload) throw new Error("missing");
+      setError(null);
+      setSaved(false);
+      setAddedProjectId(null);
+      setAddProjectError(null);
+      setCustomIdea(String(json.run.idea ?? ""));
+      setResult(mapApiResult(json.run.payload as BreakApiData));
+    } catch {
+      setError("Couldn't open that run. Please try again.");
+    } finally {
+      setOpeningRun(null);
+    }
+  }
+
+  async function deletePastRun(id: string) {
+    setPastRuns((runs) => runs.filter((r) => r.id !== id));
+    try { await fetch(`/api/break-runs?id=${encodeURIComponent(id)}`, { method: "DELETE" }); } catch {}
+  }
 
   function mapApiResult(data: BreakApiData): BreakResult {
     const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
@@ -506,6 +542,16 @@ export default function BreakMyStartupPage() {
       setResult(mappedResult);
       if (plan === "free") storage.set(freePreviewKey, "1");
 
+      // Keep the run so it can be reopened later without running the AI again.
+      try {
+        await fetch("/api/break-runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea, projectId: runProjectId, data: payload.data ?? {} }),
+        });
+        void loadPastRuns();
+      } catch {}
+
       // Track achievement
       try {
         updateAchievementStats({ breakMyStartupUsed: true });
@@ -650,6 +696,41 @@ export default function BreakMyStartupPage() {
           }
         />
       </motion.div>
+
+      {/* Past runs */}
+      {!result && !loading && pastRuns.length > 0 && (
+        <Card className="flex flex-col gap-1 p-4">
+          <p className="text-[13px] font-medium text-[var(--bm-text)]">Past stress tests</p>
+          <p className="mb-2 text-[12px] text-[var(--bm-text-muted)]">Open one to read it again. It costs no AI usage.</p>
+          <ul className="flex flex-col">
+            {pastRuns.slice(0, 8).map((r) => (
+              <li key={r.id} className="flex items-center gap-2 border-t border-[var(--bm-border)] py-2 first:border-t-0">
+                <button
+                  type="button"
+                  onClick={() => openPastRun(r.id)}
+                  disabled={openingRun === r.id}
+                  className="flex min-w-0 flex-1 flex-col items-start text-left"
+                >
+                  <span className="w-full truncate text-[13px] text-[var(--bm-text)]">{r.idea}</span>
+                  <span className="text-[11px] text-[var(--bm-text-muted)]">
+                    {new Date(r.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                    {typeof r.survival === "number" ? `, ${r.survival}% survival` : ""}
+                    {openingRun === r.id ? ", opening…" : ""}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deletePastRun(r.id)}
+                  aria-label="Delete this run"
+                  className="px-2 text-[12px] text-[var(--bm-text-muted)] hover:text-[var(--bm-red)]"
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {/* Input panel */}
       <AnimatePresence mode="wait">
