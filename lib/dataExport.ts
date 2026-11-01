@@ -42,6 +42,7 @@ export const EXPORT_CATEGORIES: ReadonlyArray<ExportCategory> = [
   { table: "tasks", ownerCol: "user_id", group: "work", label: "Tasks", orderBy: "created_at" },
   { table: "conversation_people", ownerCol: "user_id", group: "work", label: "Customer conversations (people and notes)", orderBy: "created_at", aiGenerated: false },
   { table: "project_goals", ownerCol: "user_id", group: "work", label: "Goals and targets", orderBy: "created_at", aiGenerated: false },
+  { table: "break_runs", ownerCol: "user_id", group: "work", label: "Break My Startup history (past stress tests)", orderBy: "created_at", aiGenerated: true },
   { table: "work_items", ownerCol: "user_id", group: "work", label: "Work library (prepared drafts and documents)", orderBy: "created_at", aiGenerated: true },
   { table: "prepared_work", ownerCol: "user_id", group: "work", label: "Prepared work (drafts and kits)", orderBy: "created_at", aiGenerated: true },
   { table: "reflections", ownerCol: "user_id", group: "history", label: "Reflections", orderBy: "created_at" },
@@ -240,4 +241,4 @@ export function describeExport(): { categories: Array<Pick<ExportCategory, "tabl
     categories: EXPORT_CATEGORIES.map((c) => ({ table: c.table, label: c.label, group: c.group, third_party: Boolean(c.thirdParty), ai_generated: Boolean(c.aiGenerated) })),
     excluded: EXCLUDED_TABLES,
   };
-}
+            }
