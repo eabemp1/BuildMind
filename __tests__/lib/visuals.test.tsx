@@ -36,7 +36,7 @@ describe("execution intelligence visual", () => {
 
   it("draws the real numbers and nothing invented", () => {
     const json = JSON.stringify(spec);
-    expect(spec.panels.map((p) => p.type)).toEqual(expect.arrayContaining(["stats", "gauge", "line", "bars", "signals", "radar", "tree"]));
+    expect(spec.panels.map((p) => p.type)).toEqual(expect.arrayContaining(["stats", "gauge", "bars", "signals", "radar", "tree"]));
     expect(json).toContain("Customer calls keep slipping");
     expect(json).toContain("Call 2 customers");
     expect(json).toContain("Outreach is up 3 actions");
@@ -46,7 +46,6 @@ describe("execution intelligence visual", () => {
     const bare = buildExecutionIntelligenceVisual({ state: { ...state, signals: [], decision: { candidates: [], top_candidate: null, decision_basis: [] } } as unknown as FounderIntelligenceState });
     expect(bare.panels.some((p) => p.type === "signals")).toBe(false);
     expect(bare.panels.some((p) => p.type === "radar")).toBe(false);
-    expect(bare.panels.some((p) => p.type === "line")).toBe(false);
   });
 
   it("renders to static HTML and to a self-contained report", () => {
