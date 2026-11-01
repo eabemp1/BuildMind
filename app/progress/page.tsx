@@ -57,7 +57,7 @@ function ThisWeekTab({ reflectionCount }: { reflectionCount: number }) {
           href="/reports"
           style={{ fontSize: 12, color: "var(--bm-text3)", textDecoration: "none" }}
         >
-          Full report &amp; export (PDF, CSV, 4-week heatmap) →
+          Full report and export
         </a>
       </div>
     </>
@@ -110,56 +110,23 @@ function ProgressContent() {
   }, [activeProjectId]);
 
   const TABS: { id: Tab; label: string; desc: string }[] = [
-    { id: "week",     label: "This Week",  desc: "Performance and momentum" },
-    { id: "patterns", label: "Patterns",   desc: "Your behavioral signature" },
-    { id: "visual",   label: "Visual",     desc: "Your record, drawn" },
+    { id: "week",     label: "This week",  desc: "" },
+    { id: "patterns", label: "Patterns",   desc: "" },
+    { id: "visual",   label: "Charts",     desc: "" },
   ];
 
   return (
     <>
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 16px 24px" }}>
-        {/* Page header */}
-        <div style={{ marginBottom: 24 }}>
-          <p style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: 9, color: "var(--bm-text3)",
-            textTransform: "uppercase", letterSpacing: "0.10em", margin: "0 0 8px",
-          }}>
-            Execution intelligence / Progress
-          </p>
+        <div style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
           <h1 style={{
             fontFamily: "'Syne', sans-serif",
-            fontSize: "clamp(20px, 5.5vw, 24px)", fontWeight: 700, color: "var(--bm-text)",
-            letterSpacing: "-0.025em", margin: "0 0 6px",
+            fontSize: "clamp(24px, 6vw, 30px)", fontWeight: 700, color: "var(--bm-text)",
+            letterSpacing: "-0.025em", margin: 0,
           }}>
-            What does the evidence say?
+            Progress
           </h1>
-          <p style={{
-            fontFamily: "'Inter', sans-serif",
-            fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.5, margin: 0,
-          }}>
-            A grounded read of your execution over time - not another scorecard.
-          </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-            <OpenBesideButton label="Chart my progress beside" request={{ kind: "coach", title: "Progress chart", prompt: "Chart my progress" }} />
-            <OpenBesideButton label="Draw my execution intelligence" request={{ kind: "coach", title: "Execution intelligence", prompt: "Draw my execution intelligence" }} />
-          </div>
-        </div>
-
-        {/* Vision Document retention hooks — shown before tabs */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginBottom: 20 }}>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
-            <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)", margin: "0 0 8px" }}>Execution patterns</p>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>
-              Patterns will surface here after 3+ check-ins. The longer you use BuildMind, the more accurate your behavioral model becomes — avoidance zones, spiral signals, execution style. At day 90 this is irreplaceable.
-            </p>
-          </div>
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px" }}>
-            <p style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)", margin: "0 0 8px" }}>Avoidance zones</p>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, margin: 0 }}>
-              BuildMind tracks what you consistently avoid. Once detected, tasks are designed to route through your avoidance, not around it. This is one of the few things no other tool does.
-            </p>
-          </div>
+          <OpenBesideButton label="Ask coach beside" request={{ kind: "coach", title: "Progress chart", prompt: "Chart my progress" }} />
         </div>
 
         {/* Tab bar */}
@@ -179,7 +146,7 @@ function ProgressContent() {
               onClick={() => setActiveTab(tab.id)}
               style={{
                 flex: 1,
-                padding: "9px 16px",
+                padding: "10px 16px",
                 borderRadius: 9,
                 border: "none",
                 background: activeTab === tab.id ? "var(--bm-bg4)" : "transparent",
@@ -196,9 +163,6 @@ function ProgressContent() {
               }}
             >
               <span>{tab.label}</span>
-              <span style={{ fontSize: 10, color: activeTab === tab.id ? "var(--bm-text3)" : "var(--bm-text4)", fontWeight: 400 }}>
-                {tab.desc}
-              </span>
             </button>
           ))}
         </div>
@@ -241,4 +205,4 @@ export default function ProgressPage() {
       <ProgressContent />
     </Suspense>
   );
-    }
+}
