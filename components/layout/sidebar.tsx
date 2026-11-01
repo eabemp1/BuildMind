@@ -28,7 +28,7 @@ import { useTheme } from "@/components/layout/theme-provider";
 import AIUsageBadge from "@/components/AIUsageBadge";
 import { createClient } from "@/lib/supabase/client";
 import {
-  NAV, hasPlanAccess, SectionLabel, SidebarLogo, NavItem, useRail,
+  NAV, NAV_ANIM_CSS, hasPlanAccess, SectionLabel, SidebarLogo, NavItem, useRail,
 } from "@/components/layout/sidebar-nav";
 import { getTasksCompleted, syncTasksCompletedFromServer } from "@/lib/nav-config";
 import { storage } from "@/lib/storage";
@@ -219,6 +219,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
 
   return (
     <div className="flex h-full flex-col" style={{ background: "var(--bm-bg2)" }}>
+      <style>{NAV_ANIM_CSS}</style>
       <SidebarLogo streakDays={streakDays} />
 
       <nav className="flex-1 overflow-y-auto py-5" style={{ scrollbarWidth: "none" }}>
@@ -438,4 +439,4 @@ export default function Sidebar() {
       </AnimatePresence>
     </>
   );
-            }
+        }
