@@ -121,6 +121,7 @@ export default function OverviewPage() {
   const [currentMrr, setCurrentMrr] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [serverTodayDone, setServerTodayDone] = useState(false);
+  const [showCharts, setShowCharts] = useState(false);
 
   useEffect(() => {
     // Bug fix: currentMrr previously always started at 0 and was never
@@ -271,7 +272,6 @@ export default function OverviewPage() {
   const card: React.CSSProperties = { border: "1px solid var(--bm-border)", borderRadius: 14, background: "var(--bm-bg2)" };
   const eyebrow: React.CSSProperties = { margin: 0, fontSize: 13, fontWeight: 600, color: "var(--bm-text2)" };
 
-  const [showCharts, setShowCharts] = useState(false);
 
   const stats = [
     { label: "Startup score", value: score > 0 ? `${score}` : "—", sub: scoreDelta == null ? "baseline" : `${scoreDelta >= 0 ? "+" : ""}${scoreDelta} vs last reading`, tip: "Built from task completion, reflection quality and consistency. Decays slowly if you go quiet." },
@@ -435,4 +435,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-}
+             }
