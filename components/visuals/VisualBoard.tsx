@@ -30,7 +30,7 @@ const CSS = `
 .vb *{box-sizing:border-box}
 .vb-p{background:${C.card};border:1px solid ${C.border};border-radius:10px;padding:12px;min-width:0;display:flex;flex-direction:column;gap:10px;break-inside:avoid}
 .vb-w{grid-column:1/-1}
-.vb-h{margin:0;font-family:${mono};font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:${C.text3};line-height:1.3}
+.vb-h{margin:0;font-size:13px;font-weight:600;color:${C.text2 ?? C.text3};line-height:1.3}
 .vb-c{margin:3px 0 0;font-size:11.5px;line-height:1.45;color:${C.text3}}
 .vb-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:0;border:1px solid ${C.border};border-radius:10px;background:${C.card};overflow:hidden}
 .vb-stat{padding:10px 12px;min-width:0;border-right:1px solid ${C.border};border-bottom:1px solid ${C.border};margin:0 -1px -1px 0}
