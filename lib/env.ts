@@ -67,7 +67,7 @@ export const env = {
   CEREBRAS_API_KEY:          optional("CEREBRAS_API_KEY"),
   CEREBRAS_MODEL:            process.env.CEREBRAS_MODEL?.trim() || "gpt-oss-120b",
   GEMINI_API_KEY:            optional("GEMINI_API_KEY"),
-  GEMINI_MODEL:              process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash",
+  GEMINI_MODEL:              process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
 
   // ── Billing (required for paid features) ──────────────────────────────────
   PAYSTACK_SECRET_KEY:       optional("PAYSTACK_SECRET_KEY"),
