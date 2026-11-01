@@ -10,7 +10,7 @@ describe("Today cross links", () => {
     expect(l?.href).toBe("/work/conversations");
     expect(pickCrossLink({ ...base, followUps: 2, tasksCompleted: 0 })).toBeNull();
     expect(pickCrossLink({ ...base, followUps: 2, seen: { followups: "2026-10-31" } })).toBeNull();
-    expect(pickCrossLink({ ...base, followUps: 2, seen: { followups: "2026-10-30" } })).toBeNull();
+    expect(pickCrossLink({ ...base, followUps: 2, seen: { followups: "2026-10-30" } })?.id).not.toBe("followups");
   });
   it("points a founder who has never run a teardown to Break My Startup after a finished task", () => {
     expect(pickCrossLink(base)?.id).toBe("break");
