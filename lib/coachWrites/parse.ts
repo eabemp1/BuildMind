@@ -29,7 +29,7 @@ const DAYPARTS: Array<[RegExp, number, number]> = [
   [/\b(?:at\s+)?noon\b/i, 12, 0],
 ];
 
-/** Parse an explicit time or daypart while returning the reminder text without it. */
+/** "at 5pm", "by 17:30", "tomorrow at 9", "tonight". Returns the time and the text with it removed. */
 export function parseClock(text: string): { at: ClockTime; rest: string } | null {
   const tomorrow = /\btomorrow\b/i.test(text);
   const t = text.replace(/\btomorrow\b/gi, " ");
@@ -43,7 +43,7 @@ export function parseClock(text: string): { at: ClockTime; rest: string } | null
     if (m > 59 || h > 23) return null;
     if (ap === "pm" && h < 12) h += 12;
     else if (ap === "am" && h === 12) h = 0;
-    else if (!ap && h >= 1 && h <= 6) h += 12;
+    else if (!ap && h >= 1 && h <= 6) h += 12; // a bare "at 5" in a reminder means the afternoon
     if (ap && (h > 23 || Number(x[1]) > 12 || Number(x[1]) < 1)) return null;
     return { at: { h, m, tomorrow }, rest: t.replace(x[0], " ") };
   }
