@@ -78,6 +78,19 @@ async function getUserWithTimeout(
   return { user: result.user ? { id: result.user.id } : null, error: result.error, timedOut: false };
 }
 
+/**
+ * True only when Supabase has really rejected the session (expired or revoked token, deleted user).
+ * A network failure or a 5xx (AuthRetryableFetchError) says nothing about the session, so cookies must be kept:
+ * deleting them there signed active founders out whenever Supabase was slow.
+ */
+function isDefinitiveAuthError(err: unknown): boolean {
+  if (!err) return false;
+  const e = err as { name?: string; status?: number };
+  if (e.name === "AuthRetryableFetchError") return false;
+  if (typeof e.status === "number" && (e.status === 0 || e.status >= 500)) return false;
+  return true;
+}
+
 /** Resolves to the project count, or null if the query times out. */
 function getProjectCountWithTimeout(
   supabase: NonNullable<ReturnType<typeof createServerClient>>,
@@ -170,6 +183,15 @@ export async function middleware(request: NextRequest) {
   return response;
   }
 
+  // A redirect is a new response, so cookies Supabase just refreshed on `response` would be dropped with it.
+  // The founder's browser would keep the old refresh token, and the next request could fail with
+  // "refresh token already used". Every redirect below carries them across.
+  const redirectTo = (url: URL) => {
+    const redirected = NextResponse.redirect(url);
+    response.cookies.getAll().forEach((c) => redirected.cookies.set(c));
+    return redirected;
+  };
+
   const supabase = supabaseConfigured
     ? createServerClient(
         supabaseUrl!,
@@ -199,7 +221,7 @@ export async function middleware(request: NextRequest) {
   // than rendering or the network.
   response.headers.set("Server-Timing", `mw-auth;dur=${Date.now() - authStart}`);
 
-  if (authError) {
+  if (isDefinitiveAuthError(authError)) {
     for (const cookie of request.cookies.getAll()) {
       if (cookie.name.startsWith("sb-")) {
         response.cookies.delete(cookie.name);
@@ -278,7 +300,7 @@ export async function middleware(request: NextRequest) {
     if (!isAdmin) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/overview";
-      return NextResponse.redirect(redirectUrl);
+      return redirectTo(redirectUrl);
     }
   }
 
@@ -286,7 +308,7 @@ export async function middleware(request: NextRequest) {
   if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/overview";
-    return NextResponse.redirect(redirectUrl);
+    return redirectTo(redirectUrl);
   }
 
   const featureBlocks = [
@@ -304,7 +326,7 @@ export async function middleware(request: NextRequest) {
     if (blocked) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/overview";
-      return NextResponse.redirect(redirectUrl);
+      return redirectTo(redirectUrl);
     }
   }
 
@@ -346,13 +368,13 @@ export async function middleware(request: NextRequest) {
     if (!onboardingCompleted && !isOnboardingRoute && !isSignalPublic) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/onboarding";
-      return NextResponse.redirect(redirectUrl);
+      return redirectTo(redirectUrl);
     }
 
     if (onboardingCompleted && isOnboardingRoute) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/today";
-      return NextResponse.redirect(redirectUrl);
+      return redirectTo(redirectUrl);
     }
 
     const isPrivateRoute = !isPublicRoute && !isApiRoute;
@@ -366,20 +388,20 @@ export async function middleware(request: NextRequest) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/today";
       redirectUrl.searchParams.set("next", pathname);
-      return NextResponse.redirect(redirectUrl);
+      return redirectTo(redirectUrl);
     }
   }
 
   if (!user && !isDevAuthed && !isPublicRoute && !isApiRoute) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/auth/login";
-    return NextResponse.redirect(redirectUrl);
+    return redirectTo(redirectUrl);
   }
 
   if ((user || isDevAuthed) && (pathname === "/" || (isAuthRoute && !isAuthCallbackRoute))) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = isDevAuthed && !isDevOnboarded ? "/onboarding" : "/today";
-    return NextResponse.redirect(redirectUrl);
+    return redirectTo(redirectUrl);
   }
 
   if ((user || isDevAuthed) && pathname === "/today") {
