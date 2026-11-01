@@ -147,7 +147,7 @@ const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "gpt-oss-120b";
 const CEREBRAS_REASONING_MODEL = "gpt-oss-120b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 // Upgrade to Gemini 2.5 Flash — stronger reasoning and lower hallucination rate
-const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
 // OPENROUTER — no-card alternative for genuine model diversity. Google AI Studio's
 // API now requires a card on file in many regions even for free-tier Gemini models;
