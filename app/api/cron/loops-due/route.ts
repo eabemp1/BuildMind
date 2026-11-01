@@ -1,5 +1,6 @@
 /**
- * GET /api/cron/loops-due — daily reminder for follow-ups the founder asked for.
+ * GET /api/cron/loops-due — reminder and follow-up notifier. Vercel runs it once a day at 09:00 UTC; point a free
+ * external scheduler (cron-job.org) at it every 5 minutes for on-time reminders. Safe to call often: each loop is notified once.
  *
  * Creates one in-app notification (and a web push when configured) per founder
  * with a due follow-up, once per loop (notified_at). The Today page ALSO shows
@@ -42,10 +43,18 @@ export async function GET(request: Request) {
   for (const [userId, list] of byUser) {
     try {
       const first = list[0];
-      const title = list.length === 1 ? "Time to record a result" : `${list.length} results to record`;
-      const body = list.length === 1
-        ? `You asked to check back: ${first.task_text.slice(0, 90)}. What happened?`
-        : `${first.task_text.slice(0, 70)} and ${list.length - 1} more are ready for a result.`;
+      // A reminder the founder set on the coach ("remind me at 5pm to email Sam") carries the generic measure.
+      // It is a reminder, not a request to record a result.
+      const generic = (l: { measure: string | null }) => !l.measure || /^did you get to it/i.test(l.measure.trim());
+      const allReminders = list.every(generic);
+      const title = allReminders
+        ? list.length === 1 ? "Reminder" : `${list.length} reminders`
+        : list.length === 1 ? "Time to record a result" : `${list.length} results to record`;
+      const body = allReminders
+        ? list.length === 1 ? first.task_text.slice(0, 120) : `${first.task_text.slice(0, 70)} and ${list.length - 1} more.`
+        : list.length === 1
+          ? `You asked to check back: ${first.task_text.slice(0, 90)}. What happened?`
+          : `${first.task_text.slice(0, 70)} and ${list.length - 1} more are ready for a result.`;
       await admin.from("notifications").insert({ user_id: userId, type: "loop_due", message: `${title}. ${body}`, is_read: false });
       await admin.from("today_loops").update({ notified_at: new Date().toISOString() }).in("id", list.map((l) => l.id));
       if (webpush) {
