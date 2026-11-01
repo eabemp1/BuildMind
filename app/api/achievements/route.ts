@@ -90,6 +90,7 @@ export async function POST(request: Request) {
 
     const supabase = createAdminClient();
     let xpGranted = 0;
+    let newIds: string[] = [];
 
     if (verifiedIds.length > 0) {
       // FIX (audit finding: /api/user/xp let the client choose how much XP
@@ -113,6 +114,7 @@ export async function POST(request: Request) {
 
       const alreadyUnlockedSet = new Set((alreadyUnlocked ?? []).map((r) => r.achievement_id));
       const newlyUnlockedIds = verifiedIds.filter((id) => !alreadyUnlockedSet.has(id));
+      newIds = newlyUnlockedIds;
 
       const rows = verifiedIds.map((achievement_id) => ({
         user_id: userId,
@@ -163,6 +165,8 @@ export async function POST(request: Request) {
       // actual verified id list lets the client only commit to
       // localStorage what the server actually confirmed.
       verifiedIds,
+      // Only the ones unlocked by THIS call. Ids the server already had are earned before, not new.
+      newIds,
       xpGranted,
     });
   } catch (err) {
