@@ -400,284 +400,118 @@ export function WeeklyPulseCard() {
     return <div style={{ padding: "24px", textAlign: "center", color: "var(--bm-text3)", fontSize: 13 }}>{error ?? "No data yet this week."}</div>;
   }
 
+  // The one thing to do next: the most urgent real signal, or nothing on a good week.
+  const goal = data.weekly_goal;
+  const atRiskMilestone = data.milestones.find((m) => m.risk === "high" || m.risk === "medium");
+  const directive =
+    goal && (data.ghost_race
+      ? data.ghost_race.status === "behind" || data.ghost_race.status === "out_of_reach"
+      : goal.status !== "on_track" && goal.status !== "completed")
+      ? `You're behind on "${goal.goal_text}": ${goal.tasks_done} of ${goal.target_tasks} actions done this week.`
+      : atRiskMilestone
+        ? `"${atRiskMilestone.title}" is at risk. ${atRiskMilestone.reason}`
+        : data.top_override_reason
+          ? `You often skip tasks because of "${data.top_override_reason}". Pick one task today where that doesn't win.`
+          : null;
+  const best = bestDay(data.day_of_week);
+  const panel: React.CSSProperties = { background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px" };
+  const numbers: Array<{ label: string; value: string; delta?: number | null }> = [
+    { label: "Done", value: `${data.completion_rate}%` },
+    { label: "Actions", value: `${data.actions_completed ?? data.tasks_completed}` },
+    { label: "Momentum", value: `${data.momentum_score}`, delta: data.momentum_delta },
+    { label: "Streak", value: `${data.streak}d` },
+  ];
+  const arch = data.archetype ? ARCHETYPE_DISPLAY[data.archetype as FounderArchetype] : null;
+
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* 1. STORY */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "20px 20px 16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <Sparkles size={14} style={{ color: "var(--bm-text3)" }} />
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--bm-text3)" }}>
-            Your week
-          </span>
-          {data.archetype && (
-            <a
-              href="/memory"
-              style={{
-                marginLeft: "auto", fontFamily: "'DM Mono', monospace", fontSize: 11, padding: "3px 10px",
-                borderRadius: 999, background: "var(--bm-bg3)", color: "var(--bm-text3)", border: "1px solid var(--bm-border)",
-                textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5,
-              }}
-              title="See what this means →"
-            >
-              <span>{ARCHETYPE_DISPLAY[data.archetype as FounderArchetype]?.icon ?? ""}</span>
-              {ARCHETYPE_DISPLAY[data.archetype as FounderArchetype]?.name ?? data.archetype.replace(/-/g, " ")}
-            </a>
-          )}
-        </div>
-        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, lineHeight: 1.6, color: "var(--bm-text)", margin: 0 }}>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* The week in one sentence */}
+      <section>
+        <p style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(19px, 5vw, 23px)", lineHeight: 1.4, letterSpacing: "-0.01em", color: "var(--bm-text)", margin: 0 }}>
           {sanitizeOutput(data.story)}
         </p>
+        {arch && (
+          <a href="/memory" style={{ display: "inline-block", marginTop: 8, fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text3)", textDecoration: "none" }}>
+            Your style: {arch.name}
+          </a>
+        )}
+      </section>
+
+      {/* Four numbers */}
+      <div className="grid grid-cols-2 sm:grid-cols-4" style={{ ...panel, padding: 0, overflow: "hidden" }}>
+        {numbers.map((n, i) => (
+          <div key={n.label} style={{ padding: "14px 16px", borderLeft: i % 2 === 1 || i > 0 ? "1px solid var(--bm-border)" : "none", borderTop: i > 1 ? "1px solid var(--bm-border)" : "none" }} className={i === 2 ? "max-sm:[border-left:none]" : i === 3 ? "max-sm:[border-top:1px_solid_var(--bm-border)]" : ""}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text3)" }}>{n.label}</span>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 24, fontWeight: 700, color: "var(--bm-text)", marginTop: 4 }}>
+              {n.value}
+              {n.delta != null && n.delta !== 0 && (
+                <span style={{ fontSize: 12, marginLeft: 6, color: n.delta > 0 ? "var(--bm-green)" : "var(--bm-red)" }}>{n.delta > 0 ? "+" : ""}{n.delta}</span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Confidence index — reflections.confidence values were already
-          returned as confidence_by_outcome but never surfaced; this is the
-          same signal flattened into one founder-facing number. */}
-      {data.confidence_index !== null && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "12px 18px" }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text3)" }}>Confidence index</span>
-          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.confidence_index}%</span>
-          <span
-            className="bm-badge"
-            style={{
-              fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em",
-              padding: "2px 8px", borderRadius: 999, color: confidenceLabel(data.confidence_index).color,
-              background: "var(--bm-bg3)", border: `1px solid ${confidenceLabel(data.confidence_index).color}33`,
-            }}
-          >
-            {confidenceLabel(data.confidence_index).label}
-          </span>
-          <span style={{ marginLeft: "auto", fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text4)" }}>
-            From this week&apos;s reflections
-          </span>
-        </div>
+      {/* Next step */}
+      {directive && (
+        <section style={{ ...panel, display: "flex", gap: 14, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: "var(--bm-text)", margin: 0, lineHeight: 1.5, flex: "1 1 240px" }}>{sanitizeOutput(directive)}</p>
+          <a href="/today" style={{ display: "inline-flex", alignItems: "center", minHeight: 40, padding: "0 18px", borderRadius: 10, background: "var(--bm-accent)", color: "#15130a", fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+            Open Today
+          </a>
+        </section>
       )}
 
-      {/* 2. EVIDENCE — ghost vs real sparkline, the founder's requested visual */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px 8px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Ghost vs. real</span>
-          <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--bm-text3)", fontFamily: "'Inter', sans-serif" }}>
-            <span><span style={{ display: "inline-block", width: 10, height: 2, background: "var(--bm-accent)", marginRight: 4, verticalAlign: "middle" }} />Actual</span>
-            {data.weekly_goal && (
-              <span><span style={{ display: "inline-block", width: 10, height: 2, borderTop: "1.5px dashed var(--bm-text3)", marginRight: 4, verticalAlign: "middle" }} />Target</span>
-            )}
-          </div>
-        </div>
-        <GhostSparkline points={data.sparkline} />
-        {(() => {
-          const withBoth = [...data.sparkline].reverse().find((p) => p.real !== null && p.ghost !== null);
-          if (!withBoth) return null;
-          const gap = Math.round((withBoth.real as number) - (withBoth.ghost as number));
-          if (gap === 0) return (
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", margin: "2px 0 8px" }}>Exactly on pace.</p>
-          );
-          return (
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: gap > 0 ? "var(--bm-green)" : "var(--bm-red)", margin: "2px 0 8px" }}>
-              {gap > 0 ? `${gap} points ahead of target pace.` : `${Math.abs(gap)} points behind target pace.`}
-            </p>
-          );
-        })()}
-        {data.weekly_goal && (
-          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", margin: "2px 0 8px" }}>
-            Ghost Goal: {data.weekly_goal.tasks_done} of {data.weekly_goal.target_tasks} actions. This is the same count and target as the Ghost Race below.
-          </p>
-        )}
-        {!data.weekly_goal && (
-          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", margin: "4px 0 8px" }}>
-            Set a weekly goal on an active project to see the target (ghost) line.
-          </p>
-        )}
-      </div>
-
-      {/* Un-ghosted */}
-      {data.un_ghosted.length > 0 && (
-        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Ghost size={13} style={{ color: "var(--bm-text3)" }} />
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Un-ghosted this week</span>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {data.un_ghosted.map((item) => (
-              <span key={item} className="bm-badge bm-badge-neutral" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11 }}>
-                {sanitizeOutput(item)}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Cognitive matrix — both halves are data the API already computed
-          (day_of_week, top_override_reason) but nothing on this card ever
-          rendered before. "Verified known" needs 2+ logged actions on the
-          best day before it's shown, same as bestDay()'s own guard. */}
-      {(bestDay(data.day_of_week) || data.top_override_reason) && (
-        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Cognitive matrix</span>
-          {bestDay(data.day_of_week) && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-green)" }}>
-                ● Verified known
-              </span>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
-                You get the most done on {bestDay(data.day_of_week)!.day}s ({bestDay(data.day_of_week)!.rate}% completion rate this week).
-              </p>
-            </div>
-          )}
-          {data.top_override_reason && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-amber, #d9a441)" }}>
-                ● Active blindspot
-              </span>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
-                Your most common reason for skipped or partial tasks: &ldquo;{sanitizeOutput(data.top_override_reason)}&rdquo;
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Recommended directive — derived from whatever real signal is most
-          urgent (behind-pace goal > at-risk milestone > recurring skip
-          reason). Omitted entirely when none of those apply, rather than
-          forcing generic advice onto a good week. */}
-      {(() => {
-        const goal = data.weekly_goal;
-        const atRiskMilestone = data.milestones.find((m) => m.risk === "high" || m.risk === "medium");
-        const directive =
-          goal && (data.ghost_race
-            ? data.ghost_race.status === "behind" || data.ghost_race.status === "out_of_reach"
-            : goal.status !== "on_track" && goal.status !== "completed")
-            ? `You're behind on "${goal.goal_text}" — ${goal.tasks_done}/${goal.target_tasks} actions done this week. Close the gap today.`
-            : atRiskMilestone
-              ? `"${atRiskMilestone.title}" is at risk — ${atRiskMilestone.reason}`
-              : data.top_override_reason
-                ? `Naming your top skip reason is step one. Pick one task today where "${data.top_override_reason}" doesn't get to win.`
-                : null;
-        if (!directive) return null;
-        return (
-          <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-accent-bd, var(--bm-border))", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-            <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--bm-accent)" }}>
-              Recommended directive
-            </span>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: "var(--bm-text)", margin: 0, lineHeight: 1.5 }}>
-              {sanitizeOutput(directive)}
-            </p>
-            <a
-              href="/today"
-              style={{
-                alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px",
-                borderRadius: "var(--r-md, 10px)", border: "none", background: "var(--bm-accent)", color: "#15130a",
-                fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, textDecoration: "none",
-              }}
-            >
-              Execute /today
-            </a>
-          </div>
-        );
-      })()}
-
-      {/* Ghost race: the weekly goal, set from your own history (lib/ghostRace.ts) */}
+      {/* This week against your usual week */}
       {data.ghost_race && <GhostRaceCard race={data.ghost_race} />}
 
-      {/* 3. METRICS */}
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 14, alignItems: "center", background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: 18 }}>
-        <div style={{ position: "relative", width: 88, height: 88 }}>
-          <Ring value={data.completion_rate} />
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.completion_rate}%</span>
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>done</span>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <Target size={12} style={{ color: "var(--bm-text3)" }} />
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Tasks</span>
-            </div>
-            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.actions_completed ?? data.tasks_completed}</span>
-            <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)", marginTop: 2 }}>
-              done on {data.tasks_completed} of {data.tasks_total} {data.tasks_total === 1 ? "day" : "days"}
-            </span>
-          </div>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              {data.momentum_delta !== null && data.momentum_delta < 0
-                ? <TrendingDown size={12} style={{ color: "var(--bm-red)" }} />
-                : <TrendingUp size={12} style={{ color: "var(--bm-green)" }} />}
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Momentum</span>
-            </div>
-            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>
-              {data.momentum_score}
-              {data.momentum_delta !== null && (
-                <span style={{ fontSize: 11, marginLeft: 4, color: data.momentum_delta >= 0 ? "var(--bm-green)" : "var(--bm-red)" }}>
-                  {data.momentum_delta >= 0 ? "+" : ""}{data.momentum_delta}
-                </span>
-              )}
-            </span>
-          </div>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <Flame size={12} style={{ color: "var(--bm-text3)" }} />
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Streak</span>
-            </div>
-            <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: "var(--bm-text)" }}>{data.streak}d</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Day activity canvas — one unified square, not 7 separate cards.
-          Pairs with the ring above: the ring is this week's aggregate,
-          this is the per-day breakdown of what actually made it up, with
-          each band's depth of color showing how crucial that one action
-          was (ACTION_TYPE_WEIGHT — see components/DayActivityCanvas.tsx). */}
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: 18 }}>
-        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)", display: "block", marginBottom: 12 }}>
-          This week, by day
-        </span>
-        <DayActivityCanvas days={data.day_activity} />
-      </div>
-
-      <AvoidanceList zones={data.avoidance_remaining ?? []} onChanged={() => load(true)} />
-
-      {/* Grades */}
-      {/* Grades — hidden entirely on a quiet week rather than showing a
-          grid of N/A badges, which reads as broken rather than honest. */}
-      {data.is_quiet_week ? (
-        <p style={{
-          fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)",
-          textAlign: "center", padding: "4px 0",
-        }}>
-          Not enough activity yet to grade this week — check back after a few tasks.
-        </p>
-      ) : data.grades.some((g) => g.grade !== "N/A") && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-          {data.grades.map((g) => <GradeBadge key={g.label} g={g} />)}
-        </div>
+      {/* What was noticed */}
+      {(best || data.top_override_reason) && (
+        <section style={panel}>
+          <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>What I noticed</h3>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 8, fontFamily: "'Inter', sans-serif", fontSize: 14, lineHeight: 1.5, color: "var(--bm-text2)" }}>
+            {best && <li>You get the most done on {best.day}s ({best.rate}% of tasks).</li>}
+            {data.top_override_reason && <li>Your most common reason for skipping: &ldquo;{sanitizeOutput(data.top_override_reason)}&rdquo;</li>}
+          </ul>
+        </section>
       )}
 
-      {/* Milestone pacing — every milestone gets a deadline control */}
-      {data.milestones.length > 0 && (
-        <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-lg)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Milestone pacing</span>
-          {data.milestones.map((m) => <MilestoneRow key={m.id} m={m} onChanged={() => load(true)} />)}
+      {/* Everything else, one tap away */}
+      <details style={{ ...panel, padding: 0 }}>
+        <summary style={{ cursor: "pointer", padding: "14px 18px", fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 600, color: "var(--bm-text2)" }}>More from this week</summary>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 14px 16px" }}>
+          <div style={panel}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: "var(--bm-text)", display: "block", marginBottom: 12 }}>By day</span>
+            <DayActivityCanvas days={data.day_activity} />
+          </div>
+          {data.un_ghosted.length > 0 && (
+            <div style={{ ...panel, display: "grid", gap: 8 }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: "var(--bm-text)" }}>Things you stopped avoiding</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {data.un_ghosted.map((item) => (
+                  <span key={item} className="bm-badge bm-badge-neutral" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12 }}>{sanitizeOutput(item)}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          <AvoidanceList zones={data.avoidance_remaining ?? []} onChanged={() => load(true)} />
+          {!data.is_quiet_week && data.grades.some((g) => g.grade !== "N/A") && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+              {data.grades.map((g) => <GradeBadge key={g.label} g={g} />)}
+            </div>
+          )}
+          {data.milestones.length > 0 && (
+            <div style={{ ...panel, display: "flex", flexDirection: "column", gap: 10 }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: "var(--bm-text)" }}>Milestone deadlines</span>
+              {data.milestones.map((m) => <MilestoneRow key={m.id} m={m} onChanged={() => load(true)} />)}
+            </div>
+          )}
+          <ShareWeekCard projectId={activeProjectId || undefined} />
+          <a href="/reports" style={{ textAlign: "center", color: "var(--bm-text3)", fontFamily: "'Inter', sans-serif", fontSize: 12, textDecoration: "none" }}>
+            Full report and export
+          </a>
         </div>
-      )}
-
-      {/* 4. SHARE — server-rendered card (app/api/card/week) in three shapes. */}
-      <ShareWeekCard projectId={activeProjectId || undefined} />
-
-      {/* Reports stays a separate surface for the exportable/historical
-          view (4-week heatmap, CSV/PDF/PNG) — linked here, not merged in,
-          so This Week stays a few-seconds read. */}
-      <a
-        href="/reports"
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 16px",
-          color: "var(--bm-text3)", fontFamily: "'Inter', sans-serif", fontSize: 12, textDecoration: "none",
-        }}
-      >
-        View full report &amp; export →
-      </a>
+      </details>
     </motion.div>
   );
-                                    }
+            }
