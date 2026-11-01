@@ -8,13 +8,13 @@ import BriefForm from "./BriefForm";
 import ResultView, { type WorkItem } from "./ResultView";
 import Library, { type LibraryRow } from "./Library";
 import Link from "next/link";
-import { api, btn, card, muted } from "./ui";
+import { api, btn, muted, WORK_CSS } from "./ui";
 
 type Project = { name: string; targetUsers: string; problem: string; description: string } | null;
 type View =
   | { name: "catalog" }
   | { name: "brief"; specId: string; given?: Record<string, string>; regenerateId?: string | null }
-  | { name: "existing"; kind: string; task: string }
+  | { name: "existing"; kind: string; task: string; missionKind?: string | null; firstStep?: string; fromToday?: boolean }
   | { name: "result"; item: WorkItem };
 
 export default function WorkApp() {
@@ -28,6 +28,15 @@ export default function WorkApp() {
   const [error, setError] = React.useState("");
   const [upgrade, setUpgrade] = React.useState(false);
   const entries = React.useMemo(() => catalog(), []);
+
+  // Arriving from Today with the day's task: open its prepared work straight away.
+  React.useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const task = (p.get("task") ?? "").slice(0, 400);
+      if (task) setView({ name: "existing", kind: "", task, missionKind: p.get("mk") || null, firstStep: p.get("step")?.slice(0, 400) || undefined, fromToday: true });
+    } catch { /* no query string */ }
+  }, []);
 
   const load = React.useCallback(async () => {
     const q = projectId ? `?projectId=${projectId}` : "";
@@ -60,32 +69,39 @@ export default function WorkApp() {
     return true;
   }
 
-  const back = () => { setView({ name: "catalog" }); setError(""); void load(); };
+  const back = () => {
+    if (view.name === "existing" && view.fromToday) { try { window.history.replaceState(null, "", "/work"); } catch { /* ignore */ } }
+    setView({ name: "catalog" }); setError(""); void load();
+  };
 
+  const home = view.name === "catalog";
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto", padding: "24px 16px 64px", display: "grid", gap: 18 }}>
-      <header style={{ display: "grid", gap: 6 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>Work</h1>
-        <p style={{ ...muted, fontSize: 14 }}>Pick the job. BuildMind prepares it from your project. You check it, change it, and do the sending yourself.</p>
-      </header>
-      {view.name === "catalog" && (
-        <div role="tablist" style={{ display: "flex", gap: 6 }}>
-          <button role="tab" aria-selected={tab === "new"} type="button" onClick={() => setTab("new")} style={btn(false, tab === "new")}>New</button>
-          <button role="tab" aria-selected={tab === "library"} type="button" onClick={() => setTab("library")} style={btn(false, tab === "library")}>Library{rows.length ? ` (${rows.length})` : ""}</button>
-        </div>
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 16px 72px", display: "grid", gap: 20 }}>
+      <style>{WORK_CSS}</style>
+      {home && (
+        <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", color: "var(--bm-text)", margin: 0 }}>Work</h1>
+            <p style={{ ...muted, fontSize: 14, marginTop: 4 }}>Pick a job. Check the draft, then send it yourself.</p>
+          </div>
+          <div role="tablist" className="wk-tabs">
+            <button role="tab" aria-selected={tab === "new"} type="button" className="wk-tab" onClick={() => setTab("new")}>New</button>
+            <button role="tab" aria-selected={tab === "library"} type="button" className="wk-tab" onClick={() => setTab("library")}>Library{rows.length ? ` ${rows.length}` : ""}</button>
+          </div>
+        </header>
       )}
-      {error && view.name === "catalog" && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{error}</p>}
+      {error && home && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{error}</p>}
 
-      {view.name === "catalog" && tab === "new" && (
-        <Link href="/work/conversations" style={{ ...card, textDecoration: "none", display: "grid", gap: 4 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--bm-text)" }}>Get 5 customer conversations</span>
-          <span style={muted}>Add people, write to them, track replies and learn from each talk. One goal, start to finish.</span>
+      {home && tab === "new" && (
+        <Link href="/work/conversations" className="wk-hero">
+          <span style={{ display: "block", fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, color: "var(--bm-text)" }}>Get 5 customer conversations</span>
+          <span style={{ display: "block", ...muted, fontSize: 13.5, marginTop: 4 }}>Add people, write to them, track replies.</span>
         </Link>
       )}
-      {view.name === "catalog" && tab === "new" && (
+      {home && tab === "new" && (
         <Catalog entries={entries} recent={rows.slice(0, 3).map((r) => ({ id: r.id, title: r.title, kind: r.kind }))} onPick={pick} onOpenItem={(id) => void openItem(id)} />
       )}
-      {view.name === "catalog" && tab === "library" && <Library rows={rows} setup={setup} onOpen={(id) => void openItem(id)} />}
+      {home && tab === "library" && <Library rows={rows} setup={setup} onOpen={(id) => void openItem(id)} />}
 
       {view.name === "brief" && SPEC_BY_ID[view.specId] && (
         <BriefForm spec={SPEC_BY_ID[view.specId]} project={project} given={view.given} busy={busy} error={error}
@@ -93,9 +109,10 @@ export default function WorkApp() {
       )}
       {view.name === "brief" && upgrade && <Link href="/upgrade" style={{ ...btn(true), textDecoration: "none", display: "inline-flex", alignItems: "center", width: "fit-content" }}>See Builder</Link>}
       {view.name === "existing" && (
-        <div style={{ display: "grid", gap: 12 }}>
-          <div><button type="button" onClick={back} style={btn()}>← All work</button></div>
-          <PreparedWork task={view.task} projectId={projectId} />
+        <div className="wk-fade" style={{ display: "grid", gap: 14 }}>
+          <div><button type="button" className="wk-btn" onClick={back} style={btn()}>{view.fromToday ? "Back to Work" : "Back"}</button></div>
+          {view.fromToday && <Link href="/today" style={{ ...muted, fontSize: 13, width: "fit-content" }}>Today's task: {view.task}</Link>}
+          <PreparedWork task={view.task} missionKind={view.missionKind ?? null} firstStep={view.firstStep} projectId={projectId} />
         </div>
       )}
       {view.name === "result" && SPEC_BY_ID[view.item.kind] && (

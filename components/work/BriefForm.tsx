@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import type { WorkSpec } from "@/lib/work/registry";
-import { btn, card, input, label, muted } from "./ui";
+import { btn, input, label, muted } from "./ui";
 
 type Project = { name: string; targetUsers: string; problem: string; description: string } | null;
 
@@ -32,13 +32,13 @@ export default function BriefForm({ spec, project, given, busy, error, onSubmit,
   }
 
   return (
-    <div style={{ display: "grid", gap: 16, maxWidth: 640 }}>
-      <button type="button" onClick={onBack} style={{ ...btn(), width: "fit-content" }}>← All work</button>
+    <div className="wk-fade" style={{ display: "grid", gap: 18, maxWidth: 640 }}>
+      <button type="button" className="wk-btn" onClick={onBack} style={{ ...btn(), width: "fit-content" }}>Back</button>
       <div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 4px" }}>{spec.label}</h2>
-        <p style={muted}>{spec.blurb}. BuildMind writes the first draft from what you say here and what it knows about {project?.name || "your project"}. {spec.you}</p>
+        <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 4px" }}>{spec.label}</h2>
+        <p style={{ ...muted, fontSize: 14 }}>{spec.blurb}</p>
       </div>
-      <div style={{ ...card, display: "grid", gap: 14 }} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit(); }}>
+      <div style={{ display: "grid", gap: 16 }} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit(); }}>
         {spec.fields.map((f) => (
           <div key={f.key}>
             <label htmlFor={`f-${f.key}`} style={label}>{f.label}{f.optional ? " (optional)" : ""}</label>
@@ -46,7 +46,7 @@ export default function BriefForm({ spec, project, given, busy, error, onSubmit,
               <textarea id={`f-${f.key}`} rows={3} maxLength={f.max} value={values[f.key] ?? ""} placeholder={f.placeholder} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} style={{ ...input, resize: "vertical" }} />
             ) : f.type === "choice" ? (
               <select id={`f-${f.key}`} value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} style={input}>
-                <option value="">Choose…</option>
+                <option value="">Choose</option>
                 {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             ) : (
@@ -55,12 +55,11 @@ export default function BriefForm({ spec, project, given, busy, error, onSubmit,
           </div>
         ))}
         {error && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{error}</p>}
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <button type="button" disabled={!ready || busy} onClick={submit} style={{ ...btn(true), opacity: !ready || busy ? 0.55 : 1 }}>{busy ? "Preparing…" : "Prepare it"}</button>
-          <span style={muted}>{busy ? "This takes about 15 seconds." : "Ctrl or Cmd + Enter also works."}</span>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <button type="button" className="wk-btn" disabled={!ready || busy} onClick={submit} style={{ ...btn(true), minHeight: 42, padding: "0 22px", opacity: !ready || busy ? 0.55 : 1 }}>{busy ? "Preparing…" : "Prepare"}</button>
+          <span style={muted}>{busy ? "About 15 seconds." : "Unknowns are marked [add: ...]."}</span>
         </div>
       </div>
-      <p style={muted}>Only what you type here and your project details are used. Anything BuildMind doesn't know is marked [add: ...] so you can fill it in, not guessed.</p>
     </div>
   );
 }

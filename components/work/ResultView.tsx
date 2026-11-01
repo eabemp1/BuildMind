@@ -3,7 +3,7 @@ import React from "react";
 import type { WorkSpec } from "@/lib/work/registry";
 import type { WorkResult } from "@/lib/work/shape";
 import { REFINE_PRESETS } from "@/lib/work/shape";
-import { api, btn, card, input, muted } from "./ui";
+import { api, btn, input, muted } from "./ui";
 
 export interface WorkItem {
   id: string | null; kind: string; title: string; inputs: Record<string, string>;
@@ -83,82 +83,92 @@ export default function ResultView({ item, spec, regenerating, onRegenerate, onE
 
   const current = payload.variants.find((v) => v.id === active);
   const canSend = spec.group === "reach" || spec.group === "raise";
+  const small = (on = false): React.CSSProperties => ({ ...btn(false, on), minHeight: 32, padding: "0 12px", fontSize: 12.5 });
 
   return (
-    <div style={{ display: "grid", gap: 16, maxWidth: 760 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" onClick={onBack} style={btn()}>← All work</button>
-        <button type="button" onClick={onEditBrief} style={btn()}>Change the brief</button>
-        <button type="button" onClick={onRegenerate} disabled={regenerating} style={{ ...btn(), opacity: regenerating ? 0.55 : 1 }}>{regenerating ? "Preparing again…" : "Prepare again"}</button>
+    <div className="wk-fade" style={{ display: "grid", gap: 18, maxWidth: 720 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+        <button type="button" className="wk-btn" onClick={onBack} style={small()}>Back</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" className="wk-btn" onClick={onEditBrief} style={small()}>Edit brief</button>
+          <button type="button" className="wk-btn" onClick={onRegenerate} disabled={regenerating} style={{ ...small(), opacity: regenerating ? 0.55 : 1 }}>{regenerating ? "Preparing…" : "Redo"}</button>
+        </div>
       </div>
       <div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 4px" }}>{payload.title}</h2>
-        {payload.summary && <p style={muted}>{payload.summary}</p>}
+        <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 4px" }}>{payload.title}</h2>
+        {payload.summary && <p style={{ ...muted, fontSize: 14 }}>{payload.summary}</p>}
       </div>
 
       {payload.needs.length > 0 && (
-        <div role="note" style={{ ...card, borderColor: "var(--bm-amber)", display: "grid", gap: 6 }}>
-          {payload.needs.map((n) => (<p key={n.label} style={{ ...muted, color: "var(--bm-text2)" }}><strong>{n.label}.</strong> {n.why}</p>))}
+        <div role="note" style={{ border: "1px solid var(--bm-border2)", background: "var(--bm-bg2)", borderRadius: 12, padding: "10px 14px", display: "grid", gap: 4 }}>
+          <p style={{ ...muted, fontWeight: 700, color: "var(--bm-text)" }}>Fill in before you use it</p>
+          {payload.needs.map((n) => (<p key={n.label} style={{ ...muted, color: "var(--bm-text2)" }}><strong>{n.label}:</strong> {n.why}</p>))}
         </div>
       )}
 
       {payload.variants.length > 0 && (
-        <div style={{ ...card, display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 10 }}>
           {payload.variants.length > 1 && (
-            <div role="tablist" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {payload.variants.map((v) => (<button key={v.id} role="tab" aria-selected={active === v.id} type="button" onClick={() => setActive(v.id)} style={btn(false, active === v.id)}>{v.label}</button>))}
+            <div role="tablist" className="wk-tabs" style={{ width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
+              {payload.variants.map((v) => (<button key={v.id} role="tab" aria-selected={active === v.id} type="button" className="wk-tab" onClick={() => setActive(v.id)}>{v.label}</button>))}
             </div>
           )}
           {current?.why && <p style={muted}>{current.why}</p>}
-          <textarea aria-label="Draft" value={texts[active] ?? ""} onChange={(e) => edit(active, e.target.value)} rows={Math.min(18, Math.max(6, (texts[active] ?? "").split("\n").length + 2))} style={{ ...input, resize: "vertical" }} />
+          <textarea aria-label="Draft" value={texts[active] ?? ""} onChange={(e) => edit(active, e.target.value)} rows={Math.min(18, Math.max(6, (texts[active] ?? "").split("\n").length + 2))} style={{ ...input, resize: "vertical", fontSize: 15, lineHeight: 1.65, padding: "14px 16px", borderRadius: 12 }} />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <button type="button" onClick={() => void copy("v", texts[active] ?? "")} style={btn(true)}>{copied === "v" ? "Copied" : "Copy"}</button>
-            <button type="button" onClick={() => download(texts[active] ?? "")} style={btn()}>Download</button>
-            {undo[active] && <button type="button" onClick={() => { edit(active, undo[active]); setUndo({ ...undo, [active]: "" }); }} style={btn()}>Undo last change</button>}
-            <span style={muted}>{saved === "saving" ? "Saving…" : saved === "saved" ? "Saved to your library" : "Not saved (the library is not set up yet)"}</span>
+            <button type="button" className="wk-btn" onClick={() => void copy("v", texts[active] ?? "")} style={{ ...btn(true), minHeight: 40, padding: "0 20px" }}>{copied === "v" ? "Copied" : "Copy"}</button>
+            <button type="button" className="wk-btn" onClick={() => download(texts[active] ?? "")} style={small()}>Download</button>
+            {undo[active] && <button type="button" className="wk-btn" onClick={() => { edit(active, undo[active]); setUndo({ ...undo, [active]: "" }); }} style={small()}>Undo</button>}
+            <span style={{ ...muted, marginLeft: "auto" }}>{saved === "saving" ? "Saving…" : saved === "saved" ? "Saved" : "Not saved"}</span>
           </div>
-          <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: 12 }}>
-            <p style={{ ...muted, fontWeight: 600 }}>Change it</p>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {REFINE_PRESETS.map((p) => (<button key={p} type="button" disabled={refining} onClick={() => void refine(p)} style={{ ...btn(), opacity: refining ? 0.55 : 1 }}>{p}</button>))}
+          <details style={{ borderTop: "1px solid var(--bm-border2)", paddingTop: 10 }}>
+            <summary style={{ ...muted, fontWeight: 600, color: "var(--bm-text2)", cursor: "pointer" }}>Change the wording</summary>
+            <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {REFINE_PRESETS.map((p) => (<button key={p} type="button" className="wk-btn" disabled={refining} onClick={() => void refine(p)} style={{ ...small(), opacity: refining ? 0.55 : 1 }}>{p}</button>))}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={instruction} maxLength={200} onChange={(e) => setInstruction(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && instruction.trim()) void refine(instruction); }} placeholder="Or say it: mention the free trial" aria-label="Your instruction" style={input} />
+                <button type="button" className="wk-btn" disabled={refining || !instruction.trim()} onClick={() => void refine(instruction)} style={{ ...small(), opacity: refining || !instruction.trim() ? 0.55 : 1 }}>{refining ? "Working…" : "Apply"}</button>
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input value={instruction} maxLength={200} onChange={(e) => setInstruction(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && instruction.trim()) void refine(instruction); }} placeholder="Or say it: e.g. mention the free trial" aria-label="Your instruction" style={input} />
-              <button type="button" disabled={refining || !instruction.trim()} onClick={() => void refine(instruction)} style={{ ...btn(), opacity: refining || !instruction.trim() ? 0.55 : 1 }}>{refining ? "Working…" : "Apply"}</button>
-            </div>
-          </div>
+          </details>
         </div>
       )}
 
       {payload.sections.length > 0 && (
-        <div style={{ display: "grid", gap: 10 }}>
-          {payload.sections.map((s, i) => (
-            <section key={`${s.heading}-${i}`} style={{ ...card, display: "grid", gap: 6 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>{s.heading}</h3>
-              {s.body && <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: "var(--bm-text2)", whiteSpace: "pre-wrap" }}>{s.body}</p>}
-              {s.bullets && <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.6, color: "var(--bm-text2)" }}>{s.bullets.map((b, j) => <li key={j}>{b}</li>)}</ul>}
-              <div><button type="button" onClick={() => void copy(`s${i}`, [s.heading, s.body ?? "", ...(s.bullets ?? []).map((b) => `- ${b}`)].filter(Boolean).join("\n"))} style={btn()}>{copied === `s${i}` ? "Copied" : "Copy this part"}</button></div>
-            </section>
-          ))}
+        <div style={{ display: "grid", gap: 14 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => void copy("all", wholeDoc)} style={btn(true)}>{copied === "all" ? "Copied" : "Copy everything"}</button>
-            <button type="button" onClick={() => download(wholeDoc)} style={btn()}>Download</button>
+            <button type="button" className="wk-btn" onClick={() => void copy("all", wholeDoc)} style={{ ...btn(true), minHeight: 40, padding: "0 20px" }}>{copied === "all" ? "Copied" : "Copy all"}</button>
+            <button type="button" className="wk-btn" onClick={() => download(wholeDoc)} style={small()}>Download</button>
+          </div>
+          <div className="wk-list" style={{ background: "var(--bm-bg2)" }}>
+            {payload.sections.map((s, i) => (
+              <section key={`${s.heading}-${i}`} style={{ padding: "14px 16px", borderTop: i ? "1px solid var(--bm-border2)" : 0, display: "grid", gap: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                  <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: 14.5, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>{s.heading}</h3>
+                  <button type="button" className="wk-btn" onClick={() => void copy(`s${i}`, [s.heading, s.body ?? "", ...(s.bullets ?? []).map((b) => `- ${b}`)].filter(Boolean).join("\n"))} style={{ ...small(), border: 0, minHeight: 28, color: "var(--bm-text3)", flexShrink: 0 }}>{copied === `s${i}` ? "Copied" : "Copy"}</button>
+                </div>
+                {s.body && <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "var(--bm-text2)", whiteSpace: "pre-wrap" }}>{s.body}</p>}
+                {s.bullets && <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.65, color: "var(--bm-text2)" }}>{s.bullets.map((b, j) => <li key={j}>{b}</li>)}</ul>}
+              </section>
+            ))}
           </div>
         </div>
       )}
 
       {msg && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{msg}</p>}
 
-      <div style={{ ...card, display: "grid", gap: 10 }}>
-        <p style={{ ...muted, color: "var(--bm-text2)" }}><strong>Your part:</strong> {spec.you}</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" onClick={() => void mark(status === "used" ? "draft" : "used")} style={btn(false, status === "used")}>{status === "used" ? "Marked as used" : "Mark as used"}</button>
-          {canSend && <button type="button" onClick={() => void mark(status === "sent" ? "draft" : "sent")} style={btn(false, status === "sent")}>{status === "sent" ? "Marked as sent" : "Mark as sent"}</button>}
-          <button type="button" onClick={() => void remove()} style={btn()}>Delete</button>
+      <div style={{ borderTop: "1px solid var(--bm-border2)", paddingTop: 14, display: "grid", gap: 10 }}>
+        <p style={{ ...muted, color: "var(--bm-text2)" }}>You: {spec.you}</p>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button type="button" className="wk-btn" onClick={() => void mark(status === "used" ? "draft" : "used")} style={small(status === "used")}>{status === "used" ? "Used" : "Mark used"}</button>
+          {canSend && <button type="button" className="wk-btn" onClick={() => void mark(status === "sent" ? "draft" : "sent")} style={small(status === "sent")}>{status === "sent" ? "Sent" : "Mark sent"}</button>}
+          <button type="button" className="wk-btn" onClick={() => void remove()} style={{ ...small(), marginLeft: "auto" }}>Delete</button>
         </div>
         {status !== "draft" && (
           <div>
-            <label htmlFor="work-note" style={{ ...muted, fontWeight: 600, display: "block", marginBottom: 4 }}>What happened? (one line, optional)</label>
+            <label htmlFor="work-note" style={{ ...muted, fontWeight: 600, display: "block", marginBottom: 4 }}>What happened?</label>
             <input id="work-note" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} onBlur={() => void saveNote()} placeholder="e.g. 2 of 5 replied" style={input} />
           </div>
         )}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseDuration, defaultChoiceFor, dueAtFor, isDue, urgencyOf, partitionLoops, canSnooze, MAX_SNOOZES,
-  loopQuestion, defaultMeasure, loopsPromptBlock, looksLikeOpenLoop, evidenceAsReflection, type Loop,
+  loopQuestion, loopSubject, defaultMeasure, loopsPromptBlock, looksLikeOpenLoop, evidenceAsReflection, type Loop,
 } from "@/lib/today/loops";
 import { computeSlos, statusFor, overallStatus, MIN_SAMPLE, type SloCounts } from "@/lib/today/slo";
 import { buildLedger, findContradictions } from "@/lib/today/facts";
@@ -43,6 +43,13 @@ describe("loops", () => {
   it("caps snoozing", () => {
     expect(canSnooze({ snooze_count: MAX_SNOOZES - 1 })).toBe(true);
     expect(canSnooze({ snooze_count: MAX_SNOOZES })).toBe(false);
+  });
+  it("says what a reminder is about and avoids repeating a generic measure", () => {
+    expect(loopQuestion(loop({ measure: "Did you get to it?" }))).toBe("Did you get to it? What happened?");
+    const subject = loopSubject({ task_text: "Email   three founders", created_at: "2026-10-14T12:00:00Z" }, NOW);
+    expect(subject.task).toBe("Email three founders");
+    expect(subject.setAgo).toBe("set 2 days ago");
+    expect(loopSubject({ task_text: "x".repeat(300), created_at: new Date(NOW).toISOString() }, NOW).task.length).toBeLessThanOrEqual(140);
   });
   it("builds the question, measure and prompt block", () => {
     expect(loopQuestion(loop({}))).toContain("who replied");

@@ -19,6 +19,18 @@ const CHOICES: Array<{ key: EnergyChoice; label: string }> = [
 
 const SIX_HOURS = 6 * 3_600_000;
 const DISMISS_KEY = "bm_energy_dismissed_at";
+const LOCAL_KEY = "bm_energy_state";
+
+/** The last answer kept on this device, so a slow or failed server read never makes the question come back. */
+function readLocal(): { level: EnergyChoice; at: string } | null {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(LOCAL_KEY) ?? "null") as { level?: EnergyChoice; at?: string } | null;
+    return v?.level && v.at && Date.now() - Date.parse(v.at) <= SIX_HOURS ? { level: v.level, at: v.at } : null;
+  } catch { return null; }
+}
+function writeLocal(level: EnergyChoice, at: string) {
+  try { window.localStorage.setItem(LOCAL_KEY, JSON.stringify({ level, at })); } catch { /* optional */ }
+}
 
 function readDismissed(): number {
   try { return Number(window.localStorage.getItem(DISMISS_KEY) ?? 0) || 0; } catch { return 0; }
@@ -36,10 +48,15 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
   React.useEffect(() => {
     let live = true;
     if (Date.now() - readDismissed() < 3 * 3_600_000) setHidden(true);
+    const local = readLocal();
+    if (local) { setLevel(local.level); setLoaded(true); }
     void fetchBehaviorState<{ founder_energy: { level?: EnergyChoice; at?: string } }>(["founder_energy"]).then((v) => {
       if (!live) return;
       const e = v.founder_energy;
-      if (e?.level && e.at && Date.now() - Date.parse(e.at) <= SIX_HOURS) setLevel(e.level);
+      // The newer of the server answer and this device's answer wins.
+      if (e?.level && e.at && Date.now() - Date.parse(e.at) <= SIX_HOURS && (!local || Date.parse(e.at) >= Date.parse(local.at))) {
+        setLevel(e.level); writeLocal(e.level, e.at);
+      }
       setLoaded(true);
     });
     void fetch("/api/today/quiet-day", { cache: "no-store" })
@@ -60,8 +77,10 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
   }
 
   async function pick(l: EnergyChoice) {
+    const at = new Date().toISOString();
     setLevel(l); setChanging(false); setLightened(false);
-    await persistBehaviorState({ founder_energy: { level: l, at: new Date().toISOString() } });
+    writeLocal(l, at);
+    await persistBehaviorState({ founder_energy: { level: l, at } });
   }
   function dismiss() {
     setHidden(true);

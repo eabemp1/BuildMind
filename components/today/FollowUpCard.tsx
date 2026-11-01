@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { DURATION_CHOICES, canSnooze, loopQuestion, urgencyOf, type DurationChoice, type Loop, type LoopResult } from "@/lib/today/loops";
+import { DURATION_CHOICES, canSnooze, loopQuestion, loopSubject, urgencyOf, type DurationChoice, type Loop, type LoopResult } from "@/lib/today/loops";
 
 /**
  * Follow-ups the founder scheduled themselves ("check back in 3 days").
@@ -51,6 +51,11 @@ function Row({ loop, onDone }: { loop: Loop; onDone: (id: string) => void }) {
   return (
     <div style={{ padding: "10px 0", borderTop: "1px solid var(--bm-border)" }}>
       <div style={{ fontSize: 11, color: u === "due" ? "var(--bm-text3)" : "var(--bm-amber)", marginBottom: 3 }}>{URGENCY_TEXT[u]}</div>
+      {loop.task_text.trim() && (
+        <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.45, overflowWrap: "anywhere", marginBottom: 3 }}>
+          About: "{loopSubject(loop).task}"{loopSubject(loop).setAgo ? <span style={{ color: "var(--bm-text3)" }}> · {loopSubject(loop).setAgo}</span> : null}
+        </div>
+      )}
       <div style={{ fontSize: 13, color: "var(--bm-text)", lineHeight: 1.45, overflowWrap: "anywhere" }}>{loopQuestion(loop)}</div>
       {!open ? (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>

@@ -103,7 +103,18 @@ export function snoozedDueAt(choice: DurationChoice, now = Date.now()): string {
 /** The question shown to the founder, built from what they said they'd measure. */
 export function loopQuestion(l: Pick<Loop, "task_text" | "measure">): string {
   const m = l.measure.trim().replace(/[.?!]+$/, "");
-  return m ? `You said you'd check: ${m}. What happened?` : "What happened?";
+  // A generic measure ("Did you get to it?") says nothing on its own; the card shows the task above it.
+  if (!m || /^did you get to it$/i.test(m)) return "Did you get to it? What happened?";
+  return `You said you'd check: ${m}. What happened?`;
+}
+
+/** What the reminder is about, in the founder's own words, and how long ago they set it. Shown above the question. */
+export function loopSubject(l: Pick<Loop, "task_text" | "created_at">, now = Date.now()): { task: string; setAgo: string } {
+  const t = l.task_text.trim().replace(/\s+/g, " ");
+  const task = t.length > 140 ? `${t.slice(0, 137)}...` : t;
+  const days = Math.floor((now - Date.parse(l.created_at)) / 86_400_000);
+  const setAgo = Number.isNaN(days) ? "" : days <= 0 ? "set today" : days === 1 ? "set yesterday" : `set ${days} days ago`;
+  return { task, setAgo };
 }
 
 /** Default "what to measure" derived from the task text and the founder's own note. */
