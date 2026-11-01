@@ -59,7 +59,7 @@ function RaceChart({ race }: { race: GhostRace }) {
       {youLine && <polyline points={youLine} fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />}
       {last && <circle cx={x(last.i)} cy={y(last.v)} r={5} fill={color} />}
       <circle cx={x(6)} cy={y(race.ghost)} r={4} fill="var(--bm-bg2)" stroke="var(--bm-text3)" strokeWidth={2} />
-      <text x={x(6) + 10} y={y(race.ghost) + 4} fontSize={11} fill="var(--bm-text2)" fontFamily={mono}>ghost {race.ghost}</text>
+      <text x={x(6) + 10} y={y(race.ghost) + 4} fontSize={11} fill="var(--bm-text2)" fontFamily={mono}>target {race.ghost}</text>
       {DAY_INITIAL.map((d, i) => (
         <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize={11} fontFamily={mono} fill={i === race.todayIndex ? "var(--bm-accent)" : "var(--bm-text3)"} fontWeight={i === race.todayIndex ? 700 : 400}>{d}</text>
       ))}
@@ -75,7 +75,7 @@ function History({ race, limit }: { race: GhostRace; limit: number }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Past weeks against their ghost</span>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-text)" }}>Past weeks</span>
         {race.beatStreak > 0 && (
           <span style={{ fontFamily: mono, fontSize: 11, color: "var(--bm-green)" }}>
             {race.beatStreak} {race.beatStreak === 1 ? "week" : "weeks"} beaten in a row
@@ -94,7 +94,7 @@ function History({ race, limit }: { race: GhostRace; limit: number }) {
           );
         })}
       </div>
-      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Solid bar: you beat that week&apos;s ghost. Hollow: you did not. Dashed line: the ghost.</span>
+      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>Solid bar: you beat your target that week. Hollow: you did not. Dashed line: the target.</span>
     </div>
   );
 }
@@ -115,7 +115,7 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
     >
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, flex: "1 1 240px" }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text3)" }}>This week&apos;s race against your ghost</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text3)" }}>This week against your usual week</span>
           <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color, letterSpacing: "-0.01em", lineHeight: 1.3 }}>{race.headline}</span>
           {race.detail && <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>{race.detail}</span>}
         </div>
@@ -132,7 +132,7 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
       {blockedByPlan && (
         <div style={{ borderRadius: 12, border: "1px solid var(--bm-accent-bd)", background: "var(--bm-accent-dim)", padding: "12px 14px", display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
           <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text)", lineHeight: 1.5, flex: "1 1 220px" }}>
-            Your ghost is {race.ghost}, and Free includes {cap} Today actions a week. You have outgrown the free week.
+            Your target is {race.ghost}, and Free includes {cap} Today actions a week. You have outgrown the free week.
           </span>
           <Link href="/upgrade?feature=ghost" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: "var(--bm-text-inv)", background: "var(--bm-accent)", padding: "8px 14px", borderRadius: 9, textDecoration: "none" }}>
             Race it with Builder
@@ -150,7 +150,7 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
               <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: race.projected >= race.ghost ? "var(--bm-green)" : "var(--bm-text)" }}>
                 {race.projected} {race.projected === 1 ? "action" : "actions"}
               </div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>{race.projected >= race.ghost ? "Enough to beat the ghost." : `${race.ghost - race.projected} short of the ghost.`}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>{race.projected >= race.ghost ? "Enough to hit your target." : `${race.ghost - race.projected} short of your target.`}</div>
             </div>
             <div>
               <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "var(--bm-text3)" }}>The day you usually slip</div>
@@ -161,7 +161,7 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
         ) : (
           <div style={{ borderTop: "1px solid var(--bm-border)", paddingTop: 14, display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
             <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.5, flex: "1 1 240px" }}>
-              Builder adds your pace forecast, the weekday you usually slip on, and twelve weeks of ghost history.
+              Builder adds your pace forecast, the weekday you usually slip on, and twelve weeks of history.
             </span>
             <Link href="/upgrade?feature=ghost" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "var(--bm-accent)", textDecoration: "none" }}>See what Builder adds</Link>
           </div>
@@ -169,4 +169,4 @@ export function GhostRaceCard({ race }: { race: GhostRace }) {
       )}
     </motion.section>
   );
-}
+      }
