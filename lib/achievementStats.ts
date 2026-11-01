@@ -30,11 +30,29 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getPlanContext } from "@/lib/server/plan";
 import type { AchievementStats } from "@/lib/achievements";
+
+type Admin = ReturnType<typeof createAdminClient>;
+
+/** Total AI requests ever made. ai_usage keeps one row per month, so counting rows counted months, not requests. */
+async function countAIRequests(admin: Admin, userId: string): Promise<number> {
+  const v2 = await admin.from("ai_usage_by_month").select("count").eq("user_id", userId);
+  if (!v2.error && Array.isArray(v2.data)) return (v2.data as Array<{ count: number | null }>).reduce((n, r) => n + (Number(r.count) || 0), 0);
+  const legacy = await admin.from("ai_usage").select("*").eq("user_id", userId);
+  if (legacy.error || !Array.isArray(legacy.data)) return 0;
+  return (legacy.data as Array<Record<string, unknown>>).reduce((n, r) => n + (Number(r.count ?? r.call_count ?? 0) || 0), 0);
+}
+
+/** Distinct calendar days (UTC) with at least one logged action. */
+async function countActiveDays(admin: Admin, userId: string): Promise<number> {
+  const { data } = await admin.from("action_logs").select("created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(1000);
+  return new Set((data ?? []).map((r: { created_at: string }) => String(r.created_at).slice(0, 10))).size;
+}
 
 export async function getServerAchievementStats(
   userId: string,
-  plan: string,
+  _plan?: string, // kept so existing callers still compile; the paid check below reads the real subscription
 ): Promise<AchievementStats> {
   const admin = createAdminClient();
 
@@ -42,22 +60,26 @@ export async function getServerAchievementStats(
     founderContextRes,
     projectsCountRes,
     reflectionsCountRes,
-    aiUsageCountRes,
+    aiRequests,
     breakMyStartupRes,
+    breakRunsRes,
     ventureTrackRes,
     weeklyReportRes,
+    sharedRes,
+    activeDays,
+    planCtx,
   ] = await Promise.all([
-    admin
-      .from("founder_context")
-      .select("streak, tasks_completed_total")
-      .eq("user_id", userId)
-      .maybeSingle(),
+    admin.from("founder_context").select("streak, tasks_completed_total").eq("user_id", userId).maybeSingle(),
     admin.from("projects").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin.from("reflections").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    admin.from("ai_usage").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    admin.from("project_analyses").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    countAIRequests(admin, userId),
+    admin.from("break_predictions").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    admin.from("break_runs").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin.from("venture_tracks").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin.from("weekly_reports").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    admin.from("break_shares").select("token", { count: "exact", head: true }).eq("user_id", userId),
+    countActiveDays(admin, userId),
+    getPlanContext(userId),
   ]);
 
   const streak = founderContextRes.data?.streak ?? 0;
@@ -65,18 +87,19 @@ export async function getServerAchievementStats(
 
   return {
     streak,
-    // See "Honest limitations" above — undercounts, never overcounts.
+    // No "best streak ever" column exists, so the current streak is the floor: it can under-count, never over-count.
     maxStreak: streak,
     checkInsDone,
-    aiMessages: aiUsageCountRes.count ?? 0,
+    aiMessages: aiRequests,
     projectsCreated: projectsCountRes.count ?? 0,
     reflectionsLogged: reflectionsCountRes.count ?? 0,
-    planUpgraded: plan !== "free",
+    // A free trial is Builder-level access, but it is not an upgrade.
+    planUpgraded: planCtx.plan !== "free" && !planCtx.trial,
     venturesViewed: (ventureTrackRes.count ?? 0) > 0,
-    breakMyStartupUsed: (breakMyStartupRes.count ?? 0) > 0,
+    breakMyStartupUsed: (breakMyStartupRes.count ?? 0) > 0 || (breakRunsRes.count ?? 0) > 0,
+    // A weekly report exists once one has been generated; there is no per-view record.
     reportViewed: (weeklyReportRes.count ?? 0) > 0,
-    shareUsed: (weeklyReportRes.count ?? 0) > 0,
-    // No unique-days tracking exists yet; conservative floor from check-ins.
-    daysActive: checkInsDone,
+    shareUsed: (sharedRes.count ?? 0) > 0,
+    daysActive: activeDays,
   };
-  }
+}
