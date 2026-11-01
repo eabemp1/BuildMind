@@ -9,7 +9,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type QualityEventKind = "rejected" | "fallback" | "outcome_adjusted" | "feedback" | "loop_recorded";
+export type QualityEventKind = "rejected" | "fallback" | "outcome_adjusted" | "feedback" | "loop_recorded" | "audit";
 
 export interface QualityEvent {
   userId?: string | null;

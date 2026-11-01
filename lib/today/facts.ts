@@ -120,7 +120,7 @@ function sentenceAround(text: string, m: RegExpExecArray): string {
   return text.slice(start, end).trim();
 }
 
-export type FeedbackReason = "no_users" | "no_access" | "already_done" | "too_big" | "not_relevant" | "no_time" | "no_motivation";
+export type FeedbackReason = "no_users" | "no_access" | "already_done" | "too_big" | "not_relevant" | "no_time" | "no_motivation" | "wrong_assumption";
 
 /** A founder's one-tap "this task doesn't fit me" (today_feedback row). */
 export interface FeedbackRow {
@@ -269,6 +269,9 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
     } else if (fb.reason === "too_big" || fb.reason === "no_time") {
       drop((f) => f.kind === "too_big");
       facts.push({ kind: "too_big", rule: "The founder said recent tasks were too big for the time they have. Keep today's task to ONE action that fits in 20 minutes, with the first step named.", evidence, at });
+    } else if (fb.reason === "wrong_assumption") {
+      const what = fb.note?.trim() ? ` The founder said what is untrue: "${clip(fb.note.trim(), 160)}".` : "";
+      facts.push({ kind: "rejected", doneTask: fb.task_text, rule: `The founder said this task assumes something untrue about their startup: "${clip(fb.task_text, 120)}".${what} Do not assign it or a near copy. Use only facts the founder has stated.`, evidence, at });
     } else if (fb.reason === "not_relevant") {
       facts.push({ kind: "rejected", doneTask: fb.task_text, rule: `The founder rejected this kind of task as not relevant: "${clip(fb.task_text, 120)}". Do not assign it or a near copy; choose a different approach.`, evidence, at });
     }

@@ -5,6 +5,7 @@ type Slo = { key: string; label: string; value: number | null; target: number; d
 type Resp = {
   days: number; overall: Slo["status"]; slos: Slo[]; byRule: Array<[string, number]>; pending: number;
   recent: Array<{ kind: string; rules: string[]; task: string | null; detail: string | null; at: string }>;
+  audit?: Array<[string, number]>; auditRecent?: Array<{ rules: string[]; task: string | null }>;
 };
 type Replay = {
   days: number;
@@ -70,6 +71,21 @@ export function TodayQualityCard() {
               {d.byRule.map(([rule, n]) => (
                 <div key={rule} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.t2 }}>
                   <span>{rule}</span><span>{n}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {d.audit && d.audit.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11, color: C.t3, marginBottom: 4 }}>Nightly check: tasks that assume things the founder never said</div>
+              {d.audit.map(([rule, n]) => (
+                <div key={rule} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.t2 }}><span>{rule}</span><span>{n}</span></div>
+              ))}
+              {(d.auditRecent ?? []).slice(0, 5).map((a, i) => (
+                <div key={i} style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${C.b}` }}>
+                  <div style={{ fontSize: 12, color: C.t, overflowWrap: "anywhere" }}>{(a.task ?? "").slice(0, 140)}</div>
+                  <div style={{ fontSize: 11, color: C.t3 }}>{a.rules.join(", ")}</div>
                 </div>
               ))}
             </div>

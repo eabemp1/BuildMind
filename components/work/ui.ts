@@ -11,11 +11,11 @@ export const btn = (primary = false, on = false): React.CSSProperties => ({
   color: primary ? "var(--bm-bg)" : "var(--bm-text2)",
 });
 
-export async function api<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; data?: T; error?: string }> {
+export async function api<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; data?: T; error?: string; upgrade?: boolean }> {
   try {
     const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.ok !== false) return { ok: true, data: j as T };
-    return { ok: false, error: (j as { error?: string }).error ?? (r.status === 429 ? "You have used your AI allowance for now." : "Something went wrong. Please try again.") };
+    return { ok: false, upgrade: Boolean((j as { upgradeUrl?: string }).upgradeUrl) || r.status === 402, error: (j as { error?: string }).error ?? (r.status === 429 ? "You have used your AI allowance for now." : "Something went wrong. Please try again.") };
   } catch { return { ok: false, error: "Could not reach BuildMind. Check your connection and try again." }; }
 }

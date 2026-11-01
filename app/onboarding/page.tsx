@@ -1010,6 +1010,8 @@ function DepthScreen({ onComplete }: { onComplete: (answers: DepthAnswers) => vo
   const [revenueModel, setRevenueModel] = useState("");
   const [targetUsers,  setTargetUsers]  = useState("");
   const [step,         setStep]         = useState<0|1|2>(0);
+  // Whoever it is for decides the first task, so a blank answer gets one gentle second ask before moving on.
+  const [nudged,       setNudged]       = useState(false);
 
   const questions = [
     {
@@ -1043,14 +1045,12 @@ function DepthScreen({ onComplete }: { onComplete: (answers: DepthAnswers) => vo
   const pointsUnlocked = totalFilled * 10; // rough nudge: each answer = 10 quality pts
 
   const handleNext = () => {
-    if (step < 2) { setStep((step + 1) as 1 | 2); }
-    else          { onComplete({ avoidance, revenueModel, targetUsers }); }
+    if (step < 2) { setStep((step + 1) as 1 | 2); return; }
+    if (!targetUsers.trim() && !nudged) { setNudged(true); return; }
+    onComplete({ avoidance, revenueModel, targetUsers });
   };
 
-  const handleSkip = () => {
-    if (step < 2) { setStep((step + 1) as 1 | 2); }
-    else          { onComplete({ avoidance, revenueModel, targetUsers }); }
-  };
+  const handleSkip = handleNext;
 
   return (
     <motion.div
@@ -1121,6 +1121,11 @@ function DepthScreen({ onComplete }: { onComplete: (answers: DepthAnswers) => vo
         <div style={{ fontSize: 11, color: "var(--bm-border3)", textAlign: "right", marginTop: 4 }}>
           {q.value.length}/80
         </div>
+        {step === 2 && nudged && !targetUsers.trim() && (
+          <p role="note" style={{ fontSize: 13, color: VIZ.text3, margin: "8px 0 0", lineHeight: 1.5 }}>
+            Even a guess is fine. Your first task is about real people, so it needs to know who. For example: "small restaurant owners in Accra." You can change it later.
+          </p>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <motion.button
@@ -1895,4 +1900,4 @@ export default function OnboardingPage() {
       <OnboardingInner />
     </Suspense>
   );
-          }
+  }

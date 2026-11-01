@@ -87,6 +87,8 @@ function PersonCard({ p, due, open, onToggle, onStatus, onRemove, onChanged, pro
   const [notes, setNotes] = React.useState(p.notes ?? "");
   const [busy, setBusy] = React.useState("");
   const [note, setNote] = React.useState("");
+  const [upgrade, setUpgrade] = React.useState(false);
+  const [learnNote, setLearnNote] = React.useState("");
   const [copied, setCopied] = React.useState(false);
   React.useEffect(() => { setMsg(p.message ?? ""); setNotes(p.notes ?? ""); }, [p.message, p.notes]);
 
@@ -100,10 +102,11 @@ function PersonCard({ p, due, open, onToggle, onStatus, onRemove, onChanged, pro
   async function saveMsg() { await api("/api/conversations", { method: "PATCH", body: JSON.stringify({ id: p.id, message: msg }) }); }
   async function copy() { try { await navigator.clipboard.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { setNote("Could not copy. Select the text and copy it by hand."); } }
   async function learn() {
-    setBusy("learn"); setNote("");
+    setBusy("learn"); setLearnNote("");
     const r = await api("/api/conversations/insights", { method: "POST", body: JSON.stringify({ id: p.id, notes }) });
     setBusy("");
-    if (!r.ok) { setNote(r.error ?? "Could not read the notes."); return; }
+    if (!r.ok) { setLearnNote(r.error ?? "Could not read the notes."); setUpgrade(Boolean(r.upgrade)); onChanged(); return; }
+    setUpgrade(false);
     onChanged();
   }
 
@@ -136,6 +139,8 @@ function PersonCard({ p, due, open, onToggle, onStatus, onRemove, onChanged, pro
             <label style={label} htmlFor={`n-${p.id}`}>What did they say? (rough notes are fine)</label>
             <textarea id={`n-${p.id}`} rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Write after the conversation, in their words where you can" style={{ ...input, resize: "vertical" }} />
             <div><button type="button" disabled={!!busy || notes.trim().length < 30} onClick={() => void learn()} style={{ ...btn(), opacity: busy || notes.trim().length < 30 ? 0.55 : 1 }}>{busy === "learn" ? "Reading…" : "Pull out what matters"}</button></div>
+            {learnNote && <p role="note" style={{ ...muted, color: "var(--bm-amber)" }}>{learnNote}</p>}
+            {upgrade && <div><Link href="/upgrade" style={{ ...btn(true), textDecoration: "none", display: "inline-flex", alignItems: "center" }}>See Builder</Link></div>}
             {p.insights && p.insights.length > 0 && (
               <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6, fontSize: 14, color: "var(--bm-text2)" }}>
                 {p.insights.map((i, k) => <li key={k}>{i.point} <span style={{ color: "var(--bm-text3)" }}>— “{i.quote}”</span></li>)}

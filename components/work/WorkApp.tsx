@@ -26,6 +26,7 @@ export default function WorkApp() {
   const [project, setProject] = React.useState<Project>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [upgrade, setUpgrade] = React.useState(false);
   const entries = React.useMemo(() => catalog(), []);
 
   const load = React.useCallback(async () => {
@@ -49,10 +50,10 @@ export default function WorkApp() {
     setTab("new"); setView({ name: "result", item: { ...r.data.item, id } });
   }
   async function generate(specId: string, values: Record<string, string>, regenerateId?: string | null) {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setUpgrade(false);
     const r = await api<{ item: WorkItem }>("/api/work/generate", { method: "POST", body: JSON.stringify({ kind: specId, inputs: values, projectId, regenerateId: regenerateId ?? undefined }) });
     setBusy(false);
-    if (!r.ok || !r.data?.item) { setError(r.error ?? "Could not prepare this. Please try again."); return false; }
+    if (!r.ok || !r.data?.item) { setError(r.error ?? "Could not prepare this. Please try again."); setUpgrade(Boolean(r.upgrade)); return false; }
     const it = r.data.item;
     setView({ name: "result", item: { ...it, edits: it.edits ?? {}, status: it.status ?? "draft", note: it.note ?? null } });
     void load();
@@ -90,6 +91,7 @@ export default function WorkApp() {
         <BriefForm spec={SPEC_BY_ID[view.specId]} project={project} given={view.given} busy={busy} error={error}
           onSubmit={(v) => void generate(view.specId, v, view.regenerateId)} onBack={back} />
       )}
+      {view.name === "brief" && upgrade && <Link href="/upgrade" style={{ ...btn(true), textDecoration: "none", display: "inline-flex", alignItems: "center", width: "fit-content" }}>See Builder</Link>}
       {view.name === "existing" && (
         <div style={{ display: "grid", gap: 12 }}>
           <div><button type="button" onClick={back} style={btn()}>← All work</button></div>

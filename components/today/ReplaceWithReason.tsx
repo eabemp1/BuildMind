@@ -17,6 +17,7 @@ export const FEEDBACK_REASONS = [
   { key: "too_big", label: "Too big" },
   { key: "not_relevant", label: "Not relevant" },
   { key: "no_time", label: "No time" },
+  { key: "wrong_assumption", label: "Assumes something untrue" },
 ] as const;
 export type FeedbackKey = (typeof FEEDBACK_REASONS)[number]["key"];
 
@@ -30,8 +31,11 @@ export default function ReplaceWithReason({
 }) {
   const [open, setOpen] = React.useState(false);
   const [picked, setPicked] = React.useState<FeedbackKey | null | undefined>(undefined);
+  const [noting, setNoting] = React.useState(false);
+  const [note, setNote] = React.useState("");
 
   async function choose(reason: FeedbackKey | null) {
+    if (reason === "wrong_assumption") { setNoting(true); return; }
     // Reasons where a smaller version helps get a second step: shrink or switch.
     if (shrinkFits(reason as SwapReason | null) && reason !== null) { setPicked(reason); return; }
     await finish(reason, "alternative");
@@ -40,11 +44,12 @@ export default function ReplaceWithReason({
   async function finish(reason: FeedbackKey | null, mode: SwapMode) {
     setOpen(false);
     setPicked(undefined);
+    setNoting(false);
     if (reason) {
       try {
         await fetch("/api/today/feedback", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ task_text: taskText, reason, projectId: projectId ?? null }),
+          body: JSON.stringify({ task_text: taskText, reason, projectId: projectId ?? null, ...(reason === "wrong_assumption" && note.trim() ? { note: note.trim().slice(0, 300) } : {}) }),
         });
       } catch { /* feedback is best-effort; the replace still happens */ }
     }
@@ -70,6 +75,17 @@ export default function ReplaceWithReason({
         <RotateCcw size={11} />
         {busy ? "Fetching new task..." : "Replace this task →"}
       </button>
+    );
+  }
+
+  if (noting) {
+    return (
+      <div style={{ marginBottom: "var(--space-3)", minWidth: 0, display: "grid", gap: 6 }}>
+        <label htmlFor="wrong-note" style={{ fontSize: 12, color: "var(--bm-text3)" }}>What is untrue about it? One line helps (optional).</label>
+        <input id="wrong-note" value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder="e.g. I already have a results page"
+          style={{ width: "100%", boxSizing: "border-box", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: 8, padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: 13 }} />
+        <div><button type="button" style={{ ...chip, color: "var(--bm-text)" }} onClick={() => void finish("wrong_assumption", "alternative")}>Replace with a different task</button></div>
+      </div>
     );
   }
 

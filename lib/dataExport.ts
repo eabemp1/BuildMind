@@ -41,6 +41,7 @@ export const EXPORT_CATEGORIES: ReadonlyArray<ExportCategory> = [
   { table: "milestones", ownerCol: "user_id", group: "work", label: "Milestones", orderBy: "created_at" },
   { table: "tasks", ownerCol: "user_id", group: "work", label: "Tasks", orderBy: "created_at" },
   { table: "conversation_people", ownerCol: "user_id", group: "work", label: "Customer conversations (people and notes)", orderBy: "created_at", aiGenerated: false },
+  { table: "project_goals", ownerCol: "user_id", group: "work", label: "Goals and targets", orderBy: "created_at", aiGenerated: false },
   { table: "work_items", ownerCol: "user_id", group: "work", label: "Work library (prepared drafts and documents)", orderBy: "created_at", aiGenerated: true },
   { table: "prepared_work", ownerCol: "user_id", group: "work", label: "Prepared work (drafts and kits)", orderBy: "created_at", aiGenerated: true },
   { table: "reflections", ownerCol: "user_id", group: "history", label: "Reflections", orderBy: "created_at" },
@@ -94,7 +95,7 @@ export const EXCLUDED_TABLES: ReadonlyArray<{ table: string; reason: string }> =
 ];
 
 /** Tables that exist in the live database but are not created by the migrations in this repository. */
-export const LIVE_ONLY_TABLES = ["projects", "reflections", "agent_runs", "agent_findings", "action_logs"] as const;
+export const LIVE_ONLY_TABLES = ["projects", "reflections", "agent_runs", "agent_findings", "action_logs", "prepared_work"] as const;
 
 /** Field names removed from every row. Whole-name matches only, so "tokens_used" is kept. */
 const SECRET_KEY = /^(?:.*_)?(?:access_?token|refresh_?token|id_?token|api_?key|secret|password|authorization|credentials?|share_?token|confirm_?token|token|private_?key)$/i;

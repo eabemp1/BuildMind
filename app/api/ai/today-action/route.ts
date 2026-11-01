@@ -1,4 +1,5 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
+import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
 import { fallbackForKind } from "@/lib/todayFallbacks";
 import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
@@ -229,6 +230,7 @@ export async function POST(request: Request) {
     let stage = providedStage || "Idea";
     let targetUsers = "";
     let problem = "";
+    let projectDescription = "";
     let title = "";
     let lastReflectionContext = "";
     let founderArchetype: string | undefined;
@@ -285,6 +287,7 @@ export async function POST(request: Request) {
     stage = tctx.stage;
     targetUsers = tctx.targetUsers;
     problem = tctx.problem;
+    projectDescription = tctx.description ?? "";
     title = tctx.title;
     projectContext = tctx.projectContext;
     lastReflectionContext = tctx.lastReflectionContext;
@@ -437,6 +440,7 @@ export async function POST(request: Request) {
         stage = project.startup_stage ?? inferStage(completedTasks, totalTasks, completedMilestones, (milestones ?? []).length);
         targetUsers = project.target_users ?? "";
         problem = project.problem ?? "";
+        projectDescription = project.description ?? "";
         title = (project.name ?? project.title) ?? "";
         const pendingMilestonesList = (milestones ?? [])
           .filter((m) => m.status !== "completed")
@@ -658,6 +662,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const recentTasksParsed = parseRecentTasks(personalisationCtx.recentActionsBlock);
     const plannedMission = planTodayMission({
       noUsers: personalisationCtx.ledger?.facts.some((f) => f.kind === "no_users"),
+      saysBuilt: saysBuilt(`${projectDescription} ${problem}`),
       stage,
       recentTasks: recentTasksParsed,
       avoidance: cognitionAvoidanceSignals,

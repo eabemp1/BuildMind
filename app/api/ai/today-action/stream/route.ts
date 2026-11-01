@@ -48,6 +48,7 @@ import { recordFounderIntelligencePrediction } from "@/lib/learningLoop";
 import { loadTodayActionContext } from "@/lib/todayActionContext";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
+import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta } from "@/lib/todayMission";
 import { ALLOWED_PLATFORMS, composeConcreteTask, type StructuredAction } from "@/lib/today/compose";
 import { fallbackForKind } from "@/lib/todayFallbacks";
@@ -500,6 +501,7 @@ export async function POST(request: Request) {
         const recentTasks = parseRecentTasks(personalisationCtx.recentActionsBlock);
         const plannedMission = planTodayMission({
           noUsers: personalisationCtx.ledger?.facts.some((f) => f.kind === "no_users"),
+          saysBuilt: saysBuilt(`${description} ${problem}`),
           stage,
           recentTasks,
           avoidance: cognitionAvoidanceSignals,

@@ -14,7 +14,7 @@
 
 import { MISSION_KINDS, kindOfTask, missionMeta, type Mission, type MissionKind } from "@/lib/todayMission";
 
-export type SwapReason = "no_motivation" | "too_big" | "no_time" | "no_users" | "no_access" | "already_done" | "not_relevant";
+export type SwapReason = "no_motivation" | "too_big" | "no_time" | "no_users" | "no_access" | "already_done" | "not_relevant" | "wrong_assumption";
 export type SwapMode = "shrink" | "alternative";
 
 export interface SwapRequest {
@@ -42,7 +42,7 @@ const FLOOR = 2;
 const SHRINK_MINUTES: Partial<Record<SwapReason, number>> = { no_motivation: 20, no_time: 15, too_big: 15 };
 
 export function isSwapReason(v: unknown): v is SwapReason {
-  return ["no_motivation", "too_big", "no_time", "no_users", "no_access", "already_done", "not_relevant"].includes(String(v));
+  return ["no_motivation", "too_big", "no_time", "no_users", "no_access", "already_done", "not_relevant", "wrong_assumption"].includes(String(v));
 }
 export function isSwapMode(v: unknown): v is SwapMode { return v === "shrink" || v === "alternative"; }
 

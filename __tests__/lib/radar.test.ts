@@ -74,7 +74,7 @@ describe("fit and next move", () => {
   });
   it("builds a valid .ics with location or meeting link", () => {
     const ics = buildIcs(item({ title: "Demo, night; Accra", starts_at: "2026-10-22T18:00:00Z", meeting_url: "https://meet.google.com/x" }), NOW) as string;
-    expect(ics).toContain("BEGIN:VEVENT"); expect(ics).toContain("DTSTART:20261022T180000Z"); expect(ics).toContain("LOCATION:https://meet.google.com/x"); expect(ics).toContain("Demo\\, night\; Accra");
+    expect(ics).toContain("BEGIN:VEVENT"); expect(ics).toContain("DTSTART:20261022T180000Z"); expect(ics).toContain("LOCATION:https://meet.google.com/x"); expect(ics).toContain("Demo\\, night\\; Accra");
     expect(buildIcs(item({}), NOW)).toBeNull();
   });
 });

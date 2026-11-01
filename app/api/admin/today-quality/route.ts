@@ -83,9 +83,13 @@ export async function GET(request: Request) {
   const byRule: Record<string, number> = {};
   for (const e of ev) if (e.kind === "fallback" || e.kind === "rejected") for (const r of e.rules ?? []) byRule[r] = (byRule[r] ?? 0) + 1;
   const slos = computeSlos(counts);
+  const auditByRule: Record<string, number> = {};
+  for (const e of ev) if (e.kind === "audit") for (const r of e.rules ?? []) auditByRule[r] = (auditByRule[r] ?? 0) + 1;
 
   return NextResponse.json({
     days, counts, slos, overall: overallStatus(slos),
+    audit: Object.entries(auditByRule).sort((a, b) => b[1] - a[1]),
+    auditRecent: ev.filter((e) => e.kind === "audit").slice(0, 8).map((e) => ({ rules: e.rules ?? [], task: e.task })),
     byRule: Object.entries(byRule).sort((a, b) => b[1] - a[1]).slice(0, 10),
     recent: ev.slice(0, 12).map((e) => ({ kind: e.kind, rules: e.rules ?? [], task: e.task, detail: e.detail, at: e.created_at })),
     pending: counts.generated - (counts.completed + counts.partial + counts.overridden + counts.ignored),

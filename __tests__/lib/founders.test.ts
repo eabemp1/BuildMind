@@ -88,3 +88,13 @@ describe("known bad AI tasks are caught", () => {
   ];
   for (const [task, rule] of bad) it(`${rule}: ${task}`, () => expect(guardRules(task)).toContain(rule));
 });
+
+describe("a founder who says it is built is not planned a build task", () => {
+  it("Nevrix: build loses to people tasks once the founder says it is built", () => {
+    const base = { stage: "MVP", recentTasks: [{ text: "Ask one person to try it", outcome: "completed" as const }], avoidance: [], blockers: [], activeGoals: [], noUsers: true };
+    const without = planTodayMission(base as never);
+    const withClaim = planTodayMission({ ...base, saysBuilt: true } as never);
+    expect(withClaim.scores.build).toBeLessThan(without.scores.build);
+    expect(withClaim.kind).not.toBe("build");
+  });
+});
