@@ -51,19 +51,6 @@ export function buildExecutionIntelligenceVisual(input: {
   // 2. Gauges
   if (typeof mom.score === "number") panels.push({ type: "gauge", title: "Momentum", value: mom.score, label: "of 100", caption: "Your smoothed daily momentum, the same number shown on Today." });
   panels.push({ type: "gauge", title: "Completion rate this week", value: state.execution.execution_velocity, label: "% of started work finished", caption: `${state.execution.completed_actions.length} completed, ${state.execution.skipped_actions.length} skipped, ${state.execution.delayed_actions.length} delayed.` });
-  if (input.accuracy && input.accuracy.sample_size > 0) {
-    panels.push({ type: "gauge", title: "How often BuildMind was right", value: Math.round(input.accuracy.average_match_score * 100), label: `from ${input.accuracy.sample_size} checked recommendations`, caption: "Match between what was recommended and what you actually did." });
-  }
-  if (state.founder.confidence > 0) panels.push({ type: "gauge", title: "How well BuildMind knows you", value: Math.round(state.founder.confidence * 100), label: "profile confidence", caption: "Grows as you complete, skip and reflect on actions." });
-
-  // 3. Trend
-  if (input.trend && input.trend.length >= 2) {
-    panels.push({
-      type: "line", title: "Days since last activity, last 30 days", unit: "d", min: 0,
-      caption: "Lower is better. Spikes are the stretches where work stopped.",
-      points: input.trend.map((t) => ({ label: t.recordedAt.slice(5, 10), value: t.daysInactive })),
-    });
-  }
 
   // 4. Where effort goes
   if (ex.focus_distribution.length) {
@@ -172,4 +159,4 @@ export function buildProgressVisual(input: {
     ] });
   }
   return { title: "Your progress", subtitle: "Momentum, milestones and the last few weeks", generatedAt: now.toISOString(), panels };
-}
+                                                                                                       }
