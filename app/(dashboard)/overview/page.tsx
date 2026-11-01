@@ -269,9 +269,9 @@ export default function OverviewPage() {
   const tone = TONE[picture.tone];
   const mono = "'DM Mono', monospace";
   const card: React.CSSProperties = { border: "1px solid var(--bm-border)", borderRadius: 14, background: "var(--bm-bg2)" };
-  const eyebrow: React.CSSProperties = { margin: 0, fontFamily: mono, fontSize: 10, color: "var(--bm-text4)", letterSpacing: ".08em", textTransform: "uppercase" };
+  const eyebrow: React.CSSProperties = { margin: 0, fontSize: 13, fontWeight: 600, color: "var(--bm-text2)" };
 
-  const R = 40, C = 2 * Math.PI * R;
+  const [showCharts, setShowCharts] = useState(false);
 
   const stats = [
     { label: "Startup score", value: score > 0 ? `${score}` : "—", sub: scoreDelta == null ? "baseline" : `${scoreDelta >= 0 ? "+" : ""}${scoreDelta} vs last reading`, tip: "Built from task completion, reflection quality and consistency. Decays slowly if you go quiet." },
@@ -287,7 +287,7 @@ export default function OverviewPage() {
       <motion.header initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
         style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
         <div>
-          <p style={eyebrow}>{dateStr}</p>
+          <p style={{ margin: 0, fontSize: 13, color: "var(--bm-text3)" }}>{dateStr}</p>
           <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", margin: "6px 0 0", color: "var(--bm-text)" }}>
             {founderFirst ? `Execution, ${founderFirst}` : "Execution"}
           </h1>
@@ -303,50 +303,25 @@ export default function OverviewPage() {
         <>
           {/* Verdict: the one statement everything else supports */}
           <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-            style={{ ...card, padding: "22px 22px 20px", marginBottom: 16, borderColor: "var(--bm-border)", boxShadow: `inset 3px 0 0 ${tone.c}` }}>
-            <div style={{ display: "flex", gap: 20, alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <p style={{ ...eyebrow, color: tone.c }}>{activeProject.title} · {stage} · {tone.label}</p>
-                <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(21px,4.6vw,27px)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: "8px 0 8px", color: "var(--bm-text)" }}>{picture.verdict}</h2>
-                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: "var(--bm-text2)", maxWidth: 520 }}>
-                  {picture.because}
-                  {standing?.readiness.detail ? ` ${standing.readiness.detail}` : ""}
-                </p>
-              </div>
-              <div style={{ position: "relative", width: 96, height: 96, flexShrink: 0 }} aria-label={`${picture.completionPct}% of tasks complete`}>
-                <svg width="96" height="96" viewBox="0 0 96 96" style={{ transform: "rotate(-90deg)" }}>
-                  <circle cx="48" cy="48" r={R} fill="none" stroke="var(--bm-bg4)" strokeWidth="6" />
-                  <motion.circle cx="48" cy="48" r={R} fill="none" stroke={tone.c} strokeWidth="6" strokeLinecap="round"
-                    strokeDasharray={C} initial={{ strokeDashoffset: C }} animate={{ strokeDashoffset: C * (1 - picture.completionPct / 100) }}
-                    transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }} />
-                </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 22, fontWeight: 600, color: "var(--bm-text)", lineHeight: 1 }}>{picture.completionPct}%</span>
-                  <span style={{ fontFamily: mono, fontSize: 9, color: "var(--bm-text4)", marginTop: 3 }}>{doneTasks}/{totalTasks} tasks</span>
-                </div>
-              </div>
-            </div>
+            style={{ ...card, padding: "24px 22px 22px", marginBottom: 16 }}>
+            <p style={{ margin: 0, fontSize: 13, color: tone.c, fontWeight: 600 }}>{activeProject.title}, {stage}</p>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: "clamp(22px,5vw,28px)", lineHeight: 1.2, letterSpacing: "-0.02em", margin: "8px 0 8px", color: "var(--bm-text)" }}>{picture.verdict}</h2>
+            <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.6, color: "var(--bm-text2)", maxWidth: 540 }}>
+              {picture.because}
+              {standing?.readiness.detail ? ` ${standing.readiness.detail}` : ""}
+            </p>
 
-            <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--bm-border)", display: "flex", gap: 14, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid var(--bm-border)", display: "flex", gap: 14, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
               <div style={{ minWidth: 0, flex: "1 1 260px" }}>
-                <p style={eyebrow}>Next move</p>
-                <p style={{ margin: "5px 0 2px", fontSize: 15, fontWeight: 500, color: "var(--bm-text)" }}>{picture.nextMove.label}</p>
-                <p style={{ margin: 0, fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.5 }}>{picture.nextMove.why}</p>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: "var(--bm-text)", lineHeight: 1.5 }}>{picture.nextMove.label}</p>
               </div>
               <Button size="sm" onClick={() => router.push(picture.nextMove.href)} style={{ background: "var(--bm-amber)", color: "#111" }}>
-                {todayDone ? "Review Today" : "Open Today"} <ArrowRight size={14} />
+                {todayDone ? "Review Today" : "Open Today"}
               </Button>
             </div>
 
-            {picture.watch.length > 0 && (
-              <ul style={{ margin: "16px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
-                {picture.watch.map(w => (
-                  <li key={w} style={{ display: "flex", gap: 9, fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.5 }}>
-                    <span className="bm-status-dot" style={{ background: "var(--bm-amber)", marginTop: 6, flexShrink: 0 }} />
-                    <span>{w}</span>
-                  </li>
-                ))}
-              </ul>
+            {picture.watch[0] && (
+              <p style={{ margin: "14px 0 0", fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.5 }}>{picture.watch[0]}</p>
             )}
           </motion.section>
 
@@ -354,16 +329,16 @@ export default function OverviewPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4" style={{ ...card, overflow: "hidden", marginBottom: 16 }}>
             {stats.map((st, i) => (
               <div key={st.label} title={st.tip} style={{ padding: "14px 16px", borderRight: i < 3 ? "1px solid var(--bm-border)" : "none", borderBottom: i < 2 ? "1px solid var(--bm-border)" : "none" }} className={i === 1 ? "max-sm:[border-right:none]" : ""}>
-                <p style={{ margin: 0, fontSize: 11, color: "var(--bm-text3)" }}>{st.label}</p>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--bm-text3)" }}>{st.label}</p>
                 <p style={{ margin: "6px 0 3px", fontSize: 24, fontWeight: 500, color: "var(--bm-text)", lineHeight: 1 }}>{st.value}</p>
-                <p style={{ margin: 0, fontFamily: mono, fontSize: 10, color: "var(--bm-text4)" }}>{st.sub}</p>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--bm-text3)" }}>{st.sub}</p>
               </div>
             ))}
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" style={{ marginBottom: 22 }}>
             <section style={{ ...card, padding: "18px 20px" }}>
-              <p style={eyebrow}>Active milestone</p>
+              <p style={eyebrow}>Current milestone</p>
               <h3 style={{ margin: "6px 0 14px", fontSize: 17, fontWeight: 600, color: "var(--bm-text)" }}>
                 {activeProject.pendingMilestones?.[0] ?? "No open milestone"}
               </h3>
@@ -383,7 +358,7 @@ export default function OverviewPage() {
             </section>
 
             <section style={{ ...card, padding: "18px 20px" }}>
-              <p style={eyebrow}>Evidence for {stage}</p>
+              <p style={eyebrow}>Proof for {stage}</p>
               {evidence ? (
                 <>
                   <p style={{ margin: "8px 0 10px", fontSize: 13.5, color: "var(--bm-text2)" }}>{evidence.filledSlots} of {evidence.totalSlots} proof slots filled</p>
@@ -399,8 +374,17 @@ export default function OverviewPage() {
               )}
             </section>
           </div>
-          <LiveVisual kind="progress" projectId={activeProject.id} title="Your progress, drawn" />
-          <LiveVisual kind="execution" projectId={activeProject.id} />
+          <button type="button" onClick={() => setShowCharts((v) => !v)} aria-expanded={showCharts}
+            style={{ ...card, width: "100%", padding: "14px 18px", marginBottom: 16, textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--bm-text2)", display: "flex", justifyContent: "space-between" }}>
+            <span>{showCharts ? "Hide charts" : "Show charts"}</span>
+            <span aria-hidden>{showCharts ? "−" : "+"}</span>
+          </button>
+          {showCharts && (
+            <div style={{ marginBottom: 22 }}>
+              <LiveVisual kind="progress" projectId={activeProject.id} title="Progress" />
+              <LiveVisual kind="execution" projectId={activeProject.id} title="Execution" />
+            </div>
+          )}
         </>
       )}
 
@@ -451,4 +435,4 @@ export default function OverviewPage() {
       )}
     </div>
   );
-        }
+}
