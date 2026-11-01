@@ -2690,9 +2690,9 @@ function TodayContent() {
           How did it go?
         </h2>
         <div style={{ fontSize: 14, color: "var(--bm-text2)", marginBottom: 16, lineHeight: 1.5 }}>
-          Tap one. It takes about 20 seconds, and tomorrow's task gets better.
+          Tap what happened. That opens the reflection page, where you add one line. It takes about 20 seconds, and tomorrow's task is built from it.
         </div>
-        <div style={{ display: "flex", flexDirection: "column", marginBottom: 4 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
           {OUTCOME_CHIPS.map((chip, i) => (
             <button
               key={chip.id}
@@ -2730,10 +2730,10 @@ function TodayContent() {
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: 10,
-                padding: isMobile ? "13px 4px" : "12px 6px",
-                borderTop: i === 0 ? "1px solid var(--bm-border)" : "none",
-                borderBottom: "1px solid var(--bm-border)",
-                background: "transparent",
+                padding: isMobile ? "13px 14px" : "12px 14px",
+                border: "1px solid var(--bm-border2)",
+                borderRadius: "var(--r-xl)",
+                background: "var(--bm-bg)",
                 color: "var(--bm-text3)",
                 cursor: submitting ? "not-allowed" : "pointer",
                 fontFamily: "inherit",
@@ -2752,7 +2752,7 @@ function TodayContent() {
                   {chip.description}
                 </span>
               </span>
-              <span style={{ color: "var(--bm-text4)", flexShrink: 0 }}>›</span>
+              <span style={{ color: "var(--bm-text3)", flexShrink: 0, fontSize: 12, fontWeight: 600 }}>Reflect ›</span>
             </button>
           ))}
         </div>
@@ -2764,7 +2764,7 @@ function TodayContent() {
           onClick={() => checkinEl?.scrollIntoView({ behavior: "smooth", block: "center" })}
           style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "max(16px, env(safe-area-inset-bottom))", zIndex: 40, minHeight: 48, padding: "0 22px", borderRadius: 999, border: "none", background: "var(--bm-text)", color: "var(--bm-bg)", fontFamily: "inherit", fontSize: 15, fontWeight: 700, cursor: "pointer", boxShadow: "0 6px 24px rgba(0,0,0,0.35)", whiteSpace: "nowrap" }}
         >
-          Done? Tell me how it went
+          Done? Reflect on today's task
         </button>
       )}
       </>)}
@@ -3086,4 +3086,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-  }
+             }
