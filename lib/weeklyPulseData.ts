@@ -591,12 +591,12 @@ Hard facts (restate exact numbers if referenced — never estimate or invent):
 ${archetype ? `- Founder's established long-term archetype (context only, do not reclassify or restate as new): ${archetype}` : ""}
 ${topOverrideReason ? `- Most common reason for skipped/partial tasks this week: "${topOverrideReason}"` : ""}
 
-Write a 2-3 sentence story-style summary of the founder's week. Brief, specific, a little personality — not a metrics recap. Reference at most 2-3 of the facts above, chosen for what's most notable. If an archetype is given, you may let it color the tone subtly but do not name a new one. Do not invent numbers, dates, or facts not listed above.`;
+Write a 2-3 sentence summary of the week, speaking to the founder as \"you\". Plain, direct and specific. No metaphors, no dramatic words (no \"beacon\", \"mountain\", \"sprinted\"), not a metrics recap. Reference at most 2-3 of the facts above, chosen for what's most notable. If an archetype is given, you may let it color the tone subtly but do not name a new one. Do not invent numbers, dates, or facts not listed above.`;
 
         const result = await callModelJSON<{ story: string }>([
           {
             role: "system",
-            content: "You write brief, story-style weekly progress summaries for startup founders. Return JSON: { \"story\": string }. 2-3 sentences max. Ground every number exactly in what's provided — never estimate or invent.",
+            content: "You write brief, plain weekly progress summaries addressed to a startup founder as \"you\", never in the third person. Return JSON: { \"story\": string }. 2-3 sentences max. Ground every number exactly in what's provided — never estimate or invent.",
           },
           { role: "user", content: factSheet },
         ]);
@@ -642,4 +642,4 @@ Write a 2-3 sentence story-style summary of the founder's week. Brief, specific,
     day_of_week: dayOfWeek, confidence_by_outcome: confidenceByOutcome, confidence_index: confidenceIndex, top_override_reason: topOverrideReason,
     weekly_goal: weeklyGoal, sparkline, grades, story, generated_at: new Date().toISOString(),
   };
-        }
+      }
