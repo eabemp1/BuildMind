@@ -13,7 +13,7 @@ import { applyWrite, undoWrite } from "@/lib/coachWrites/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const Body = z.object({ projectId: z.string().uuid().optional(), proposal: z.unknown().optional(), undo: z.unknown().optional() });
+const Body = z.object({ projectId: z.string().uuid().optional(), proposal: z.unknown().optional(), undo: z.unknown().optional(), tzOffset: z.number().int().min(-840).max(840).optional() });
 
 export async function POST(req: Request) {
   const user = await getRouteUser();
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: u.ok, message: u.message, ...(u.ok ? {} : { error: u.message }) }, { status: u.ok ? 200 : 400 });
   }
   if (!body.data.projectId) return NextResponse.json({ success: false, error: "Invalid request." }, { status: 400 });
-  const result = await applyWrite(createAdminClient(), user.userId, body.data.projectId, body.data.proposal);
+  const result = await applyWrite(createAdminClient(), user.userId, body.data.projectId, body.data.proposal, body.data.tzOffset ?? 0);
   if (!result.ok) return NextResponse.json({ success: false, error: result.error }, { status: result.status });
   return NextResponse.json({ success: true, message: result.message, undo: result.undo });
 }

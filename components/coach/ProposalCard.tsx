@@ -19,7 +19,7 @@ export function ProposalCard({ card, projectId }: { card: Card; projectId: strin
       const res = await fetch("/api/ai/coach/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, proposal }),
+        body: JSON.stringify({ projectId, proposal, tzOffset: new Date().getTimezoneOffset() }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.success) throw new Error(j?.error ?? "Couldn't do that.");

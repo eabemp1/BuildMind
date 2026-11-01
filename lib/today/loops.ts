@@ -48,6 +48,22 @@ export function dueAtFor(choice: DurationChoice, now = Date.now()): string {
   return new Date(now + DURATION_CHOICES[choice].ms).toISOString();
 }
 
+export interface ClockTime { h: number; m: number; tomorrow: boolean }
+
+/** A wall-clock reminder time in the founder's timezone (offset is UTC minus local, in minutes). */
+export function dueAtClock(at: ClockTime, tzOffset: number, now = Date.now()): string {
+  const local = new Date(now - tzOffset * 60_000);
+  const base = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), at.h, at.m) + tzOffset * 60_000;
+  let t = base + (at.tomorrow ? DAY : 0);
+  if (!at.tomorrow && t <= now + 60_000) t += DAY;
+  return new Date(t).toISOString();
+}
+
+export function clockLabel(at: ClockTime): string {
+  const h12 = at.h % 12 === 0 ? 12 : at.h % 12;
+  return `${at.tomorrow ? "Tomorrow at" : "At"} ${h12}:${String(at.m).padStart(2, "0")} ${at.h < 12 ? "AM" : "PM"}`;
+}
+
 /** Free-text duration the founder wrote ("in 2 days", "tomorrow", "a full day", "next week"). */
 export function parseDuration(text: string): DurationChoice | null {
   const t = (text ?? "").toLowerCase();

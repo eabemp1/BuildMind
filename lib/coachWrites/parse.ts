@@ -6,7 +6,7 @@
  * would put a confirm card in front of someone who only asked a question.
  */
 
-import { parseDuration, type DurationChoice } from "@/lib/today/loops";
+import { parseDuration, type ClockTime, type DurationChoice } from "@/lib/today/loops";
 
 export type WriteKind = "add_task" | "set_task" | "log_outreach" | "remind";
 
@@ -14,12 +14,42 @@ export type WriteRequest =
   | { kind: "add_task"; title: string }
   | { kind: "set_task"; query: string; outcome: "done" | "blocked" }
   | { kind: "log_outreach"; text: string }
-  | { kind: "remind"; text: string; choice: DurationChoice };
+  | { kind: "remind"; text: string; choice: DurationChoice; at?: ClockTime };
 
 const clean = (s: string) =>
   s.replace(/\s+/g, " ").replace(/^["'“”‘’\s:,-]+|["'“”‘’\s.!,-]+$/g, "").trim();
 
 const MAX_TITLE = 140;
+
+const DAYPARTS: Array<[RegExp, number, number]> = [
+  [/\b(?:tonight)\b/i, 20, 0],
+  [/\bthis\s+evening\b/i, 18, 0],
+  [/\bthis\s+afternoon\b/i, 15, 0],
+  [/\bthis\s+morning\b/i, 9, 0],
+  [/\b(?:at\s+)?noon\b/i, 12, 0],
+];
+
+/** Parse an explicit time or daypart while returning the reminder text without it. */
+export function parseClock(text: string): { at: ClockTime; rest: string } | null {
+  const tomorrow = /\btomorrow\b/i.test(text);
+  const t = text.replace(/\btomorrow\b/gi, " ");
+  const x = /\b(?:at|by|around|for)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)\b/i.exec(t)
+    ?? /\b(?:at|by|around)\s+(\d{1,2}):(\d{2})\b()/i.exec(t)
+    ?? /\b(?:at|by)\s+(\d{1,2})\b()()(?!\s*(?:days?|hours?|hrs?|mins?|minutes?|%))/i.exec(t);
+  if (x) {
+    let h = Number(x[1]);
+    const m = x[2] ? Number(x[2]) : 0;
+    const ap = (x[3] ?? "").toLowerCase().replace(/\./g, "");
+    if (m > 59 || h > 23) return null;
+    if (ap === "pm" && h < 12) h += 12;
+    else if (ap === "am" && h === 12) h = 0;
+    else if (!ap && h >= 1 && h <= 6) h += 12;
+    if (ap && (h > 23 || Number(x[1]) > 12 || Number(x[1]) < 1)) return null;
+    return { at: { h, m, tomorrow }, rest: t.replace(x[0], " ") };
+  }
+  for (const [rx, h, m] of DAYPARTS) if (rx.test(t)) return { at: { h, m, tomorrow }, rest: t.replace(rx, " ") };
+  return null;
+}
 
 export function parseCoachWrite(raw: string): WriteRequest | null {
   const message = String(raw ?? "").trim();
@@ -29,15 +59,17 @@ export function parseCoachWrite(raw: string): WriteRequest | null {
   // Reminder: "remind me tomorrow to email Sam", "remind me to post the thread in 3 days", "remind me in a week".
   const rem = m.match(/^remind me\b[,\s]*(.*)$/i);
   if (rem) {
-    const rest = rem[1];
-    const choice = parseDuration(rest) ?? "1d";
+    const clock = /\bin\s+(?:an?|\d+|two|three|four|five|a\s+few|a\s+couple\s+of)\s*(?:hours?|hrs?|h|days?|weeks?|week)\b/i.test(rem[1]) ? null : parseClock(rem[1]);
+    const rest = clock ? clock.rest : rem[1];
+    const choice = clock ? "1d" : parseDuration(rest) ?? "1d";
     const what = clean(
       rest
         .replace(/\b(?:in\s+)?(?:\d+|two|three|four|five)\s*days?\b/gi, " ")
         .replace(/\b(?:next\s+week|in\s+a\s+week|tomorrow|overnight|in\s+(?:a\s+few|a\s+couple\s+of)\s+hours|in\s+\d+\s*(?:h|hrs?|hours?))\b/gi, " ")
-        .replace(/^\s*(?:to|about|that|of)\s+/i, ""),
+        .replace(/\b(?:today|later today)\b/gi, " ")
+        .replace(/^\s*(?:to|about|that|of|at|by)\s+/i, ""),
     ).replace(/^(?:to|about)\s+/i, "");
-    return what.length >= 3 ? { kind: "remind", text: what.slice(0, 200), choice } : null;
+    return what.length >= 3 ? { kind: "remind", text: what.slice(0, 200), choice, ...(clock ? { at: clock.at } : {}) } : null;
   }
 
   // Add a task: "add a task: email 5 founders", "add task to my list - fix pricing", "create a new task called X".
