@@ -458,6 +458,16 @@ function TodayContent() {
   // A founder in their first days with nothing finished yet sees the task and nothing else.
   const firstRun = accountCreatedAt !== null && accountAgeDays < 3 && (project?.tasksCompleted ?? 0) === 0;
   const executionScriptRef = useRef<HTMLDivElement | null>(null);
+  // The "How did it go?" card sits below the task. A button that follows the founder until they reach it
+  // means nobody has to hunt for the check-in.
+  const [checkinEl, setCheckinEl] = useState<HTMLDivElement | null>(null);
+  const [checkinInView, setCheckinInView] = useState(false);
+  useEffect(() => {
+    if (!checkinEl || typeof IntersectionObserver === "undefined") { setCheckinInView(false); return; }
+    const io = new IntersectionObserver(([e]) => setCheckinInView(e.isIntersecting), { threshold: 0.25 });
+    io.observe(checkinEl);
+    return () => io.disconnect();
+  }, [checkinEl]);
   const actionCardRef = useRef<HTMLDivElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
@@ -2650,8 +2660,8 @@ function TodayContent() {
       )}
 
       {/* ── Check-in ── */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
-        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)" }}>
+      <motion.div id="checkin" ref={setCheckinEl} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}
+        style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border2)", borderRadius: "var(--r-3xl)", padding: isMobile ? "var(--space-5)" : "var(--space-5) var(--space-6)", scrollMarginTop: 80 }}>
 
         {/* Stage motivator */}
         {project?.startup_stage && (
@@ -2676,47 +2686,11 @@ function TodayContent() {
           </p>
         )}
 
-        {/* Progress tracker */}
-        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: "var(--space-5)", overflow: "hidden" }}>
-          {[
-            { n: 1, label: "Read action", done: true },
-            { n: 2, label: "Edit script", done: !!draftMessage },
-            { n: 3, label: "Send it", done: copied },
-            { n: 4, label: "Check in", done: false, active: true },
-          ].map((step, i) => (
-            <div key={step.n} style={{ display: "flex", alignItems: "center", flex: i < 3 ? 1 : "none" }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                <div style={{
-                  width: 24, height: 24, borderRadius: "50%", fontSize: 10, fontWeight: 700,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  background: step.done ? "var(--bm-text)" : step.active ? "var(--bm-bg4)" : "var(--bm-bg3)",
-                  color: step.done ? "var(--bm-bg)" : step.active ? "var(--bm-text)" : "var(--bm-text4)",
-                  border: step.active ? "1px solid var(--bm-border3)" : "none",
-                  transition: "all 0.2s",
-                }}>
-                  {step.done ? "✓" : step.n}
-                </div>
-                {!isMobile && (
-                  <span style={{ fontSize: 9, color: step.done ? "var(--bm-text3)" : step.active ? "var(--bm-text3)" : "var(--bm-text4)", fontWeight: step.active ? 600 : 400, whiteSpace: "nowrap" }}>
-                    {step.label}
-                  </span>
-                )}
-              </div>
-              {i < 3 && (
-                <div style={{ flex: 1, height: 1, background: step.done ? "var(--bm-border3)" : "var(--bm-border)", margin: "0 4px", marginBottom: isMobile ? 0 : 14, transition: "background 0.3s" }} />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <p style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--bm-text4)", margin: "0 0 6px" }}>
-          Check-in
-        </p>
-        <h2 style={{ fontSize: isMobile ? 15 : 16, fontWeight: 700, color: "var(--bm-text)", margin: "0 0 8px" }}>
+        <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: isMobile ? 22 : 24, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--bm-text)", margin: "0 0 6px" }}>
           How did it go?
         </h2>
-        <div style={{ fontSize: 12.5, color: "var(--bm-text3)", marginBottom: 14, lineHeight: 1.6 }}>
-          Tap your outcome to log today's reflection.
+        <div style={{ fontSize: 14, color: "var(--bm-text2)", marginBottom: 16, lineHeight: 1.5 }}>
+          Tap one. It takes about 20 seconds, and tomorrow's task gets better.
         </div>
         <div style={{ display: "flex", flexDirection: "column", marginBottom: 4 }}>
           {OUTCOME_CHIPS.map((chip, i) => (
@@ -2782,11 +2756,17 @@ function TodayContent() {
             </button>
           ))}
         </div>
-        <p style={{ fontSize: 11, color: "var(--bm-text4)", margin: "10px 0 0", lineHeight: 1.5 }}>
-          Your outcome selection will feed into /reflect for learning capture.
-        </p>
         <TrackedLinks projectId={project?.id} suggestedSource={inferSource(actionData?.action)} nudge={needsTrackedLink(actionData?.action)} />
       </motion.div>
+      {!checkinInView && !done && actionData?.action && (
+        <button
+          type="button"
+          onClick={() => checkinEl?.scrollIntoView({ behavior: "smooth", block: "center" })}
+          style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "max(16px, env(safe-area-inset-bottom))", zIndex: 40, minHeight: 48, padding: "0 22px", borderRadius: 999, border: "none", background: "var(--bm-text)", color: "var(--bm-bg)", fontFamily: "inherit", fontSize: 15, fontWeight: 700, cursor: "pointer", boxShadow: "0 6px 24px rgba(0,0,0,0.35)", whiteSpace: "nowrap" }}
+        >
+          Done? Tell me how it went
+        </button>
+      )}
       </>)}
       {/* Context — deliberately BELOW the task. Archetype, stage readiness and the
           project/ghost-goal chips are useful but they are not the decision, so they
@@ -3106,4 +3086,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-}
+  }
