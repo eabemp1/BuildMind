@@ -52,6 +52,8 @@ export interface MissionSignals {
   isLowConfidence?: boolean;
   /** The founder has said they have no users yet (fact ledger). */
   noUsers?: boolean;
+  /** The founder says the product is already built; prefer validation or distribution over more building. */
+  saysBuilt?: boolean;
   /** Decision-layer candidate id (lib/founderIntelligence.ts), used as a nudge, not an override. */
   candidateId?: string | null;
   excludeAction?: string;
@@ -226,6 +228,11 @@ export function planTodayMission(s: MissionSignals): Mission {
   const reasons: string[] = [];
   if (adjusted) reasons.push("You said you have no users yet, so this is planned as getting your first users, not growing.");
   const bump = (k: MissionKind, n: number) => { w[k] += n; };
+
+  if (s.saysBuilt && (band === "building" || band === "launch" || band === "validation")) {
+    bump("build", -4);
+    reasons.push("You said it is already built, so today is about getting it in front of people, not building more.");
+  }
 
   const recent = s.recentTasks.slice(0, 8);
   const recentKinds = recent.map((t) => kindOfTask(t.text));

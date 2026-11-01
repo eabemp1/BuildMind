@@ -14,3 +14,17 @@ export function namedPlatform(text: string, allowed: readonly string[]): string 
   }
   return null;
 }
+
+/** All distinct channels named in the text, from the allowed list first. */
+export function allNamedPlatforms(text: string, allowed: readonly string[]): string[] {
+  const found: string[] = [];
+  for (const p of [...allowed, ...OTHER_CHANNELS]) {
+    if (
+      new RegExp(`(^|[^a-z0-9])${esc(p)}($|[^a-z0-9])`, "i").test(text) &&
+      !found.some((existing) => existing.toLowerCase() === p.toLowerCase())
+    ) {
+      found.push(p);
+    }
+  }
+  return found;
+}
