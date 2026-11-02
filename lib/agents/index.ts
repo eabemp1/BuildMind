@@ -626,7 +626,8 @@ Identify the real risks. Be specific and brutal. If founder behavioral context s
   try {
     const result = await callModelJSON<RiskOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "reasoning", maxTokens: 800 },
+      // Break My Startup is the page where depth matters most, so Gemini leads here. Today never does.
+      { role: "reasoning", maxTokens: 800, prefer: "gemini", geminiTimeoutMs: 14_000 },
     );
     if (!result.top_risks || !Array.isArray(result.top_risks)) return fallback;
     return {
@@ -1020,4 +1021,4 @@ Generate 3 pivots that improve on the weakest signals${ctx.founderStyle?.hasSign
   } catch {
     return fallbackPivots;
   }
-}
+  }
