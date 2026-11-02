@@ -67,7 +67,7 @@
  *   2. Groq — qwen/qwen3.8-27b (separate free-tier token bucket, not just a fallback)
  *   3. OpenRouter — openrouter/free (auto-routing free model, no pinned slug to rot)
  *   4. Mistral — mistral-small-latest (free "Experiment" tier, no card)
- *   5. Gemini 2.5 Flash (best-effort — see PROVIDER STATUS above)
+ *   5. Gemini Flash (best-effort — see PROVIDER STATUS above)
  *   6. Cerebras — gpt-oss-120b (best-effort — card-gated as of Aug 2026, see above)
  *
  * REASONING (Critic, Verifier — Stages 4 & 5 of Reflexion loop):
@@ -77,14 +77,14 @@
  *      currently failing every reasoning call in production logs; move back
  *      once they're confirmed working again)
  *   3. OpenRouter — openrouter/free
- *   4. Gemini 2.5 Flash (best-effort)
+ *   4. Gemini Flash (best-effort)
  *   5. Groq — qwen/qwen3.8-27b     (strong math/logic, free, separate bucket)
  *   6. Cerebras — gpt-oss-120b (best-effort)
  *
  * FALLBACK:
  *   1. OpenRouter — openrouter/free
  *   2. Groq — openai/gpt-oss-120b
- *   3. Gemini 2.5 Flash (best-effort)
+ *   3. Gemini Flash (best-effort)
  *   4. Mistral — mistral-small-latest (free, no card)
  *   5. Cerebras — gpt-oss-120b (best-effort)
  *
@@ -146,8 +146,16 @@ const CEREBRAS_MODEL       = process.env.CEREBRAS_MODEL || "gpt-oss-120b";
 // Reasoning role on Cerebras: same gpt-oss-120b (deepseek-r1-distill deprecated Sep 2025)
 const CEREBRAS_REASONING_MODEL = "gpt-oss-120b";
 const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
-// Upgrade to Gemini 2.5 Flash — stronger reasoning and lower hallucination rate
+// Default is Gemini 3.8 Flash. GEMINI_MODEL in Vercel overrides it (swap models there, no code change).
 const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+// Pages that ask for Gemini first (callModel `prefer: "gemini"`). Today never does.
+// Set GEMINI_PREFERRED=off to switch the preference off without a deploy of code.
+const GEMINI_PREFERRED     = (process.env.GEMINI_PREFERRED ?? "on").toLowerCase() !== "off";
+// Gemini 3.x thinks deeply by default, which is what causes its slow replies. "low" keeps the
+// reasoning but caps the time. Allowed: low | medium | high. Override with GEMINI_THINKING_LEVEL.
+const GEMINI_THINKING_LEVEL = (["low", "medium", "high"].includes((process.env.GEMINI_THINKING_LEVEL ?? "").toLowerCase())
+  ? (process.env.GEMINI_THINKING_LEVEL as string).toLowerCase()
+  : "low");
 
 // OPENROUTER — no-card alternative for genuine model diversity. Google AI Studio's
 // API now requires a card on file in many regions even for free-tier Gemini models;
@@ -469,11 +477,19 @@ async function cerebrasCall(
   return sanitizeModelOutput(text);
 }
 
+export interface GeminiOptions {
+  /** Thinking tier. Defaults to GEMINI_THINKING_LEVEL ("low"). */
+  thinking?: "low" | "medium" | "high";
+  /** Per-attempt timeout. Defaults to PROVIDER_TIMEOUT_MS. */
+  timeoutMs?: number;
+}
+
 async function geminiCall(
   messages: ChatMessage[],
   temperature: number,
   maxTokens: number,
   jsonMode: boolean,
+  opts: GeminiOptions = {},
 ): Promise<string> {
   if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not set");
   const systemMsg = messages.find(m => m.role === "system")?.content ?? "";
@@ -482,25 +498,44 @@ async function geminiCall(
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
-  const body: Record<string, unknown> = {
+  const timeoutMs = opts.timeoutMs ?? PROVIDER_TIMEOUT_MS;
+  const thinkingLevel = opts.thinking ?? GEMINI_THINKING_LEVEL;
+  const buildBody = (withThinking: boolean): string => JSON.stringify({
     contents,
     generationConfig: {
       temperature,
-      maxOutputTokens: maxTokens,
+      // Thinking tokens count against this cap, so leave room for the answer.
+      maxOutputTokens: withThinking ? maxTokens + 1024 : maxTokens,
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+      ...(withThinking ? { thinkingConfig: { thinkingLevel } } : {}),
     },
     ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg }] } } : {}),
-  };
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) },
-  );
+  });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  const send = (withThinking: boolean) =>
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: buildBody(withThinking), signal: AbortSignal.timeout(timeoutMs) });
+
+  // Older models (2.5) reject thinkingLevel. Ask once with it, and once without if Google says no.
+  let withThinking = true;
+  let res = await send(withThinking);
+  if (res.status === 400) {
+    const text = await res.text();
+    if (/thinking/i.test(text)) { withThinking = false; res = await send(withThinking); }
+    else throw new Error(`GEMINI_400: ${text.slice(0, 150)}`);
+  }
+  // 503 from Google is usually a short spike. One quick retry, then the caller rotates to the next provider.
+  if (res.status === 503) {
+    await new Promise((r) => setTimeout(r, 700));
+    res = await send(withThinking);
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GEMINI_${res.status}: ${text.slice(0, 150)}`);
   }
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  // Skip thought parts; only the answer is returned.
+  const parts = (data?.candidates?.[0]?.content?.parts ?? []) as Array<{ text?: string; thought?: boolean }>;
+  const text = parts.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("");
   if (!text) throw new Error("Gemini empty response");
   return sanitizeModelOutput(text);
 }
@@ -816,6 +851,15 @@ export async function callModel(
      * matter in practice, not just in theory.
      */
     deadlineMs?: number;
+    /**
+     * Try Gemini first, then the normal chain. For pages where depth matters more than speed
+     * (Break My Startup, AI Coach). Never set on Today. Ignored when Gemini is not configured
+     * or GEMINI_PREFERRED=off.
+     */
+    prefer?: "gemini";
+    /** Per-attempt Gemini timeout when `prefer` is set. Default and maximum 14s. */
+    geminiTimeoutMs?: number;
+    geminiThinking?: "low" | "medium" | "high";
   } = {},
 ): Promise<string> {
   const {
@@ -824,12 +868,27 @@ export async function callModel(
     maxTokens = 600,
     jsonMode = false,
     deadlineMs,
+    prefer,
+    geminiTimeoutMs: requestedGeminiTimeout = 14_000,
+    geminiThinking,
   } = options;
+  // Hard ceiling: no single Gemini attempt waits longer than 14s, whatever a caller asks for.
+  const geminiTimeoutMs = Math.min(requestedGeminiTimeout, 14_000);
 
-  const chain =
+  let chain =
     role === "reasoning" ? getReasoningChain() :
     role === "fallback"  ? getFallbackChain()  :
     getFastChain();
+
+  const geminiFirst = prefer === "gemini" && GEMINI_PREFERRED && Boolean(GEMINI_API_KEY);
+  if (geminiFirst) {
+    // Gemini leads with its own longer timeout; its normal slot in the chain is dropped so a slow
+    // Gemini is not tried twice.
+    chain = [
+      { label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j, { timeoutMs: geminiTimeoutMs, thinking: geminiThinking }) },
+      ...chain.filter((p) => !p.label.startsWith("gemini:")),
+    ];
+  }
 
   if (chain.length === 0) {
     const diagnostics = getAIProviderDiagnostics();
@@ -864,7 +923,9 @@ export async function callModel(
   // fresh allowance it may not really have. Falls back to a fresh 9s budget
   // when no deadline is passed, so existing single-call callers are
   // unaffected.
-  const effectiveDeadline = deadlineMs ?? (Date.now() + 9000);
+  // A Gemini-first call gets its own timeout on top, so a slow Gemini cannot use up the time the
+  // fallback providers need.
+  const effectiveDeadline = deadlineMs ?? (Date.now() + 9000 + (geminiFirst ? geminiTimeoutMs : 0));
 
   for (const provider of chain) {
     if (Date.now() >= effectiveDeadline) {
@@ -935,4 +996,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-      }
+                }
