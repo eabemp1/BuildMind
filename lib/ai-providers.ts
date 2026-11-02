@@ -150,6 +150,16 @@ const GEMINI_API_KEY       = readApiKey("GEMINI_API_KEY");
 const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 // Pages that ask for Gemini first (callModel `prefer: "gemini"`). Today never does.
 // Set GEMINI_PREFERRED=off to switch the preference off without a deploy of code.
+// Gemini models tried in order, so a busy one hands over to the next. GEMINI_MODEL leads;
+// GEMINI_FALLBACK_MODELS (comma separated) follows. Set it empty to use only GEMINI_MODEL.
+const GEMINI_MODELS = Array.from(new Set([
+  GEMINI_MODEL,
+  ...(process.env.GEMINI_FALLBACK_MODELS ?? "gemini-3.7-flash,gemini-3.6-flash").split(",").map((m) => m.trim()).filter(Boolean),
+]));
+// A model that just answered 503 is skipped for a while, so the next request does not pay for it again.
+// Lives in memory per server instance: it is a shortcut, not shared state.
+const geminiCooldown = new Map<string, number>();
+const GEMINI_COOLDOWN_MS = 90_000;
 const GEMINI_PREFERRED     = (process.env.GEMINI_PREFERRED ?? "on").toLowerCase() !== "off";
 // Gemini 3.x thinks deeply by default, which is what causes its slow replies. "low" keeps the
 // reasoning but caps the time. Allowed: low | medium | high. Override with GEMINI_THINKING_LEVEL.
@@ -511,23 +521,49 @@ async function geminiCall(
     },
     ...(systemMsg ? { systemInstruction: { parts: [{ text: systemMsg }] } } : {}),
   });
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-  const send = (withThinking: boolean) =>
-    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: buildBody(withThinking), signal: AbortSignal.timeout(timeoutMs) });
-
-  // Older models (2.5) reject thinkingLevel. Ask once with it, and once without if Google says no.
-  let withThinking = true;
-  let res = await send(withThinking);
-  if (res.status === 400) {
-    const text = await res.text();
-    if (/thinking/i.test(text)) { withThinking = false; res = await send(withThinking); }
-    else throw new Error(`GEMINI_400: ${text.slice(0, 150)}`);
+  // Try each Gemini model in turn inside ONE shared time budget (timeoutMs). A 503 from Google means
+  // "this model is busy", and it rarely clears in under a second, so waiting and retrying the same
+  // model only burns the budget. Moving to the next model (its own capacity pool) is the retry.
+  const started = Date.now();
+  const now = () => Date.now();
+  const candidates = GEMINI_MODELS.filter((m) => (geminiCooldown.get(m) ?? 0) <= now());
+  if (candidates.length === 0) throw new Error("GEMINI_503: all Gemini models are busy, skipped for now");
+  let res: Response | null = null;
+  let lastFailure = "";
+  for (const model of candidates) {
+    const remaining = timeoutMs - (now() - started);
+    if (remaining < 1500) break;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    const send = (withThinking: boolean) =>
+      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: buildBody(withThinking), signal: AbortSignal.timeout(Math.max(1000, timeoutMs - (now() - started))) });
+    try {
+      let withThinking = true;
+      let attempt = await send(withThinking);
+      // Older models (2.5) reject thinkingLevel. Ask once with it, and once without if Google says no.
+      if (attempt.status === 400) {
+        const text = await attempt.text();
+        if (/thinking/i.test(text)) { withThinking = false; attempt = await send(withThinking); }
+        else throw new Error(`GEMINI_400: ${text.slice(0, 150)}`);
+      }
+      if ([429, 500, 502, 503, 504].includes(attempt.status)) {
+        geminiCooldown.set(model, now() + GEMINI_COOLDOWN_MS);
+        lastFailure = `GEMINI_${attempt.status} (${model})`;
+        continue;
+      }
+      if (attempt.status === 404) { // model id not available on this key; do not ask again for a while
+        geminiCooldown.set(model, now() + 60 * 60_000);
+        lastFailure = `GEMINI_404 (${model})`;
+        continue;
+      }
+      res = attempt;
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/abort|timeout/i.test(msg)) geminiCooldown.set(model, now() + 60_000);
+      throw err;
+    }
   }
-  // 503 from Google is usually a short spike. One quick retry, then the caller rotates to the next provider.
-  if (res.status === 503) {
-    await new Promise((r) => setTimeout(r, 700));
-    res = await send(withThinking);
-  }
+  if (!res) throw new Error(`${lastFailure || "GEMINI_503"}: no Gemini model answered in time`);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GEMINI_${res.status}: ${text.slice(0, 150)}`);
@@ -996,4 +1032,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-                }
+                                              }
