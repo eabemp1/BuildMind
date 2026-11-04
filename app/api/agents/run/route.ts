@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { sanitizePromptInput } from "@/lib/agents";
 import { runAgentWorkforce, AGENT_IDENTITY, type AgentType } from "@/lib/agentWorkforce";
 
 export const runtime     = "nodejs";
@@ -26,6 +27,10 @@ export const maxDuration = 300;
 const BodySchema = z.object({
   agentType: z.enum(["research", "validation", "competitor"]),
   projectId: z.string().uuid().nullable().optional(),
+  /** One claim from a Break My Startup report to check, instead of the whole idea. */
+  focus: z.string().min(8).max(300).optional(),
+  /** The idea text, for ideas that have no saved project (Break My Startup idea mode). */
+  idea: z.string().min(8).max(800).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -54,6 +59,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { agentType, projectId } = body;
+  const focus = body.focus ? sanitizePromptInput(body.focus, 300) : undefined;
   const admin = createAdminClient();
 
   // ── Load startup context ──────────────────────────────────────────────────
@@ -93,6 +99,10 @@ export async function POST(req: NextRequest) {
     if (stage === "Idea" && fc.current_stage)  stage          = fc.current_stage;
   }
 
+  if (!problem && !startupSummary && body.idea) {
+    problem = sanitizePromptInput(body.idea, 800);
+    startupTitle = problem.slice(0, 60);
+  }
   if (!problem && !startupSummary) {
     return NextResponse.json(
       { ok: false, error: "No startup context found. Complete onboarding first." },
@@ -110,8 +120,8 @@ export async function POST(req: NextRequest) {
       project_id:     resolvedProjectId,
       agent_type:     agentType,
       status:         "queued",
-      mission:        identity.description,
-      max_iterations: 3,
+      mission:        focus ? `Check: ${focus}` : identity.description,
+      max_iterations: focus ? 2 : 3,
       started_at:     new Date().toISOString(),
       updated_at:     new Date().toISOString(),
     })
@@ -149,7 +159,8 @@ export async function POST(req: NextRequest) {
       startupSummary,
       problem,
       targetUsers,
-      maxIterations: 3,
+      maxIterations: focus ? 2 : 3,
+      focus,
     });
 
     // Fetch the final run row to return full state to client
