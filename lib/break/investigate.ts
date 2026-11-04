@@ -4,6 +4,7 @@
  * customer and price words to the validation agent, everything else to research.
  */
 import { agentFor } from "@/lib/break/stepIntent";
+import type { SavedCheck } from "@/lib/break/claimChecks";
 
 export type InvestigateAgent = "competitor" | "research" | "validation";
 
@@ -14,7 +15,16 @@ export function agentForClaim(claim: string): InvestigateAgent {
   return "research";
 }
 
-export interface InvestigateContext { projectId?: string | null; idea?: string }
+export interface InvestigateContext {
+  projectId?: string | null;
+  idea?: string;
+  /** Checks already saved for this project, plus any run in this session. */
+  checks?: SavedCheck[];
+  /** Called with a finished check so the report can show it everywhere it applies. */
+  onCheck?: (c: SavedCheck) => void;
+  /** Called after the founder confirms or rejects one finding. */
+  onReview?: (runId: string, findingId: string, confirmed: boolean) => void;
+}
 
 /** The body for POST /api/agents/run. A saved project wins over idea text. */
 export function investigateBody(claim: string, ctx: InvestigateContext) {
