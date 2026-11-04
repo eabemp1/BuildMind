@@ -41,6 +41,7 @@ import {
   markIgnoredAfter24h,
 } from "@/lib/learning";
 import { loadFounderStyleProfile } from "@/lib/founderStyle";
+import { normalizeCompetitors, competitorSummaryLine } from "@/lib/break/competitorBrief";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 
 type ReflexionStatus = "ok" | "partial" | "failed";
@@ -86,13 +87,26 @@ async function enrichCompetitors(list: ScrapedCompetitor[]): Promise<ScrapedComp
   const targets = list.map((c, i) => ({ c, i })).filter(({ c }) => c.url).slice(0, 4);
   if (!targets.length) return list;
   try {
-    const pages = await readPages(targets.map((t) => t.c.url), 4);
+    // Home page for up to 4, plus /pricing for the top 3, all in one parallel batch
+    // (each read is capped at ~6.5s, so this adds no more than one read of wall time).
+    const origin = (u: string) => { try { return new URL(u).origin; } catch { return ""; } };
+    const pricingTargets = targets.slice(0, 3).map((t) => ({ ...t, p: origin(t.c.url) })).filter((t) => t.p);
+    const urls = [...targets.map((t) => t.c.url), ...pricingTargets.map((t) => `${t.p}/pricing`)];
+    const pages = await readPages(urls, 7);
     const out = [...list];
-    pages.forEach((pg, k) => {
-      if (!pg?.ok) return;
-      const { c, i } = targets[k];
-      const bits = [pg.description || pg.headings[0] || "", pg.prices.length ? `Prices seen: ${pg.prices.slice(0, 3).join(", ")}` : pg.hasPricingPage ? "Has a public pricing page" : ""].filter(Boolean);
-      if (bits.length) out[i] = { ...c, snippet: `${c.snippet} | From their site: ${bits.join(". ")}`.slice(0, 600) };
+    targets.forEach((t, k) => {
+      const pg = pages[k];
+      const pp = pages[targets.length + pricingTargets.findIndex((x) => x.i === t.i)];
+      const { c, i } = t;
+      const read = Boolean(pg?.ok || pp?.ok);
+      if (!read) return;
+      const prices = [...new Set([...(pp?.ok ? pp.prices : []), ...(pg?.ok ? pg.prices : [])])].slice(0, 4);
+      const bits = [pg?.ok ? (pg.description || pg.headings[0] || "") : "", prices.length ? `Prices seen: ${prices.slice(0, 3).join(", ")}` : (pg?.hasPricingPage || pp?.ok) ? "Has a public pricing page" : ""].filter(Boolean);
+      out[i] = {
+        ...c,
+        snippet: bits.length ? `${c.snippet} | From their site: ${bits.join(". ")}`.slice(0, 600) : c.snippet,
+        pageFacts: { read: true, prices, pricingPageSeen: Boolean(pp?.ok || pg?.hasPricingPage) },
+      };
     });
     return out;
   } catch { return list; }
@@ -522,9 +536,8 @@ export async function POST(request: Request) {
 
       // Build legacy-compatible response shape
       const baseSignal = viabilityResult.viability_score;
-      const competitorSummary = competitors.length > 0
-        ? `Search found ${competitors.length} related products or pages via ${competitor_data_source}. ${agentPipeline.competitor?.saturation_level === "high" ? "This is a crowded space — differentiation is critical." : "Competitive landscape shows room to differentiate."}`
-        : "No competitors found in live search. Try more specific market terms.";
+      const competitorBrief = normalizeCompetitors(agentPipeline.competitor?.direct_competitors, competitors);
+      const competitorSummary = competitorSummaryLine(competitorBrief, agentPipeline.competitor?.biggest_threat, agentPipeline.competitor?.saturation_level);
 
       // ── Visible focus-area tagging ─────────────────────────────────────
       // The agents were already being told (focusAreaLine in lib/agents) to
@@ -602,7 +615,7 @@ export async function POST(request: Request) {
           },
           agent_outputs: {
             market: agentPipeline.market,
-            competitor: agentPipeline.competitor,
+            competitor: agentPipeline.competitor ? { ...agentPipeline.competitor, brief: competitorBrief } : agentPipeline.competitor,
             trend: agentPipeline.trend,
             sentiment: agentPipeline.sentiment,
             risk: agentPipeline.risk,
@@ -765,7 +778,7 @@ export async function POST(request: Request) {
       seenNames.add(key);
       return true;
     });
-    const competitors = [...dedupedNamed, ...scrapedCompetitors].slice(0, 8);
+    const competitors = await enrichCompetitors([...dedupedNamed, ...scrapedCompetitors].slice(0, 8));
 
     // Build startup context from project data
     const startupCtx: StartupContext = {
@@ -908,9 +921,8 @@ export async function POST(request: Request) {
     }
 
     // Build legacy-compatible response
-    const competitorSummary = competitors.length > 0
-      ? `Found ${competitors.length} potential competitors — ${agentPipeline.competitor?.saturation_level === "high" ? "this is a crowded space, differentiation is critical." : "differentiation opportunities identified."}`
-      : "No clear competitors found — run with more specific search terms.";
+    const competitorBrief = normalizeCompetitors(agentPipeline.competitor?.direct_competitors, competitors);
+    const competitorSummary = competitorSummaryLine(competitorBrief, agentPipeline.competitor?.biggest_threat, agentPipeline.competitor?.saturation_level);
 
     // ── Visible focus-area tagging — see the idea-mode pipeline above for
     // why this exists; same treatment, project mode's own field names.
@@ -992,7 +1004,7 @@ export async function POST(request: Request) {
         },
         agent_outputs: {
           market: agentPipeline.market,
-          competitor: agentPipeline.competitor,
+          competitor: agentPipeline.competitor ? { ...agentPipeline.competitor, brief: competitorBrief } : agentPipeline.competitor,
           trend: agentPipeline.trend,
           sentiment: agentPipeline.sentiment,
           risk: agentPipeline.risk,
@@ -1091,4 +1103,4 @@ export async function POST(request: Request) {
       { status: msg.toLowerCase().includes("limit") ? 429 : 500 },
     );
   }
-}
+                                           }
