@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const KEYS = ["GROQ_API_KEY", "CEREBRAS_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "GEMINI_PREFERRED", "GEMINI_MODEL"] as const;
+const KEYS = ["GROQ_API_KEY", "CEREBRAS_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "GEMINI_PREFERRED", "GEMINI_MODEL", "GEMINI_FALLBACK_MODELS"] as const;
 const saved: Record<string, string | undefined> = {};
 
 const ok = (text: string) => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), { status: 200 });
@@ -12,6 +12,7 @@ beforeEach(() => {
   process.env.GEMINI_API_KEY = "g-key";
   process.env.GROQ_API_KEY = "q-key";
   process.env.GEMINI_MODEL = "gemini-3.8-flash";
+  process.env.GEMINI_FALLBACK_MODELS = "gemini-3.6-flash";
   vi.resetModules();
 });
 afterEach(() => {
@@ -71,10 +72,9 @@ describe("callModel prefer: gemini", () => {
     const { callModel } = await import("../../lib/ai-providers");
     expect(await callModel([{ role: "user", content: "hi" }], { prefer: "gemini" })).toBe("from groq");
     const geminiUrls = calls.filter((c) => c.url.includes("generativelanguage")).map((c) => c.url);
-    expect(geminiUrls).toHaveLength(3);
+    expect(geminiUrls).toHaveLength(2);
     expect(geminiUrls[0]).toContain("gemini-3.8-flash");
-    expect(geminiUrls[1]).toContain("gemini-3.7-flash");
-    expect(geminiUrls[2]).toContain("gemini-3.6-flash");
+    expect(geminiUrls[1]).toContain("gemini-3.6-flash");
   });
 
   it("uses the next Gemini model's answer when the first is busy", async () => {

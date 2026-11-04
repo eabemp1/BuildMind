@@ -97,7 +97,7 @@ export const EXCLUDED_TABLES: ReadonlyArray<{ table: string; reason: string }> =
 ];
 
 /** Tables that exist in the live database but are not created by the migrations in this repository. */
-export const LIVE_ONLY_TABLES = ["projects", "reflections", "agent_runs", "agent_findings", "action_logs", "prepared_work"] as const;
+export const LIVE_ONLY_TABLES = ["projects", "reflections", "agent_runs", "agent_findings", "action_logs", "prepared_work", "project_stage_evidence", "break_runs"] as const;
 
 /** Field names removed from every row. Whole-name matches only, so "tokens_used" is kept. */
 const SECRET_KEY = /^(?:.*_)?(?:access_?token|refresh_?token|id_?token|api_?key|secret|password|authorization|credentials?|share_?token|confirm_?token|token|private_?key)$/i;
