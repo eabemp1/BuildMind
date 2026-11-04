@@ -16,6 +16,7 @@
  */
 
 import { tokenize, stem } from "@/lib/taxonomy/taskTaxonomy";
+import { settledChecks, type SavedCheck } from "@/lib/break/claimChecks";
 import {
   buildDemandSplit, buildEvidenceHierarchy, pickAudienceFork, buildHypotheses, buildNextMove, buildRiskExposure,
   notACompetitorReason, productDemandScore,
@@ -162,6 +163,8 @@ export interface EvidenceInput {
   competitorSource: string;          // "tavily" | "brave" | "ddg" | "ai_synthesised" | "none"
   /** Real evidence from the founder's own project (interviews, payments). */
   founderEvidenceCount?: number;
+  /** Single-claim checks the founder ran earlier. Only the ones they confirmed count. */
+  checkedClaims?: SavedCheck[];
   /** Per-dimension scores with weights, from computeViabilityBreakdown(). */
   breakdown?: Array<{ key: string; label: string; score: number; weight: string }>;
   /** The founder's own product name, so it is never listed as its own competitor. */
@@ -364,6 +367,16 @@ export function labelClaims(input: EvidenceInput, graded: CompetitorEvidence[]):
     add({ claim: `${verified.length} related product${verified.length === 1 ? "" : "s"} found in live search: ${verified.slice(0, 3).map(v => v.name).join(", ")}`, kind: "evidence", source: `Web search (${input.competitorSource})`, confidence: "high" });
   }
 
+  for (const c of settledChecks(input.checkedClaims).slice(0, 3)) {
+    const n = c.findings.filter((f) => f.confirmed === true).length;
+    add({
+      claim: c.settled === "supported" ? c.focus : `Sources contradict: ${c.focus}`,
+      kind: "evidence",
+      source: `Checked against sources and confirmed by you (${n} finding${n === 1 ? "" : "s"}). Sources found by search, not a customer.`,
+      confidence: "medium",
+    });
+  }
+
   const p = input.parsed;
   if (present(p?.problem)) add({ claim: `The problem is real: ${p!.problem}`, kind: "hypothesis", source: "Your description. No customer has confirmed it yet.", confidence: "low" });
   if (present(p?.target_customer)) add({ claim: `${p!.target_customer} is the right customer`, kind: "hypothesis", source: "Your description", confidence: "low" });
@@ -392,7 +405,8 @@ export function labelClaims(input: EvidenceInput, graded: CompetitorEvidence[]):
 export function evidenceQuality(input: EvidenceInput, graded: CompetitorEvidence[]): number {
   const verified = graded.filter(c => c.quality === "verified").length;
   const agentShare = Math.min(1, Math.max(0, input.agentsSucceeded / 5));
-  const own = Math.min(1, (input.founderEvidenceCount ?? 0) / 4);
+  // A confirmed, sourced check is real but weaker than a customer, so it counts for half.
+  const own = Math.min(1, ((input.founderEvidenceCount ?? 0) + 0.5 * settledChecks(input.checkedClaims).length) / 4);
   let quality = 0.2 * agentShare + 0.3 * Math.min(1, verified / 5) + 0.5 * own;
   if (input.analysisIsSynthetic) quality *= 0.5;
   return quality;
@@ -409,6 +423,8 @@ export function calibrate(input: EvidenceInput, graded: CompetitorEvidence[]): C
 
   const bits: string[] = [];
   bits.push(verified > 0 ? `${verified} verified source${verified === 1 ? "" : "s"}` : "no verified sources");
+  const nSettled = settledChecks(input.checkedClaims).length;
+  if (nSettled > 0) bits.push(`${nSettled} claim${nSettled === 1 ? "" : "s"} you checked and confirmed`);
   bits.push((input.founderEvidenceCount ?? 0) > 0 ? `${input.founderEvidenceCount} piece${input.founderEvidenceCount === 1 ? "" : "s"} of your own evidence` : "no customer evidence");
   if (input.agentsSucceeded < 5) bits.push(`${input.agentsSucceeded} of 5 agents completed`);
   if (input.analysisIsSynthetic) bits.push("analysis partly synthesised");
@@ -619,4 +635,4 @@ export function buildEvidenceLayer(input: EvidenceInput): EvidenceLayer {
     hypotheses: buildHypotheses(input, falsifiers),
     excludedCompetitors: excluded.length ? excluded : undefined,
   };
-                }
+                               }
