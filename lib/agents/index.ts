@@ -107,6 +107,8 @@ export interface StartupContext {
   // pasted into the idea-only flow. Agents should scope how much weight
   // founder execution history gets accordingly.
   isOwnProject?: boolean;
+  /** Claims the founder checked against sources and confirmed (lib/break/claimChecks settledLines). */
+  checkedClaims?: string[];
   /** Observed execution style, used by the Pivot Engine to personalise pivots. */
   founderStyle?: FounderStyleProfile;
 }
@@ -190,6 +192,13 @@ export interface Risk {
   description: string;
   severity: "low" | "medium" | "high" | "fatal";
   mitigation: string;
+}
+
+/** Claims already checked and confirmed by the founder. The lenses treat them as settled instead of guessing again. */
+function checkedLine(ctx: StartupContext): string {
+  return ctx.checkedClaims?.length
+    ? `Already checked by the founder against sources (treat as settled unless you have stronger evidence):\n${ctx.checkedClaims.map((c) => `- ${sanitizePromptInput(c, 320)}`).join("\n")}`
+    : "";
 }
 
 function focusAreaLine(ctx: StartupContext): string {
@@ -301,6 +310,7 @@ Target users: ${sanitizePromptInput(ctx.targetUsers)}
 Solution: ${sanitizePromptInput(ctx.solution, 600)}
 Stage: ${ctx.stage}
 ${focusAreaLine(ctx)}
+${checkedLine(ctx)}
 ${competitorContext}
 
 Assess market demand. Be specific. Lower confidence when uncertain.`;
@@ -383,6 +393,7 @@ Problem being solved: ${sanitizePromptInput(ctx.problem)}
 Target users: ${sanitizePromptInput(ctx.targetUsers)}
 Stage: ${ctx.stage}
 ${focusAreaLine(ctx)}
+${checkedLine(ctx)}
 ${competitorContext}
 
 Map the competitive landscape. Name specific gaps. Be precise.`;
@@ -460,6 +471,7 @@ Problem: ${sanitizePromptInput(ctx.problem)}
 Target users: ${sanitizePromptInput(ctx.targetUsers)}
 Stage: ${ctx.stage}
 ${focusAreaLine(ctx)}
+${checkedLine(ctx)}
 Known competitors: ${ctx.competitors.map(c => c.title).join(", ") || "none found"}
 ${newsContext}
 
@@ -537,6 +549,7 @@ Problem addressed: ${sanitizePromptInput(ctx.problem)}
 Target users: ${sanitizePromptInput(ctx.targetUsers)}
 Stage: ${ctx.stage}
 ${focusAreaLine(ctx)}
+${checkedLine(ctx)}
 Competitor snippets (for sentiment inference): ${ctx.competitors.map(c => c.snippet).filter(Boolean).join(" | ") || "none"}
 ${discussionContext}
 
@@ -604,6 +617,7 @@ Problem: ${sanitizePromptInput(ctx.problem)}
 Target users: ${sanitizePromptInput(ctx.targetUsers)}
 Stage: ${ctx.stage}
 ${focusAreaLine(ctx)}
+${checkedLine(ctx)}
 Known weaknesses: ${ctx.validationWeaknesses?.join(", ") || "none provided"}
 Execution score: ${ctx.executionScore ?? "unknown"}/100
 ${founderContextLine(ctx)}
@@ -1007,6 +1021,7 @@ Problem: ${sanitizePromptInput(ctx.problem)}
 Target users: ${sanitizePromptInput(ctx.targetUsers)}
 Current viability score: ${currentScore}/100
 ${focusAreaLine(ctx)}
+${checkedLine(ctx)}
 
 Signal data:
 - Demand score: ${signals.demand_score}/100
@@ -1038,4 +1053,4 @@ Generate 3 pivots that improve on the weakest signals${ctx.founderStyle?.hasSign
   } catch {
     return fallbackPivots;
   }
-}
+          }
