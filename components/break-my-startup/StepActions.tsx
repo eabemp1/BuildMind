@@ -21,7 +21,7 @@ export default function StepActions({ step, idea, projectId }: { step: string; i
             style={{ minHeight: 36, padding: "0 12px", borderRadius: 8, border: "1px solid var(--bm-accent-bd)", background: open === a.id ? "var(--bm-accent-dim)" : "transparent", color: "var(--bm-accent)", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{a.label}</button>
         ))}
         {agent && (
-          <Link href={`/agents?agent=${agent}`}
+          <Link href={`/break-my-startup?view=agents&agent=${agent}`}
             style={{ minHeight: 36, padding: "0 12px", borderRadius: 8, border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>
             {AGENT_LABEL[agent]}
           </Link>
