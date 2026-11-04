@@ -6,6 +6,8 @@
  *
  *   "This Week"  — the weekly report (previously /reports)
  *   "Patterns"   — behavioral insights (previously /insights)
+ *   "Execution"  — the execution score page (previously /overview)
+ *   "Founder Mirror" — the mirror page (previously /founder-mirror)
  *
  * Both tabs respect the BuildMindCalibrating gate (<7 reflections → show
  * the calibrating component instead of thin content).
@@ -24,6 +26,8 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import InsightsPage from "@/app/insights/page";
+import OverviewPage from "@/app/(dashboard)/overview/page";
+import FounderMirrorPage from "@/app/founder-mirror/page";
 import { WeeklyPulseCard } from "@/components/WeeklyPulseCard";
 import { createClient } from "@/lib/supabase/client";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
@@ -71,7 +75,7 @@ function PatternsTab({ reflectionCount }: { reflectionCount: number }) {
   return <InsightsPage />;
 }
 
-type Tab = "week" | "patterns" | "visual";
+type Tab = "week" | "patterns" | "execution" | "mirror" | "visual";
 
 // FIX: this component previously always defaulted to the "week" tab and
 // ignored any ?tab= query param, so the deep link from RisksGapsCard
@@ -81,7 +85,7 @@ type Tab = "week" | "patterns" | "visual";
 function ProgressContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab: Tab = tabParam === "patterns" ? "patterns" : tabParam === "visual" ? "visual" : "week";
+  const initialTab: Tab = (["patterns", "execution", "mirror", "visual"] as const).find((x) => x === tabParam) ?? "week";
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [reflectionCount, setReflectionCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -112,6 +116,8 @@ function ProgressContent() {
   const TABS: { id: Tab; label: string; desc: string }[] = [
     { id: "week",     label: "This week",  desc: "" },
     { id: "patterns", label: "Patterns",   desc: "" },
+    { id: "execution", label: "Execution", desc: "" },
+    { id: "mirror",   label: "Founder Mirror", desc: "" },
     { id: "visual",   label: "Charts",     desc: "" },
   ];
 
@@ -138,6 +144,7 @@ function ProgressContent() {
             border: "1px solid var(--bm-border)",
             borderRadius: 12,
             padding: 4,
+            overflowX: "auto",
           }}
         >
           {TABS.map((tab) => (
@@ -146,7 +153,8 @@ function ProgressContent() {
               onClick={() => setActiveTab(tab.id)}
               style={{
                 flex: 1,
-                padding: "10px 16px",
+                padding: "10px 12px",
+                whiteSpace: "nowrap",
                 borderRadius: 9,
                 border: "none",
                 background: activeTab === tab.id ? "var(--bm-bg4)" : "transparent",
@@ -184,6 +192,10 @@ function ProgressContent() {
               </div>
             ) : activeTab === "week" ? (
               <ThisWeekTab reflectionCount={reflectionCount} />
+            ) : activeTab === "execution" ? (
+              <OverviewPage />
+            ) : activeTab === "mirror" ? (
+              <FounderMirrorPage />
             ) : activeTab === "visual" ? (
               <>
                 <LiveVisual kind="progress" projectId={activeProjectId} />
@@ -205,4 +217,4 @@ export default function ProgressPage() {
       <ProgressContent />
     </Suspense>
   );
-}
+    }
