@@ -32,7 +32,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { href: "/projects", label: "Projects", aliases: ["projects", "my projects", "milestones page", "backlog page"] },
   { href: "/founder-mirror", label: "Founder Mirror", aliases: ["founder mirror", "mirror", "what you believe", "beliefs page"] },
   { href: "/break-my-startup", label: "Break My Startup", aliases: ["break my startup", "stress test"] },
-  { href: "/agents", label: "Agent Workforce", aliases: ["agent workforce", "agents"] },
+  { href: "/break-my-startup?view=agents", label: "Agent Workforce", aliases: ["agent workforce", "agents"] },
   { href: "/achievements", label: "Achievements", aliases: ["achievements", "badges"] },
   { href: "/reports", label: "Weekly Report", aliases: ["weekly report", "reports", "export report"] },
   { href: "/reflect", label: "Reflect", aliases: ["reflect", "reflection", "check-in", "check in"] },
