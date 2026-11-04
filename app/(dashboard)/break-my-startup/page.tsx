@@ -307,16 +307,21 @@ export default function BreakMyStartupPage() {
     // but nothing before this read direct_competitors back out; only the
     // generic competitor_summary paragraph was ever shown.
     const competitorAgentOutput = data.agent_outputs?.competitor as
-      | { direct_competitors?: Array<{ name?: string; url?: string; weakness?: string; threat_level?: string }> }
+      | { brief?: CompetitorRow[]; first_test?: string; direct_competitors?: Array<{ name?: string; url?: string; weakness?: string; threat_level?: string }> }
       | undefined;
-    const competitorTable: CompetitorRow[] | undefined = competitorAgentOutput?.direct_competitors?.length
-      ? competitorAgentOutput.direct_competitors.slice(0, 5).map((c) => ({
-          name: cleanAIText(c.name) || "Unnamed competitor",
-          url: c.url,
-          weakness: cleanAIText(c.weakness) || "No specific gap identified yet.",
-          threat_level: (c.threat_level === "high" || c.threat_level === "low") ? c.threat_level : "medium",
-        }))
-      : undefined;
+    const competitorTable: CompetitorRow[] | undefined = competitorAgentOutput?.brief?.length
+      ? competitorAgentOutput.brief.slice(0, 5).map((c) => ({ ...c, name: cleanAIText(c.name) || "Unnamed competitor", weakness: cleanAIText(c.weakness) || "No specific gap identified yet." }))
+      : competitorAgentOutput?.direct_competitors?.length
+        ? competitorAgentOutput.direct_competitors.slice(0, 5).map((c) => ({
+            name: cleanAIText(c.name) || "Unnamed competitor",
+            url: c.url,
+            weakness: cleanAIText(c.weakness) || "No specific gap identified yet.",
+            threat_level: (c.threat_level === "high" || c.threat_level === "low") ? c.threat_level : "medium",
+            pricing: "Not verified",
+            siteRead: false,
+          } as CompetitorRow))
+        : undefined;
+    const competitorFirstTest = cleanAIText(competitorAgentOutput?.first_test) || undefined;
 
     const usedDiffIndices = new Set<number>();
     function nextDifferentiationEntry(): string | undefined {
@@ -419,6 +424,7 @@ export default function BreakMyStartupPage() {
       signalBreakdown,
       signalScores,
       competitorTable,
+      competitorFirstTest,
       surviveReasons: survivePaired.texts,
       surviveReasonTags: survivePaired.tags,
       focusAreaCoverage: data.focus_area_coverage ?? null,
@@ -939,4 +945,4 @@ export default function BreakMyStartupPage() {
       </AnimatePresence>
     </div>
   );
-  }
+    }
