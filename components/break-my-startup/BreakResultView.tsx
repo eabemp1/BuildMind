@@ -17,6 +17,8 @@
  */
 
 import StepActions from "@/components/break-my-startup/StepActions";
+import type { InvestigateContext } from "@/lib/break/investigate";
+import { applyReview, upsertCheck, type SavedCheck } from "@/lib/break/claimChecks";
 import { ShareBreak } from "./ShareBreak";
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -392,7 +394,7 @@ function PivotCard({ pivot, result, onExplore }: { pivot: PivotItem; result: Bre
   );
 }
 
-function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResultViewProps; rec: ReturnType<typeof useEvidenceRecorder> }) {
+function NextTab({ result, props, rec, investigate }: { result: BreakResult; props: BreakResultViewProps; rec: ReturnType<typeof useEvidenceRecorder>; investigate: InvestigateContext }) {
   const mv = result.evidence?.nextMove;
   const hold = Boolean(mv?.holdBuilding);
   const plan = result.executionPlan;
@@ -441,7 +443,7 @@ function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResu
         </section>
       )}
 
-      {result.evidence && <TestSections layer={result.evidence} rec={rec} investigate={{ projectId: props.projectId, idea: props.ideaTitle }} />}
+      {result.evidence && <TestSections layer={result.evidence} rec={rec} investigate={investigate} />}
 
       {plan && hold && (
         <Disclosure title="Build plan on hold" summary="Run the interviews first, then regenerate this plan with what you learn.">
@@ -497,6 +499,20 @@ export function BreakResultView(props: BreakResultViewProps) {
   const { result } = props;
   const rec = useEvidenceRecorder(result.evidence);
   const [tab, setTab] = useState<TabId>("risks");
+  // Checks of single claims: loaded for a saved project, added to as the founder runs more.
+  const [checks, setChecks] = useState<SavedCheck[]>([]);
+  useEffect(() => {
+    if (!props.projectId) return;
+    let alive = true;
+    fetch(`/api/agents/history?projectId=${encodeURIComponent(props.projectId)}&checks=1`)
+      .then((r) => r.json()).then((j) => { if (alive && j?.ok && Array.isArray(j.checks)) setChecks(j.checks); }).catch(() => {});
+    return () => { alive = false; };
+  }, [props.projectId]);
+  const investigate: InvestigateContext = {
+    projectId: props.projectId, idea: props.ideaTitle, checks,
+    onCheck: (c) => setChecks((cs) => upsertCheck(cs, c)),
+    onReview: (runId, fid, ok) => setChecks((cs) => applyReview(cs, runId, fid, ok)),
+  };
 
   const tabs: Array<{ id: TabId; label: string; count?: number }> = [
     { id: "risks", label: "Risks", count: result.risks.length },
@@ -538,11 +554,11 @@ export function BreakResultView(props: BreakResultViewProps) {
           {tab === "proof" && result.evidence && (
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
               <section style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px" }}><ConfidenceSummary layer={result.evidence} /></section>
-              <ProofSections layer={result.evidence} rec={rec} investigate={{ projectId: props.projectId, idea: props.ideaTitle }} />
+              <ProofSections layer={result.evidence} rec={rec} investigate={investigate} />
             </div>
           )}
           {tab === "market" && <MarketTab result={result} />}
-          {tab === "next" && <NextTab result={result} props={props} rec={rec} />}
+          {tab === "next" && <NextTab result={result} props={props} rec={rec} investigate={investigate} />}
         </motion.div>
       </AnimatePresence>
 
@@ -564,4 +580,4 @@ export function BreakResultView(props: BreakResultViewProps) {
       </div>
     </div>
   );
-    }
+              }
