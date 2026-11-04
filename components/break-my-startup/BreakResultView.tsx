@@ -299,6 +299,7 @@ function MarketTab({ result }: { result: BreakResult }) {
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>Who you are up against</h3>
           <ThreatMap competitors={result.competitorTable} />
+          {result.competitorFirstTest && <p style={{ ...bodyText, maxWidth: "68ch" }}><strong>Test this week:</strong> {result.competitorFirstTest}</p>}
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
             {result.competitorTable.map((c) => {
               const ev = q[c.name.toLowerCase()];
@@ -310,10 +311,18 @@ function MarketTab({ result }: { result: BreakResult }) {
                     </span>
                     <Chip color={THREAT_COLOR[c.threat_level]}>{c.threat_level} threat</Chip>
                   </div>
+                  {c.whatTheyDo && <p style={{ ...bodyText, fontSize: 13.5 }}>{c.whatTheyDo}</p>}
+                  <p style={{ ...smallText, fontSize: 12 }}>
+                    {c.siteRead ? "Their site was read." : "Their site was not read; this is our inference."}
+                    {c.targetCustomer ? ` Sells to: ${c.targetCustomer}.` : ""}
+                  </p>
+                  {c.pricing && <p style={{ ...smallText, fontSize: 12.5 }}>Price: {c.pricing}</p>}
+                  {c.strength && (<div><p style={labelText}>What they do better</p><p style={{ ...bodyText, fontSize: 13.5 }}>{c.strength}</p></div>)}
                   <div>
                     <p style={labelText}>Where they are weak</p>
                     <p style={{ ...bodyText, fontSize: 13.5 }}>{c.weakness}</p>
                   </div>
+                  {c.howYouLose && (<div><p style={labelText}>How you could lose to them</p><p style={{ ...bodyText, fontSize: 13.5 }}>{c.howYouLose}</p></div>)}
                   {ev && <p style={{ ...smallText, fontSize: 12 }}><span style={{ color: ev.color }}>{ev.label}.</span> {ev.note}</p>}
                 </div>
               );
@@ -555,4 +564,4 @@ export function BreakResultView(props: BreakResultViewProps) {
       </div>
     </div>
   );
-}
+        }
