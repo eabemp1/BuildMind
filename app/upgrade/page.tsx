@@ -39,7 +39,7 @@ const BUILDER_FEATURES = [
   { label: "Weekly behavioral synthesis email", note: "Every Sunday: real numbers, honest diagnosis, next week directive." },
   { label: "Rotating Critic Personas", note: "4 adversarial AI voices rotate weekly to pressure-test your thinking." },
   { label: "Stage auto-progression", note: "Hit the execution threshold and you level up automatically." },
-  { label: "Unlimited AI tasks + coaching", note: "No daily or monthly caps." },
+  { label: "High daily AI limits", note: "Up to 80 Coach messages and 150 daily-action runs a day." },
   { label: "Unlimited projects", note: "Track multiple ideas simultaneously." },
 ];
 

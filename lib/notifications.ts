@@ -235,7 +235,7 @@ export function notifyInactivity(daysSinceLastAction: number): void {
 export function notifyUpgradeNudge(reason: "weekly_limit" | "ai_limit" | "feature"): void {
   const messages = {
     weekly_limit: "You've hit your weekly action limit. Builder removes all limits.",
-    ai_limit: "You've used all 3 daily AI messages. Builder is unlimited.",
+    ai_limit: "You've used all 3 daily AI messages. Builder has far higher limits.",
     feature: "This feature is on Builder plan. One upgrade, every tool unlocked.",
   };
   addNotification({

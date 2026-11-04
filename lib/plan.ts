@@ -36,6 +36,7 @@
  */
 
 import { storage } from "@/lib/storage";
+import { PLAN_DAILY_LIMITS } from "@/lib/aiLimits";
 import { effectiveStreak, streakDayKey } from "@/lib/streak";
 
 export type Plan = "free" | "builder";
@@ -222,7 +223,8 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   // The ONLY paid tier to ship this week.
   builder: {
     actionsPerWeek: -1,
-    aiMessagesPerDay: -1,
+    // Same number the server enforces (lib/aiLimits.ts), so the page never promises more than the server gives.
+    aiMessagesPerDay: PLAN_DAILY_LIMITS.builder,
     historyDays: -1,
     maxProjects: -1,
 

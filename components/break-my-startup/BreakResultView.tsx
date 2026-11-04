@@ -63,6 +63,8 @@ function Hero({ result, onJump, onUnlock }: { result: BreakResult; onJump: (t: T
   const top = result.risks[0];
   const conclusion = result.evidence?.conclusion;
   const start = result.evidence?.nextMove?.action ?? result.brutal_advice;
+  const band = result.evidence?.confidence;
+  const inferencePct = result.evidence?.scoreBasis?.inferenceSharePct;
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
@@ -72,6 +74,12 @@ function Hero({ result, onJump, onUnlock }: { result: BreakResult; onJump: (t: T
           <div style={{ flexShrink: 0, margin: "0 auto" }}>
             <RadialGauge value={result.survival_probability} size={128} label="survive"
               thresholds={[{ min: 60, color: "var(--bm-green)" }, { min: 40, color: "var(--bm-amber)" }, { min: 0, color: "var(--bm-red)" }]} />
+            {/* The number is a model estimate, not a measured survival rate. Say so where it is read. */}
+            <p style={{ ...smallText, fontSize: 11.5, maxWidth: 150, textAlign: "center", margin: "6px auto 0" }}>
+              Model estimate, not a measured rate.
+              {band ? ` Likely range ${band.low}% to ${band.high}%.` : ""}
+              {typeof inferencePct === "number" ? ` ${inferencePct}% of it rests on inference.` : ""}
+            </p>
           </div>
         )}
         <div style={{ flex: "1 1 280px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -94,6 +102,9 @@ function Hero({ result, onJump, onUnlock }: { result: BreakResult; onJump: (t: T
             </button>
           )}
           {result.score_note && <p style={{ ...smallText, fontSize: 12 }}>{result.score_note}</p>}
+          <p style={{ ...smallText, fontSize: 12 }}>
+            This is a model's reading of your description and public search results. What is sourced, inferred or still a guess is listed in the Proof tab.
+          </p>
         </div>
       </div>
 
@@ -138,7 +149,7 @@ function RiskRow({ risk, index, defaultOpen, focusToken, idea, projectId }: { ri
   }, [focusToken]);
   const color = SEV_COLOR[risk.severity];
   return (
-    <div ref={ref} id={`risk-${index}`} style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: `4px solid ${color}`, borderRadius: 12 }}>
+    <div ref={ref} id={`risk-${index}`} style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12 }}>
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} style={{ width: "100%", display: "flex", gap: 12, alignItems: "center", padding: "14px 16px", background: "none", border: 0, cursor: "pointer", textAlign: "left", color: "inherit" }}>
         <span style={{ fontFamily: mono, fontSize: 12, color: "var(--bm-text3)", minWidth: 18 }}>{index + 1}</span>
         <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -201,6 +212,7 @@ function RisksTab({ result, idea, projectId }: { result: BreakResult; idea?: str
       <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0, letterSpacing: "-0.01em" }}>What breaks first</h3>
+          <p style={{ ...smallText, fontSize: 12, flexBasis: "100%", margin: 0 }}>These risks are the model's inference unless a source is shown. Check the Proof tab before you act on one.</p>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {counts.map((c) => <Chip key={c.s} color={SEV_COLOR[c.s]}>{c.n} {c.s.toLowerCase()}</Chip>)}
           </div>
@@ -213,7 +225,7 @@ function RisksTab({ result, idea, projectId }: { result: BreakResult; idea?: str
           <h3 style={{ fontFamily: display, fontSize: 18, fontWeight: 700, color: "var(--bm-text)", margin: 0, letterSpacing: "-0.01em" }}>What could still work</h3>
           <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
             {shown.map((reason, i) => (
-              <li key={i} style={{ display: "flex", gap: 10, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderLeft: "3px solid var(--bm-green)", borderRadius: 10, padding: "12px 14px" }}>
+              <li key={i} style={{ display: "flex", gap: 10, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "12px 14px" }}>
                 <div style={{ minWidth: 0, maxWidth: "68ch" }}>
                   <Markdown textSize={14}>{sanitizeMarkdown(reason)}</Markdown>
                   <div style={{ marginTop: result.surviveReasonTags?.[i]?.length ? 6 : 0 }}><FocusTags areas={result.surviveReasonTags?.[i]} /></div>
@@ -356,7 +368,7 @@ function PivotCard({ pivot, result, onExplore }: { pivot: PivotItem; result: Bre
         {pivot.key_change && <div><dt style={{ ...labelText, display: "inline" }}>Change: </dt><dd style={{ ...bodyText, fontSize: 13, display: "inline" }}>{pivot.key_change}</dd></div>}
       </dl>
       {pivot.first_step && (
-        <div style={{ background: "var(--bm-bg3)", borderRadius: 10, padding: "9px 11px", borderLeft: "3px solid var(--bm-accent)" }}>
+        <div style={{ background: "var(--bm-bg3)", borderRadius: 10, padding: "9px 11px" }}>
           <p style={labelText}>Your first step</p>
           <p style={{ ...bodyText, fontSize: 13 }}>{pivot.first_step}</p>
           {pivot.confidence_boost && <p style={{ ...smallText, fontSize: 12, marginTop: 4 }}><strong style={{ color: "var(--bm-green)" }}>Early win:</strong> {pivot.confidence_boost}</p>}

@@ -137,7 +137,7 @@ export function RiskTree({ verdict, risks }: { verdict: string; risks: RiskItem[
                   <div key={key} style={{ position: "relative" }}>
                     <span aria-hidden style={{ position: "absolute", left: -14, top: 12, width: 12, borderTop: `2px solid ${line}` }} />
                     <button type="button" aria-expanded={Boolean(isOpen)} onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))}
-                      style={{ background: "var(--bm-bg3)", border: `1px solid var(--bm-border)`, borderLeft: `3px solid ${SEV_COLOR[g.s]}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", textAlign: "left", color: "var(--bm-text)", fontFamily: display, fontSize: 13.5, fontWeight: 600, width: "100%" }}>
+                      style={{ background: "var(--bm-bg3)", border: `1px solid var(--bm-border)`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", textAlign: "left", color: "var(--bm-text)", fontFamily: display, fontSize: 13.5, fontWeight: 600, width: "100%" }}>
                       {r.category}
                     </button>
                     {isOpen && (

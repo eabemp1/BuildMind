@@ -990,7 +990,7 @@ function PricingSection() {
                   "Full Break My Startup: 5 agents, evidence labels, contradictions, falsification tests",
                   "Evidence-gated stage progression",
                   "Founder memory that spots your avoidance patterns",
-                  "Unlimited AI Coach grounded in your project",
+                  "AI Coach grounded in your project, up to 80 messages a day",
                   "Full Momentum Score with decay warnings",
                   "Recovery mode when confidence drops",
                   "Weekly report and coach tips",
@@ -2661,4 +2661,4 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
       {demoOpen && <DemoModal onClose={() => setDemoOpen(false)} />}
     </div>
   );
-             }
+  }

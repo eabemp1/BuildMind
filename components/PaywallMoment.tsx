@@ -56,13 +56,13 @@ const COPY: Record<PaywallTrigger, { headline: string; body: string; cta: string
   },
   weekly_limit: {
     headline: "You've hit your weekly action limit.",
-    body: "Free founders get 3 AI-powered actions per week. Builder gives you unlimited — because execution should never be throttled.",
-    cta: "Go unlimited",
+    body: "Free founders get 3 AI-powered actions per week. Builder gives you far higher limits, so execution is not throttled.",
+    cta: "Upgrade to Builder",
   },
   ai_limit: {
     headline: "You've used your daily AI calls.",
-    body: "Builder gives you unlimited AI calls so the system never goes quiet when you need it most.",
-    cta: "Go unlimited",
+    body: "Builder gives you much higher daily AI limits so the system rarely goes quiet when you need it.",
+    cta: "Upgrade to Builder",
   },
 };
 

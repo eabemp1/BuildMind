@@ -23,13 +23,13 @@ const LIMIT_COPY: Record<LimitReason, { emoji: string; title: string; body: stri
   break_startup:{ emoji: "⚡", title: "Full analysis is a Builder feature.", body: "The brutal AI stress test tells you why your startup will fail, then turns the result into the next action. The preview is only a taste.", cta: "Unlock full stress test →", feature: "break_startup" },
   today_action: { emoji: "🎯", title: "You've used your 3 actions this week.", body: "Builder runs the Reflexion Loop every day. Your next action is ready — you just need Builder to receive it.", cta: "Get daily actions with Builder →", feature: "actions" },
   weekly_report:{ emoji: "📋", title: "Your weekly report is a Builder feature.", body: "Every Friday: your intention vs action gap, momentum trend, biggest blocker, and what the AI thinks you're actually avoiding. The week doesn't close without it.", cta: "Unlock weekly reports →", feature: "report" },
-  generic:      { emoji: "🔒", title: "Builder is where serious founders operate.", body: "Daily Reflexion Loop, Morning Briefing before you wake, unlimited AI Coach, full Strategy Blueprints, Recovery Mode, Pattern Detection. Not more features — a different level of execution.", cta: "Upgrade to Builder →", feature: "generic" },
+  generic:      { emoji: "🔒", title: "Builder is where serious founders operate.", body: "Daily Reflexion Loop, Morning Briefing before you wake, a much higher AI Coach limit, full Strategy Blueprints, Recovery Mode, Pattern Detection. Not more features — a different level of execution.", cta: "Upgrade to Builder →", feature: "generic" },
 };
 
 const BUILDER_BULLETS = [
   "Daily Reflexion Loop — full 3-agent personalisation",
   "Morning Briefing every day before you wake",
-  "Unlimited AI Coach — no daily caps",
+  "AI Coach — up to 80 messages a day",
   "Unlimited Strategy Blueprints + Execution Systems",
   "Recovery Mode — forgiving when you fall behind",
   "Pattern Detection — AI names what you're avoiding",

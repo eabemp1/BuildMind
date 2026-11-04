@@ -2086,7 +2086,7 @@ function TodayContent() {
             <span style={{ fontSize: 11, color: "var(--bm-text3)", fontWeight: 600, flex: 1 }}>
               {aiUsage.monthlyLimit - aiUsage.monthlyUsed} AI calls remaining this month.
             </span>
-            <a href="/upgrade" style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-accent)", textDecoration: "none", whiteSpace: "nowrap" }}>Upgrade for unlimited →</a>
+            <a href="/upgrade" style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-accent)", textDecoration: "none", whiteSpace: "nowrap" }}>Upgrade for higher limits →</a>
           </div>
         )}
       </motion.div>
@@ -3086,4 +3086,4 @@ export default function TodayPage() {
       <TodayContent />
     </Suspense>
   );
-             }
+    }

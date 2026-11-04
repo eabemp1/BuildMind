@@ -236,7 +236,7 @@ const PLAN_FEATURES = [
   { label: "Reflexion loop (AI learns from outcomes)", free: false, builder: true },
   { label: "Behavioral memory",            free: false, builder: true  },
   { label: "Notion & Linear task sync",    free: false, builder: true  },
-  { label: "Unlimited AI Coach messages",  free: false, builder: true  },
+  { label: "AI Coach: up to 80 messages a day",  free: false, builder: true  },
   { label: "Weekly performance reports",   free: false, builder: true  },
   { label: "Break My Startup analysis",    free: true,  builder: true  },
   { label: "Morning briefings",            free: false, builder: true  },

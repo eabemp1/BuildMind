@@ -395,7 +395,7 @@ export function TrialPaywall({ expired }: TrialPaywallProps) {
             "Reflexion loop — learns from every outcome",
             "Behavioral memory — knows your patterns",
             "Notion & Linear task sync",
-            "Unlimited AI Coach messages",
+            "AI Coach: up to 80 messages a day",
           ].map((f) => (
             <div
               key={f}

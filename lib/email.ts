@@ -108,7 +108,7 @@ function subscriptionConfirmedHTML(data: { name?: string; plan: string; amount: 
     <div style="margin-bottom:20px;">${pill("Builder Plan Activated")}</div>
     ${h1("You're in.")}
     ${subhead("Your BuildMind Builder subscription is now active.")}
-    ${body(`Welcome, ${displayName}. You now have unlimited AI calls, full Reflexion loop access, weekly strategy reports, and every feature BuildMind ships from here.`)}
+    ${body(`Welcome, ${displayName}. You now have high daily AI limits, full Reflexion loop access, weekly strategy reports, and every feature BuildMind ships from here.`)}
     <div style="text-align:left;margin-bottom:28px;">
       ${cta("Open your workspace →", `${APP_URL}/today`)}
     </div>
@@ -140,7 +140,7 @@ function subscriptionCancelledHTML(data: { name?: string; reason?: string; cance
       </ul>
       <p style="margin:14px 0 10px;font-size:13px;color:#ECECEC;font-weight:600;">What changes:</p>
       <ul style="margin:0;padding-left:18px;font-size:13px;color:#909096;line-height:1.9;">
-        <li>Unlimited AI calls → 3/day</li>
+        <li>High daily AI limits → 3/day</li>
         <li>Weekly reports → paused</li>
         <li>Full Reflexion loop → limited</li>
       </ul>

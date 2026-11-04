@@ -52,7 +52,7 @@ const WELCOME: Record<string, { headline: string; sub: string; features: string[
   builder: {
     headline: "You're on Builder. Let's ship.",
     sub: "No more limits. Your AI Coach, full Break My Startup analysis, and weekly strategy reports are all live. Now close a task.",
-    features: ["Unlimited AI Coach — no daily caps", "Full Break My Startup analysis", "Weekly AI strategy report every Friday"],
+    features: ["AI Coach — up to 80 messages a day", "Full Break My Startup analysis", "Weekly AI strategy report every Friday"],
   },
   venture: {
     headline: "You're on Venture. Full power.",

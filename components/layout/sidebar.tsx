@@ -355,7 +355,7 @@ export function SidebarContent({ onNavClick, onSignOut }: { onNavClick?: () => v
               ) : (
                 <div className="px-3 py-2.5 mx-2 rounded-lg" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg3)" }}>
                   <div className="flex items-center gap-1.5"><Sparkles size={11} style={{ color: "var(--bm-text3)" }} /><span className="text-xs font-medium" style={{ color: "var(--bm-text2)" }}>Builder plan</span></div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "var(--bm-text4)" }}>Unlimited · All features</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: "var(--bm-text4)" }}>All features</div>
                 </div>
               )}
               <Link href="/invite" className="flex items-center gap-2 px-3 py-2.5 mx-2 rounded-md transition-colors no-underline" style={{ border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text3)" }}>
@@ -439,4 +439,4 @@ export default function Sidebar() {
       </AnimatePresence>
     </>
   );
-        }
+            }

@@ -22,7 +22,7 @@ const FREE_FEATURES = [
 const BUILDER_FEATURES = [
   { label: "Daily Morning Briefing — every day", note: "3-agent reflexion loop. Overnight. Waiting when you wake up." },
   { label: "Founder Memory", note: "AI tracks your avoidance zones, strengths, and execution patterns across every session." },
-  { label: "Unlimited AI tasks + coaching", note: "No daily or monthly caps. Build at your own pace." },
+  { label: "High daily AI limits", note: "Up to 80 Coach messages and 150 daily-action runs a day." },
   { label: "Full Momentum Score + decay warnings", note: "Tracks your execution trajectory. Alerts you before you fully stall." },
   { label: "Recovery Mode", note: "When you miss 3+ days, the system adapts — lighter tasks, direct re-engagement." },
   { label: "Rotating Critic Personas", note: "4 adversarial AI voices (YC Partner, Growth Hacker, Frugal CFO, User Empathy) rotate weekly." },
