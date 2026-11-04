@@ -24,7 +24,7 @@ import { callModelJSON } from "@/lib/ai-providers";
 import { webSearch, discussionSearch, newsSearch, competitorSearch, type SearchResult } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emitPulse } from "@/lib/pulse";
-import { classifyFinding, runReadiness, frameVerdict } from "@/lib/evidence";
+import { classifyFinding, runReadiness, frameVerdict, claimStatus, type ClaimStatus } from "@/lib/evidence";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +70,8 @@ export interface AgentRunInput {
   problem:        string;
   targetUsers:    string;
   maxIterations:  number;
+  /** One specific claim to check. When set, searches and findings are about this claim only. */
+  focus?:         string;
 }
 
 export interface AgentRunResult {
@@ -81,6 +83,8 @@ export interface AgentRunResult {
   signalsFound:      number;
   reportMarkdown:    string;
   findings:          AgentFinding[];
+  /** Present for focused checks. */
+  claimStatus?:      ClaimStatus;
 }
 
 // ── Agent identity ────────────────────────────────────────────────────────────
@@ -215,7 +219,9 @@ Return ONLY valid JSON. No markdown fences.`;
 // Results are injected into the AI prompt as grounded evidence.
 
 async function fetchSearchContext(input: AgentRunInput, iteration: number): Promise<string> {
-  const { startupTitle, problem, targetUsers, agentType } = input;
+  const { startupTitle, targetUsers, agentType } = input;
+  // A focused check searches for the claim itself, not the whole problem.
+  const problem = input.focus ? input.focus : input.problem;
 
   try {
     if (agentType === "research") {
@@ -296,12 +302,15 @@ async function runIteration(
       }\n\nGo deeper. Avoid repeating confirmed findings. Focus on gaps.`
     : "First iteration — start broad, then focus on the highest-leverage questions.";
 
+  const focusBlock = input.focus
+    ? `\nFOCUS: check ONLY this claim from the founder's stress test: "${input.focus}"\nEvery finding must bear directly on it, supporting or contradicting. If the search results do not settle it, say so and keep confidence low.\n`
+    : "";
   const userPrompt = `Startup: ${input.startupTitle}
 Problem: ${input.problem}
 Summary: ${input.startupSummary}
 Target users: ${input.targetUsers}
 Stage: ${input.stage}
-${searchContext}
+${focusBlock}${searchContext}
 
 ${prevSummary}
 
@@ -669,5 +678,6 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
     signalsFound:      allFindings.length,
     reportMarkdown,
     findings:          allFindings,
+    ...(input.focus ? { claimStatus: claimStatus(allFindings) } : {}),
   };
-}
+    }
