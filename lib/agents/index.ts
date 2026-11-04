@@ -115,6 +115,8 @@ export interface ScrapedCompetitor {
   title: string;
   url: string;
   snippet: string;
+  /** What reading their own site produced. Absent when it was not read. */
+  pageFacts?: { read: boolean; prices?: string[]; pricingPageSeen?: boolean };
 }
 
 // ── Agent output types ────────────────────────────────────────────────────────
@@ -133,6 +135,8 @@ export interface MarketResearchOutput {
 export interface CompetitorOutput {
   saturation_level: "low" | "medium" | "high" | "unknown";
   direct_competitors: CompetitorSummary[];
+  biggest_threat?: { name: string; why: string };
+  first_test?: string;
   indirect_competitors: string[];
   market_gaps: string[];              // what competitors are NOT doing
   differentiation_opportunities: string[];
@@ -146,6 +150,10 @@ export interface CompetitorSummary {
   url?: string;
   weakness: string;                   // their specific gap this founder can exploit
   threat_level: "low" | "medium" | "high";
+  what_they_do?: string;
+  target_customer?: string;
+  strength?: string;
+  how_you_lose?: string;
 }
 
 export interface TrendOutput {
@@ -311,7 +319,7 @@ Assess market demand. Be specific. Lower confidence when uncertain.`;
   try {
     const result = await callModelJSON<MarketResearchOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 1100 },
+      { role: "fast", maxTokens: 700 },
     );
     // Validate required fields
     if (!result.demand_signals || !result.confidence) return fallback;
@@ -338,10 +346,16 @@ Return ONLY valid JSON matching this exact shape:
     {
       "name": "Competitor name",
       "url": "url or empty string",
+      "what_they_do": "one sentence, plain words",
+      "target_customer": "who they sell to",
+      "strength": "what they do better than this founder today",
       "weakness": "their specific gap this founder can exploit",
+      "how_you_lose": "the most likely way this founder loses a customer to them",
       "threat_level": "low" | "medium" | "high"
     }
   ],
+  "biggest_threat": { "name": "one of the competitors above", "why": "one sentence" },
+  "first_test": "one cheap test, doable this week, of whether customers would pick this founder over the biggest threat",
   "indirect_competitors": ["alternative solution 1", "..."],
   "market_gaps": ["what NO competitor is doing well 1", "..."],
   "differentiation_opportunities": ["specific angle 1", "..."],
@@ -354,6 +368,9 @@ Rules:
 - Use the scraped competitor data as primary evidence
 - market_gaps: must be SPECIFIC to the competitors listed, not generic
 - differentiation_opportunities: name a specific positioning angle, not "be better"
+- Use "From their site" text in the context as fact; anything not in it is your inference, so keep it short and hedged
+- Do NOT state prices; they are added separately from the page
+- Give at most 5 direct competitors, strongest threats first
 - competitive_moat_score: 0 = commodity, 10 = nearly impossible to replicate
 - saturation: low = few direct competitors, high = crowded with funded players`;
 
@@ -384,7 +401,7 @@ Map the competitive landscape. Name specific gaps. Be precise.`;
   try {
     const result = await callModelJSON<CompetitorOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
+      { role: "fast", maxTokens: 1100 },
     );
     if (!result.saturation_level) return fallback;
     return {
