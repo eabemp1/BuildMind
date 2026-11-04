@@ -42,6 +42,8 @@ import {
 } from "@/lib/learning";
 import { loadFounderStyleProfile } from "@/lib/founderStyle";
 import { normalizeCompetitors, competitorSummaryLine } from "@/lib/break/competitorBrief";
+import { loadClaimChecks } from "@/lib/server/claimChecks";
+import { settledLines } from "@/lib/break/claimChecks";
 import { loadFounderIntelligence, buildFounderIntelligencePromptBlock } from "@/lib/founderIntelligence";
 
 type ReflexionStatus = "ok" | "partial" | "failed";
@@ -781,7 +783,10 @@ export async function POST(request: Request) {
     const competitors = await enrichCompetitors([...dedupedNamed, ...scrapedCompetitors].slice(0, 8));
 
     // Build startup context from project data
+    // Claims the founder checked and confirmed on earlier runs (saved projects only; an unsaved idea has no stable identity).
+    const claimChecks = await loadClaimChecks(supabase, userId, { projectId });
     const startupCtx: StartupContext = {
+      checkedClaims: settledLines(claimChecks),
       idea: `${(project.name ?? project.title) ?? ""} — ${project.description ?? ""}`,
       problem: project.problem ?? "",
       targetUsers: project.target_users ?? "",
@@ -955,6 +960,7 @@ export async function POST(request: Request) {
       scraped: competitors,
       competitorSource: competitor_data_source,
       founderEvidenceCount,
+      checkedClaims: claimChecks,
       productName: ((project.name ?? project.title) ?? undefined) as string | undefined,
       breakdown: breakdownEntries,
       pivots,
@@ -1103,4 +1109,4 @@ export async function POST(request: Request) {
       { status: msg.toLowerCase().includes("limit") ? 429 : 500 },
     );
   }
-                                           }
+}
