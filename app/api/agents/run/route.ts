@@ -18,6 +18,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { sanitizePromptInput } from "@/lib/agents";
+import { loadClaimChecks } from "@/lib/server/claimChecks";
 import { runAgentWorkforce, AGENT_IDENTITY, type AgentType } from "@/lib/agentWorkforce";
 
 export const runtime     = "nodejs";
@@ -175,6 +176,8 @@ export async function POST(req: NextRequest) {
       runId,
       data:   finalRun,   // client can skip polling — it already has the result
       result,
+      // A focused check comes back in its saved shape, with finding ids so each can be confirmed or rejected.
+      check: focus ? ((await loadClaimChecks(admin, auth.userId, { runId }))[0] ?? null) : undefined,
     });
   } catch (err) {
     await admin
