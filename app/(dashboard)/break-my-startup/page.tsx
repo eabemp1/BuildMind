@@ -3,6 +3,7 @@ import { classifyRiskCategory, stripUnsupportedTraitClaims } from "@/lib/breakGu
 import type { EvidenceLayer } from "@/lib/breakEvidence";
 import { StressTestProgress } from "@/components/break/StressTestProgress";
 import React from "react";
+import AgentsPage from "@/app/agents/page";
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -107,7 +108,7 @@ function cleanAIList(items?: string[]): string[] {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function BreakMyStartupPage() {
+function StressTestView() {
   const [reflectionCount, setReflectionCount] = React.useState(0);
 
   React.useEffect(() => {
@@ -945,4 +946,41 @@ export default function BreakMyStartupPage() {
       </AnimatePresence>
     </div>
   );
-    }
+  }
+
+
+/**
+ * Break My Startup holds two views: the stress test and the agent crew (the
+ * old /agents page, which stays routable). ?view=agents opens the crew.
+ */
+export default function BreakMyStartupPage() {
+  const [view, setView] = useState<"test" | "agents">("test");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") === "agents") setView("agents");
+  }, []);
+  const pick = (v: "test" | "agents") => {
+    setView(v);
+    try {
+      const u = new URL(window.location.href);
+      if (v === "agents") u.searchParams.set("view", "agents"); else { u.searchParams.delete("view"); u.searchParams.delete("agent"); }
+      window.history.replaceState(null, "", u.toString());
+    } catch { /* non-fatal */ }
+  };
+  const tabs: { id: "test" | "agents"; label: string }[] = [
+    { id: "test", label: "Stress test" },
+    { id: "agents", label: "Agents" },
+  ];
+  return (
+    <>
+      <div role="tablist" aria-label="Break My Startup views" style={{ maxWidth: 760, margin: "0 auto", padding: "16px 16px 0", display: "flex", gap: 6 }}>
+        {tabs.map((tb) => (
+          <button key={tb.id} role="tab" type="button" aria-selected={view === tb.id} onClick={() => pick(tb.id)}
+            style={{ minHeight: 36, padding: "0 14px", borderRadius: 8, border: "1px solid var(--bm-border)", background: view === tb.id ? "var(--bm-bg4)" : "transparent", color: view === tb.id ? "var(--bm-text)" : "var(--bm-text3)", fontSize: 13, fontWeight: view === tb.id ? 600 : 400, fontFamily: "inherit", cursor: "pointer" }}>
+            {tb.label}
+          </button>
+        ))}
+      </div>
+      {view === "agents" ? <AgentsPage /> : <StressTestView />}
+    </>
+  );
+          }
