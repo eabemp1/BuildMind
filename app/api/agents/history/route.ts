@@ -1,5 +1,5 @@
 /**
- * GET /api/agents/history?projectId=…
+ * GET /api/agents/history?projectId=…  (add &checks=1 for saved single-claim checks)
  * The founder's recent agent runs (newest first) for one project, with the
  * review state of each run's findings so the workspace can show an honest
  * case archive and per-agent track record. Owner-scoped.
@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadClaimChecks } from "@/lib/server/claimChecks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,8 +15,14 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const auth = await getRouteUser();
   if (!auth) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  const projectId = new URL(request.url).searchParams.get("projectId");
+  const sp = new URL(request.url).searchParams;
+  const projectId = sp.get("projectId");
   const admin = createAdminClient();
+  // ?checks=1 returns the saved single-claim checks (Break My Startup "Check this claim").
+  if (sp.get("checks") === "1") {
+    const checks = projectId ? await loadClaimChecks(admin, auth.userId, { projectId }) : [];
+    return NextResponse.json({ ok: true, checks }, { headers: { "Cache-Control": "private, no-store" } });
+  }
   let q = admin.from("agent_runs")
     .select("id,agent_type,status,mission,iteration,max_iterations,signals_found,confidence_pct,verdict,top_finding_1,top_finding_2,top_finding_3,top_risk,recommended_action,report_markdown,started_at,completed_at,current_action")
     .eq("user_id", auth.userId).order("started_at", { ascending: false }).limit(30);
