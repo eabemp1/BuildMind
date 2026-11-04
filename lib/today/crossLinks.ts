@@ -61,7 +61,7 @@ export function pickCrossLink(i: CrossLinkInput): CrossLink | null {
   }
 
   if (!i.hasAgentRun && (i.band === "idea" || i.band === "validation") && i.tasksCompleted >= 2 && unseen("validate")) {
-    return { id: "validate", text: "Not sure people want it? Send the validation agent to look for real evidence.", cta: "Run a validation check", href: "/agents?agent=validation" };
+    return { id: "validate", text: "Not sure people want it? Send the validation agent to look for real evidence.", cta: "Run a validation check", href: "/break-my-startup?view=agents&agent=validation" };
   }
   return null;
 }
