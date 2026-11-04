@@ -35,6 +35,7 @@ export type FunnelStep =
   | "first_action_done"
   | "first_reflect"
   | "first_report"
+  | "break_run_completed"
   | "upgrade_seen"
   | "upgrade_converted";
 

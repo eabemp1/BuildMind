@@ -30,7 +30,7 @@ const FUNNEL_STEPS = [
   "landing", "signup", "onboarding_start", "onboarding_idea",
   "onboarding_stage", "reflexion_strike_started", "founder_state_complete", "reflexion_strike_shown",
   "reflexion_strike_fallback", "reflexion_strike_accepted", "depth_questions_answered",
-  "onboarding_complete", "first_today", "first_task_completed", "first_action_done", "first_reflect", "first_report",
+  "onboarding_complete", "first_today", "first_task_completed", "first_action_done", "first_reflect", "first_report", "break_run_completed",
   "upgrade_seen", "upgrade_converted",
 ] as const;
 

@@ -16,6 +16,7 @@ import { canAccess } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import { updateAchievementStats, checkAndUnlockAchievements } from "@/lib/achievements";
+import { trackFunnelStep } from "@/lib/onboarding-analytics";
 import { Shield, ChevronDown, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BuildMindCalibrating } from "@/components/BuildMindCalibrating";
@@ -541,6 +542,9 @@ export default function BreakMyStartupPage() {
       const mappedResult = mapApiResult(payload.data ?? {});
       setResult(mappedResult);
       if (plan === "free") storage.set(freePreviewKey, "1");
+
+      // Part of the activation event: first finished stress test (see docs/ACTIVATION.md).
+      try { trackFunnelStep("break_run_completed"); } catch {}
 
       // Keep the run so it can be reopened later without running the AI again.
       try {

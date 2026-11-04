@@ -20,12 +20,12 @@ flowchart LR
     tasks / reflections / evidence] --> B[Generator
     gpt-oss-120b]
     B --> C[Critic
-    DeepSeek R1 via OpenRouter]
+    reasoning chain, see lib/ai-providers.ts]
     C --> D{Confidence gate}
     D -- fails --> E[Refiner]
     E --> C
     D -- passes --> F[Verifier
-    Gemini 2.5-flash]
+    reasoning chain, see lib/ai-providers.ts]
     F --> G[Recommendation
     surfaced to founder]
     G --> H[Outcome observed]
@@ -53,8 +53,8 @@ A recommendation engine is only as good as the state it reasons over. BuildMind 
 
 - **Frontend/App:** Next.js
 - **Data:** Supabase (Postgres, RLS, RPC functions for atomic state writes)
-- **Models:** `openai/gpt-oss-120b` (Generator), DeepSeek R1 via OpenRouter (Critic), Gemini 2.5-flash (Verifier)
-- **Payments:** Paystack (built from Ghana, serving a global founder base)
+- **Models:** Today runs on the Groq `openai/gpt-oss-120b` chain, with fallbacks. Break My Startup (risk step) and the AI Coach try Gemini first (`GEMINI_MODEL`, default `gemini-3.8-flash`) and fall back to the same chain. The exact order lives in `lib/ai-providers.ts`.
+- **Payments:** Polar for USD and Paystack for Ghana cedi and mobile money (built from Ghana, serving a global founder base)
 
 ## Engineering process
 

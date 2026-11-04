@@ -135,7 +135,7 @@ export async function enforceAndTrackAIUsage(
  * groqChat — calls Groq with plain text response (not JSON mode).
  * Use this for conversational AI coach responses.
  */
-export async function groqChat(systemPrompt: string, messages: { role: "user" | "assistant"; content: string }[], extra: { prefer?: "gemini"; geminiTimeoutMs?: number } = {}): Promise<string> {
+export async function groqChat(systemPrompt: string, messages: { role: "user" | "assistant"; content: string }[], extra: { prefer?: "gemini"; geminiTimeoutMs?: number; feature?: string } = {}): Promise<string> {
   return callModel(
     [{ role: "system", content: systemPrompt }, ...messages],
     { role: "fast", temperature: 0.7, maxTokens: 800, ...extra },
@@ -146,7 +146,7 @@ export async function groqChat(systemPrompt: string, messages: { role: "user" | 
  * groqJSON — calls Groq expecting a JSON object response.
  * Use this for structured data (roadmaps, analysis, etc).
  */
-export async function groqJSON<T>(systemPrompt: string, userPrompt: string, extra: { prefer?: "gemini"; geminiTimeoutMs?: number } = {}): Promise<T> {
+export async function groqJSON<T>(systemPrompt: string, userPrompt: string, extra: { prefer?: "gemini"; geminiTimeoutMs?: number; feature?: string } = {}): Promise<T> {
   return callModelJSON<T>(
     [
       { role: "system", content: systemPrompt },

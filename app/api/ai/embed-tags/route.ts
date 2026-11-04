@@ -9,7 +9,7 @@
  * Architecture:
  *   - Called by QStash after every founderMemory write (via /api/ai/coach)
  *   - Also runs as a nightly sweep for any rows missing embeddings
- *   - Uses OpenAI text-embedding-3-small (1536-dim) or falls back to
+ *   - Uses OpenAI text-embedding-3-small (reduced to 768 dims to match the vector(768) columns) or falls back to
  *     Groq's embedding endpoint if available
  *   - Writes to personality_tags_embedding (vector) and
  *     avoidance_zones_embedding (vector) columns
@@ -50,6 +50,8 @@ async function embedTexts(texts: string[]): Promise<number[][]> {
     body: JSON.stringify({
       model: "text-embedding-3-small",
       input: texts,
+      // The database columns are vector(768); text-embedding-3-small returns 1536 unless told otherwise.
+      dimensions: 768,
     }),
   });
 

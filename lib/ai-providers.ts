@@ -154,7 +154,7 @@ const GEMINI_MODEL         = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 // GEMINI_FALLBACK_MODELS (comma separated) follows. Set it empty to use only GEMINI_MODEL.
 const GEMINI_MODELS = Array.from(new Set([
   GEMINI_MODEL,
-  ...(process.env.GEMINI_FALLBACK_MODELS ?? "gemini-3.7-flash,gemini-3.6-flash").split(",").map((m) => m.trim()).filter(Boolean),
+  ...(process.env.GEMINI_FALLBACK_MODELS ?? "gemini-3.6-flash").split(",").map((m) => m.trim()).filter(Boolean),
 ]));
 // A model that just answered 503 is skipped for a while, so the next request does not pay for it again.
 // Lives in memory per server instance: it is a shortcut, not shared state.
@@ -569,6 +569,15 @@ async function geminiCall(
     throw new Error(`GEMINI_${res.status}: ${text.slice(0, 150)}`);
   }
   const data = await res.json();
+  // Exact usage as Google reports it. Thinking tokens bill as output and are what makes a call slow.
+  const usage = data?.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number } | undefined;
+  if (usage) {
+    console.info("[ai-cost]", JSON.stringify({
+      provider: "gemini", thinking: thinkingLevel,
+      promptTokens: usage.promptTokenCount, outputTokens: usage.candidatesTokenCount, thinkingTokens: usage.thoughtsTokenCount,
+      exact: true,
+    }));
+  }
   // Skip thought parts; only the answer is returned.
   const parts = (data?.candidates?.[0]?.content?.parts ?? []) as Array<{ text?: string; thought?: boolean }>;
   const text = parts.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text).join("");
@@ -893,6 +902,8 @@ export async function callModel(
      * or GEMINI_PREFERRED=off.
      */
     prefer?: "gemini";
+    /** Name of the feature making the call, written to the [ai-cost] log line. Defaults to the role. */
+    feature?: string;
     /** Per-attempt Gemini timeout when `prefer` is set. Default and maximum 14s. */
     geminiTimeoutMs?: number;
     geminiThinking?: "low" | "medium" | "high";
@@ -905,6 +916,7 @@ export async function callModel(
     jsonMode = false,
     deadlineMs,
     prefer,
+    feature,
     geminiTimeoutMs: requestedGeminiTimeout = 14_000,
     geminiThinking,
   } = options;
@@ -934,6 +946,7 @@ export async function callModel(
   }
 
   const errors: string[] = [];
+  const callStartedAt = Date.now();
 
   // FIX (Sept 21, 2026 — production log buildmind-log-export-2026-09-21T11-57-26.csv
   // showed "Vercel Runtime Timeout Error: Task timed out after 30 seconds"):
@@ -987,6 +1000,16 @@ export async function callModel(
       }
       if (jsonMode) assertValidJSONModeOutput(text);
       console.info(`[ai-providers] ${role} succeeded via ${provider.label}`);
+      // One line per call, so Vercel logs can answer "which feature costs what". Token counts are
+      // estimates (characters / 4); Gemini also logs its own exact usage figures.
+      console.info("[ai-cost]", JSON.stringify({
+        feature: feature ?? role,
+        provider: provider.label,
+        ms: Date.now() - callStartedAt,
+        approxInTokens: Math.round(messages.reduce((n, m) => n + m.content.length, 0) / 4),
+        approxOutTokens: Math.round(text.length / 4),
+        estimate: true,
+      }));
       return text;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1032,4 +1055,4 @@ export async function callModelJSON<T>(
       `callModelJSON: failed to parse provider response as JSON. Raw (truncated): ${clean.slice(0, 120)}`
     );
   }
-                                              }
+      }
