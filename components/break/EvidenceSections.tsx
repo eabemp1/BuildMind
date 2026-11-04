@@ -15,6 +15,7 @@ import type { EvidenceLayer, ClaimKind } from "@/lib/breakEvidence";
 import type { TrackRecord, TestStatus } from "@/lib/breakCalibration";
 import { InvestigateClaim } from "@/components/break/InvestigateClaim";
 import type { InvestigateContext } from "@/lib/break/investigate";
+import { checkCounts, effectiveClaim } from "@/lib/break/claimChecks";
 import { Chip, Disclosure, bodyText, smallText, labelText, mono, display, body } from "@/components/break-my-startup/ui";
 
 const KIND: Record<ClaimKind, { label: string; color: string; hint: string }> = {
@@ -143,8 +144,10 @@ export function ConfidenceSummary({ layer }: { layer: EvidenceLayer }) {
 /** The proof tab: every section collapsed to a one-line summary until opened. */
 export function ProofSections({ layer, rec, investigate }: { layer: EvidenceLayer; rec: EvidenceRecorder; investigate?: InvestigateContext }) {
   const [showAll, setShowAll] = useState(false);
-  const claims = showAll ? layer.claims : layer.claims.slice(0, 6);
-  const kinds = layer.claims.reduce<Record<string, number>>((m, c) => ({ ...m, [c.kind]: (m[c.kind] ?? 0) + 1 }), {});
+  const shown = layer.claims.map((c) => effectiveClaim(c, investigate?.checks));
+  const claims = showAll ? shown : shown.slice(0, 6);
+  const counts = checkCounts(investigate?.checks);
+  const kinds = shown.reduce<Record<string, number>>((m, c) => ({ ...m, [c.kind]: (m[c.kind] ?? 0) + 1 }), {});
   const kindSummary = (Object.keys(KIND) as ClaimKind[]).filter((k) => kinds[k]).map((k) => `${kinds[k]} ${KIND[k].label.toLowerCase()}`).join(", ");
   const track = rec.track;
 
@@ -164,9 +167,14 @@ export function ProofSections({ layer, rec, investigate }: { layer: EvidenceLaye
       )}
 
       <Disclosure title="What the verdict rests on" summary={kindSummary || `${layer.claims.length} claims`} defaultOpen>
+        {counts.checked > 0 && (
+          <p style={{ ...smallText, fontSize: 12.5 }}>
+            {counts.checked} {counts.checked === 1 ? "claim" : "claims"} checked against sources, {counts.settled} confirmed by you. The score and range change the next time you run the stress test, which starts from what you confirmed.
+          </p>
+        )}
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           {claims.map((cl, i) => {
-            const k = KIND[cl.kind];
+            const k = cl.contradicted ? { label: "Contradicted", color: "var(--bm-red)", hint: "Sources contradict this and you confirmed it" } : KIND[cl.kind];
             return (
               <li key={`${i}-${cl.claim}`} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <Chip color={k.color} title={k.hint}>{k.label}</Chip>
@@ -334,4 +342,4 @@ export function TestSections({ layer, rec, investigate }: { layer: EvidenceLayer
       {rec.error && <p role="alert" style={{ ...smallText, color: "var(--bm-red)" }}>{rec.error}</p>}
     </div>
   );
-                                         }
+                }
