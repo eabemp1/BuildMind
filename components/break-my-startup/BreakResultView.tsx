@@ -441,7 +441,7 @@ function NextTab({ result, props, rec }: { result: BreakResult; props: BreakResu
         </section>
       )}
 
-      {result.evidence && <TestSections layer={result.evidence} rec={rec} />}
+      {result.evidence && <TestSections layer={result.evidence} rec={rec} investigate={{ projectId: props.projectId, idea: props.ideaTitle }} />}
 
       {plan && hold && (
         <Disclosure title="Build plan on hold" summary="Run the interviews first, then regenerate this plan with what you learn.">
@@ -538,7 +538,7 @@ export function BreakResultView(props: BreakResultViewProps) {
           {tab === "proof" && result.evidence && (
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
               <section style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 14, padding: "18px" }}><ConfidenceSummary layer={result.evidence} /></section>
-              <ProofSections layer={result.evidence} rec={rec} />
+              <ProofSections layer={result.evidence} rec={rec} investigate={{ projectId: props.projectId, idea: props.ideaTitle }} />
             </div>
           )}
           {tab === "market" && <MarketTab result={result} />}
@@ -564,4 +564,4 @@ export function BreakResultView(props: BreakResultViewProps) {
       </div>
     </div>
   );
-        }
+    }
