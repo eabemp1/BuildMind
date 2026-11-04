@@ -13,6 +13,8 @@
 import { useState } from "react";
 import type { EvidenceLayer, ClaimKind } from "@/lib/breakEvidence";
 import type { TrackRecord, TestStatus } from "@/lib/breakCalibration";
+import { InvestigateClaim } from "@/components/break/InvestigateClaim";
+import type { InvestigateContext } from "@/lib/break/investigate";
 import { Chip, Disclosure, bodyText, smallText, labelText, mono, display, body } from "@/components/break-my-startup/ui";
 
 const KIND: Record<ClaimKind, { label: string; color: string; hint: string }> = {
@@ -139,7 +141,7 @@ export function ConfidenceSummary({ layer }: { layer: EvidenceLayer }) {
 }
 
 /** The proof tab: every section collapsed to a one-line summary until opened. */
-export function ProofSections({ layer, rec }: { layer: EvidenceLayer; rec: EvidenceRecorder }) {
+export function ProofSections({ layer, rec, investigate }: { layer: EvidenceLayer; rec: EvidenceRecorder; investigate?: InvestigateContext }) {
   const [showAll, setShowAll] = useState(false);
   const claims = showAll ? layer.claims : layer.claims.slice(0, 6);
   const kinds = layer.claims.reduce<Record<string, number>>((m, c) => ({ ...m, [c.kind]: (m[c.kind] ?? 0) + 1 }), {});
@@ -171,6 +173,7 @@ export function ProofSections({ layer, rec }: { layer: EvidenceLayer; rec: Evide
                 <div style={{ minWidth: 0 }}>
                   <p style={{ ...bodyText, color: "var(--bm-text)", fontSize: 13.5 }}>{cl.claim}</p>
                   <p style={{ ...smallText, fontSize: 12 }}>{cl.source}</p>
+                  {cl.kind !== "evidence" && <div style={{ marginTop: 6 }}><InvestigateClaim claim={cl.claim} ctx={investigate} /></div>}
                 </div>
               </li>
             );
@@ -295,7 +298,7 @@ export function competitorQuality(layer: EvidenceLayer | undefined): Record<stri
 }
 
 /** The tests: the experiment on your actual claim, and what would prove each assumption wrong. */
-export function TestSections({ layer, rec }: { layer: EvidenceLayer; rec: EvidenceRecorder }) {
+export function TestSections({ layer, rec, investigate }: { layer: EvidenceLayer; rec: EvidenceRecorder; investigate?: InvestigateContext }) {
   const t = layer.thesisTest;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -322,6 +325,7 @@ export function TestSections({ layer, rec }: { layer: EvidenceLayer; rec: Eviden
               <p style={{ ...bodyText, color: "var(--bm-text)", fontWeight: 600 }}>{f.assumption}</p>
               <p style={bodyText}>Test: {f.test}</p>
               <p style={{ ...bodyText, color: "var(--bm-red)" }}>Wrong if: {f.provenWrongIf}</p>
+              <InvestigateClaim claim={f.assumption} ctx={investigate} />
               <RecordResult layer={layer} testId={f.id} hold={f.predictedHold} status={f.id ? rec.results[f.id] : undefined} rec={rec} />
             </div>
           ))}
@@ -330,4 +334,4 @@ export function TestSections({ layer, rec }: { layer: EvidenceLayer; rec: Eviden
       {rec.error && <p role="alert" style={{ ...smallText, color: "var(--bm-red)" }}>{rec.error}</p>}
     </div>
   );
-}
+                                         }
