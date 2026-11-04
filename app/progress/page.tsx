@@ -121,9 +121,13 @@ function ProgressContent() {
     { id: "visual",   label: "Charts",     desc: "" },
   ];
 
+  // Execution and Founder Mirror are full pages with their own width and padding,
+  // so they get their native width instead of being squeezed into the narrow column.
+  const WIDTH: Record<Tab, number> = { week: 760, patterns: 760, visual: 760, execution: 860, mirror: 1120 };
+  const ownLayout = activeTab === "execution" || activeTab === "mirror";
   return (
     <>
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 16px 24px" }}>
+      <div style={{ maxWidth: WIDTH[activeTab], margin: "0 auto", padding: ownLayout ? "28px 20px 0" : "28px 16px 24px" }}>
         <div style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
           <h1 style={{
             fontFamily: "'Syne', sans-serif",
@@ -177,7 +181,7 @@ function ProgressContent() {
       </div>
 
       {/* Tab content */}
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 16px 24px" }}>
+      <div style={ownLayout ? undefined : { maxWidth: 760, margin: "0 auto", padding: "0 16px 24px" }}>
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -217,4 +221,4 @@ export default function ProgressPage() {
       <ProgressContent />
     </Suspense>
   );
-    }
+}
