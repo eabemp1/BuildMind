@@ -167,3 +167,31 @@ export function buildProvenance(tier: EvidenceTier, sourceCount: number, verifie
     confirm_note: note?.trim() ? note.trim().slice(0, 500) : null,
   };
 }
+
+
+export type ClaimStatus = "supported" | "contradicted" | "mixed" | "unverified";
+
+/**
+ * What a focused check found about one claim. Only findings that rest on enough
+ * independent sources count (tier supported or better); reasoning alone never does.
+ * "supported" means sources back it, not that it is proven.
+ */
+export function claimStatus(findings: Array<EvidenceInput & { positive: boolean }>): ClaimStatus {
+  let pos = 0, neg = 0;
+  for (const f of findings) {
+    const tier = classifyFinding(f).tier;
+    if (tier === "signal") continue;
+    if (f.positive) pos++; else neg++;
+  }
+  if (pos && neg) return "mixed";
+  if (pos) return "supported";
+  if (neg) return "contradicted";
+  return "unverified";
+}
+
+export const CLAIM_STATUS_LABEL: Record<ClaimStatus, string> = {
+  supported: "Sources support this",
+  contradicted: "Sources contradict this",
+  mixed: "Sources disagree",
+  unverified: "Could not be verified",
+};
