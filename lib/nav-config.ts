@@ -79,14 +79,16 @@ export const NAV: readonly NavItemConfig[] = [
   // sidebar entry is gone.
   { href: "/today",    label: "Today",    icon: CircleDot,    enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
   { href: "/work",     label: "Work",     icon: Layers,       enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
-  { href: "/overview", label: "Execution", icon: Gauge,       enabled: true, hidden: false, section: null, badge: null, showDot: false, unlocksAt: 3 },
+  // Now a tab inside /progress. The route stays so old links work.
+  { href: "/overview", label: "Execution", icon: Gauge,       enabled: true, hidden: true, section: null, badge: null, showDot: false, unlocksAt: 3 },
   { href: "/progress", label: "Progress", icon: TrendingUp,   enabled: true, section: null, badge: null, showDot: false, unlocksAt: 1 },
   { href: "/projects", label: "Projects", icon: FolderKanban, enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
   { href: "/settings", label: "Settings", icon: Settings,     enabled: true, section: null, badge: null, showDot: false, unlocksAt: 0 },
 
   // ── Intelligence section (visible in sidebar after unlock) ──────────────
   { href: "/ai-coach",         label: "AI Coach",        icon: Brain,          enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
-  { href: "/founder-mirror",   label: "Founder Mirror",  icon: UserCircle,     enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 7 },
+  // Now a tab inside /progress. The route stays so old links work.
+  { href: "/founder-mirror",   label: "Founder Mirror",  icon: UserCircle,     enabled: true,  hidden: true, section: "Intelligence", badge: null, showDot: false, unlocksAt: 7 },
   { href: "/break-my-startup", label: "Break My Startup",icon: Hammer,         enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   // Hidden: it repeats what Break My Startup already does. The route stays so existing links work.
   { href: "/agents",           label: "Agent Workforce",  icon: Bot,           enabled: true,  hidden: true, section: "Intelligence", badge: "NEW", showDot: false, requiredPlan: "builder" as Plan, unlocksAt: 5 },
@@ -141,4 +143,4 @@ export async function syncTasksCompletedFromServer(): Promise<void> {
   } catch {
     // Non-fatal
   }
-    }
+}
