@@ -325,4 +325,24 @@ export function validateStageEvidenceInput(input: {
       break;
   }
   return null;
-    }
+}
+
+/**
+ * The stage gate. A forward move needs at least this many evidence rows for that exact transition.
+ * One row is the floor: a typed metric, artifact or experiment, or a written founder judgment
+ * (which the screen labels "self-reported"). Raise it here to make the gate stricter.
+ */
+export const STAGE_GATE_MIN_EVIDENCE_ROWS = 1;
+
+export function isForwardStageMove(fromStage: string, toStage: string): boolean {
+  const fromIdx = STAGE_ORDER.indexOf(fromStage as typeof STAGE_ORDER[number]);
+  const toIdx = STAGE_ORDER.indexOf(toStage as typeof STAGE_ORDER[number]);
+  return fromIdx >= 0 && toIdx > fromIdx;
+}
+
+/** True when this move may go ahead given how many evidence rows exist for it. */
+export function stageMoveAllowed(fromStage: string, toStage: string, evidenceRows: number): boolean {
+  if (STAGE_ORDER.indexOf(toStage as typeof STAGE_ORDER[number]) < 0) return false;
+  if (!isForwardStageMove(fromStage, toStage)) return true; // correcting a stage backwards needs no proof
+  return evidenceRows >= STAGE_GATE_MIN_EVIDENCE_ROWS;
+}

@@ -16,6 +16,12 @@
  *
  * DELETE /api/project/stage-evidence?id=uuid&projectId=uuid
  *   → founder corrects/removes a submitted evidence row.
+ *
+ * PATCH /api/project/stage-evidence   { projectId, toStage }
+ *   → the ONLY way a project's stage changes. A forward move needs at least one evidence row for
+ *     that transition (STAGE_GATE_MIN_EVIDENCE_ROWS); a backward move is a correction and needs none.
+ *     It does not complete earlier milestones or tasks. It lives here, not in a new route, to stay
+ *     inside the Vercel Hobby function limit.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -27,6 +33,8 @@ import {
   computeStageEvidenceCompleteness,
   validateStageEvidenceInput,
   STAGE_EVIDENCE_TYPES,
+  stageMoveAllowed,
+  STAGE_GATE_MIN_EVIDENCE_ROWS,
   type StageEvidenceRow,
 } from "@/lib/server/stageEvidence";
 
@@ -208,5 +216,76 @@ export async function DELETE(request: Request) {
       { ok: false, error: err instanceof Error ? err.message : "Failed" },
       { status: 500 },
     );
+  }
+}
+
+const StageChangeSchema = z.object({
+  projectId: z.string().uuid(),
+  toStage: z.string().min(1).max(40),
+});
+
+export async function PATCH(request: Request) {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const parsed = StageChangeSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });
+    }
+    const { projectId, toStage } = parsed.data;
+
+    const admin = createAdminClient();
+    const { data: project } = await admin
+      .from("projects")
+      .select("id, startup_stage, stage_history")
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!project) return NextResponse.json({ ok: false, error: "Project not found" }, { status: 404 });
+
+    const fromStage = String((project as { startup_stage?: string | null }).startup_stage ?? "Idea");
+    if (fromStage === toStage) return NextResponse.json({ ok: true, stage: toStage, unchanged: true });
+
+    const { count } = await admin
+      .from("project_stage_evidence")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("project_id", projectId)
+      .eq("from_stage", fromStage)
+      .eq("to_stage", toStage);
+
+    if (!stageMoveAllowed(fromStage, toStage, count ?? 0)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "evidence_required",
+          error: `Add at least ${STAGE_GATE_MIN_EVIDENCE_ROWS} piece of evidence before moving from ${fromStage} to ${toStage}.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    const history = Array.isArray((project as { stage_history?: unknown }).stage_history)
+      ? ((project as { stage_history: unknown[] }).stage_history)
+      : [];
+    const { error: updateError } = await admin
+      .from("projects")
+      .update({
+        startup_stage: toStage,
+        stage_history: [...history, { from: fromStage, to: toStage, set_at: new Date().toISOString(), source: "manual", evidence_rows: count ?? 0 }],
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    if (updateError) {
+      logError("stage-evidence/PATCH", updateError, { userId: user.id, projectId });
+      return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, stage: toStage, from: fromStage });
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }
 }

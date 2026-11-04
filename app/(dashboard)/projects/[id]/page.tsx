@@ -523,6 +523,7 @@ export default function ProjectDetailPage() {
   // Stage selector — lets founder manually set stage, waiving prior stages automatically
   const [stagePickerOpen, setStagePickerOpen] = useState(false);
   const [stageChanging, setStageChanging] = useState(false);
+  const [stageGateMessage, setStageGateMessage] = useState<string | null>(null);
   // On-demand readiness check — decoupled from the Today check-in flow and
   // from reflection confidence entirely, so it can be tested any time.
   // Calls the same /api/project/level-up endpoint Today's check-in flow
@@ -688,67 +689,19 @@ export default function ProjectDetailPage() {
     try {
       const supabase = createClient();
 
-      const currentIdx = STAGE_ORDER.indexOf(newStage as typeof STAGE_ORDER[number]);
-      const prevIdx    = STAGE_ORDER.indexOf((project.startup_stage ?? "Idea") as typeof STAGE_ORDER[number]);
-
-      // Moving forward: waive all milestones from prior stages
-      if (currentIdx > prevIdx && milestones.length > 0) {
-        const stagesToWaive = STAGE_ORDER.slice(0, currentIdx);
-        const milestonesToWaive = milestones.filter(m => {
-          // Priority 1: use the stage column written by generate-roadmap
-          const dbStage = m.stage ? normalizeStageLocal(m.stage) : null;
-          if (dbStage) return stagesToWaive.includes(dbStage as typeof STAGE_ORDER[number]);
-          // Priority 2: keyword inference from title (fallback for older milestones)
-          const milestoneStage = inferMilestoneStageFromTitle(m.title);
-          return stagesToWaive.includes(milestoneStage as typeof STAGE_ORDER[number]);
-        });
-
-        // Batch-complete all waived milestones + their tasks
-        await Promise.all(
-          milestonesToWaive
-            .filter(m => m.status !== "completed")
-            .map(async (m) => {
-              // Mark all tasks in this milestone complete
-              const milestoneTasks = tasks.filter(t => t.milestone_id === m.id && !t.is_completed);
-              await Promise.all(
-                milestoneTasks.map(t =>
-                  supabase.from("tasks").update({
-                    is_completed: true,
-                    status: "completed",
-                    completed_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                  }).eq("id", t.id)
-                )
-              );
-              // Mark milestone complete
-              await supabase.from("milestones").update({
-                status: "completed",
-                updated_at: new Date().toISOString(),
-              }).eq("id", m.id);
-            })
-        );
-      }
-
-      const { data: existingProject } = await supabase
-        .from("projects")
-        .select("stage_history")
-        .eq("id", id)
-        .maybeSingle();
-      const previousHistory = Array.isArray((existingProject as { stage_history?: unknown })?.stage_history)
-        ? (existingProject as { stage_history: unknown[] }).stage_history
-        : [];
-
-      // Update project stage
+      // The server decides. A forward move needs evidence; it also records the history entry.
       const previousStage = project.startup_stage ?? "Idea";
-      const { error: stageUpdateError } = await supabase.from("projects").update({
-        startup_stage: newStage,
-        stage_history: [
-          ...previousHistory,
-          { from: previousStage, to: newStage, set_at: new Date().toISOString(), source: "manual" },
-        ],
-        updated_at: new Date().toISOString(),
-      }).eq("id", id);
-      if (stageUpdateError) throw stageUpdateError;
+      const stageRes = await fetch("/api/project/stage-evidence", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: id, toStage: newStage }),
+      });
+      if (!stageRes.ok) {
+        const body = await stageRes.json().catch(() => null) as { error?: string } | null;
+        setStageGateMessage(body?.error ?? "Could not change the stage. Please try again.");
+        return;
+      }
+      setStageGateMessage(null);
 
       // The actual state change just committed — dispatch now rather than
       // waiting for the auxiliary context-sync/challenge calls below.
@@ -1387,6 +1340,9 @@ export default function ProjectDetailPage() {
         busy={stageChanging}
         onLevelUp={(next) => executeStageTransition(next)}
       />
+      {stageGateMessage && (
+        <p role="alert" style={{ margin: "8px 0 0", fontSize: 13, color: "var(--bm-red)" }}>{stageGateMessage}</p>
+      )}
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bm-border)", marginBottom: 24, overflowX: "auto" }}>
@@ -1702,7 +1658,7 @@ export default function ProjectDetailPage() {
                                   {row.evidence_type === "metric" && `${row.metric_name}: ${row.metric_value}${row.metric_date ? ` (${row.metric_date})` : ""}`}
                                   {row.evidence_type === "artifact" && row.artifact_description}
                                   {row.evidence_type === "experiment" && `${row.experiment_channel} → ${row.experiment_outcome}`}
-                                  {row.evidence_type === "founder_judgment" && row.judgment_text}
+                                  {row.evidence_type === "founder_judgment" && `Self-reported: ${row.judgment_text}`}
                                 </span>
                                 <button
                                   onClick={() => void deleteStageEvidence(row.id)}
@@ -1798,22 +1754,24 @@ export default function ProjectDetailPage() {
                   </button>
                   <button
                     onClick={() => void confirmStageEvidenceTransition()}
-                    disabled={stageChanging}
+                    disabled={stageChanging || stageEvidenceRows.length < 1}
                     style={{
+                      opacity: stageEvidenceRows.length < 1 ? 0.5 : 1,
                       background: stageEvidenceCompleteness?.isComplete ? "var(--bm-green)" : "var(--bm-text)",
                       color: "var(--bm-bg)", border: "none", borderRadius: 8, padding: "8px 14px",
                       fontSize: 12, fontWeight: 700, cursor: stageChanging ? "wait" : "pointer", fontFamily: "inherit",
                     }}
                   >
-                    {stageEvidenceCompleteness?.isComplete
-                      ? `Confirm transition to ${stageEvidenceTarget}`
-                      : "Confirm without full evidence"}
+                    {stageEvidenceRows.length < 1
+                      ? "Add one piece of evidence first"
+                      : stageEvidenceCompleteness?.isComplete
+                        ? `Confirm transition to ${stageEvidenceTarget}`
+                        : "Confirm with partial evidence"}
                   </button>
                 </div>
               </div>
-              {/* Manual stage selection is intentionally an override, per
-                  stage-transition-product-design.md — this review surfaces
-                  missing evidence, it never blocks the founder's own call. */}
+              {/* The server now requires at least one evidence row for a forward move (PATCH in
+                  app/api/project/stage-evidence). A written founder judgment counts, labelled self-reported. */}
             </div>
           </div>
         )}
