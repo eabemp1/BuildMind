@@ -33,6 +33,13 @@ export interface CompetitorRow {
   url?: string;
   weakness: string;
   threat_level: "low" | "medium" | "high";
+  whatTheyDo?: string;
+  targetCustomer?: string;
+  pricing?: string;
+  strength?: string;
+  howYouLose?: string;
+  /** true only when their own site was read this run. */
+  siteRead?: boolean;
 }
 
 export type FocusAreaCoverage = { selected: string[]; addressed: string[]; unaddressed: string[] };
@@ -54,6 +61,7 @@ export interface BreakResult {
   pivots?: PivotItem[];
   founderStyle?: { label: string; pace: string } | null;
   competitorTable?: CompetitorRow[];
+  competitorFirstTest?: string;
   surviveReasons?: string[];
   surviveReasonTags?: string[][];
   focusAreaCoverage?: FocusAreaCoverage | null;
