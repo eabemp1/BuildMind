@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createUserNotification, enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { STAGE_ORDER } from "@/lib/stages";
@@ -360,8 +360,6 @@ Generate a specific roadmap for THIS founder's current and immediate-next stage 
         // Don't throw — return the roadmap data even if DB write failed
       }
     }
-
-    await createUserNotification(userId, "Your AI roadmap has been generated. Check your milestones.");
 
     return NextResponse.json({ success: true, data: { roadmap } });
   } catch (error) {

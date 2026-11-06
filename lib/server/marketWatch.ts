@@ -42,7 +42,8 @@ export async function runMarketWatch(admin: SupabaseClient, input: { userId: str
     if (input.projectId) q = q.eq("project_id", input.projectId);
     const { data: run } = await q.maybeSingle();
     const sources = competitorsFromRun((run as { payload?: unknown } | null)?.payload);
-    if (!sources.length) return { ok: false, reason: "no_competitors", message: "Run Break My Startup first. It names the competitors this watches." };
+    if (!run) return { ok: false, reason: "no_competitors", message: "No saved stress test yet. Run Break My Startup while signed in, then scan again." };
+    if (!sources.length) return { ok: false, reason: "no_competitors", message: "Your last stress test did not find any competitor websites. Run it again with more detail on what you build and who it is for." };
 
     const digests = await readPages(sources.map((s) => s.url));
     const competitors: WatchedCompetitor[] = sources.map((s, i) => {

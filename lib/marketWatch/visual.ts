@@ -7,7 +7,7 @@ export interface WatchView { weekStart: string; baseline: boolean; changes: Mark
 export function buildMarketVisual(watch: WatchView | null, now: Date = new Date()): { visual: VisualSpec; changeCount: number } {
   const head = { title: "Market Watch", subtitle: "What changed around you this week", generatedAt: now.toISOString() };
   if (!watch) {
-    return { changeCount: 0, visual: { ...head, panels: [{ type: "callout", tone: "neutral", title: "No scan yet", text: "Market Watch reads your competitors' pages and community threads once a week. Run Break My Startup so it knows who to watch, then scan." }] } };
+    return { changeCount: 0, visual: { ...head, panels: [{ type: "callout", tone: "neutral", title: "No scan yet", text: "Market Watch reads your competitors' pages and community threads once a week. It takes the competitors from your latest saved Break My Startup run, so run one while signed in, then scan." }] } };
   }
   const panels: VisualPanel[] = [];
   const loaded = watch.competitors.filter((c) => c.ok).length;

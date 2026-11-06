@@ -9,6 +9,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { isPaidSubscription } from "@/lib/radar/autoRun";
 import { runMarketWatch } from "@/lib/server/marketWatch";
 import { weekStartOf } from "@/lib/marketWatch/diff";
+import { marketWatchMessage } from "@/lib/notifyCopy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
       withChanges++;
       await admin.from("notifications").insert({
         user_id: userId, type: "market_watch", is_read: false,
-        message: `Market Watch: ${out.changes.length} ${out.changes.length === 1 ? "change" : "changes"} in your market this week. ${out.changes[0].text}`.slice(0, 400),
+        message: marketWatchMessage(out.changes),
       });
     }
   }

@@ -15,7 +15,7 @@ import { fitFor } from "@/lib/radar/fit";
 import type { RadarItem } from "@/lib/radar/types";
 
 export type DiscoverResult =
-  | { ok: true; added: Array<{ title: string; kind: string; score: number }>; stats: Record<string, number>; queries: string[] }
+  | { ok: true; added: Array<{ title: string; kind: string; score: number; deadline_at?: string | null }>; stats: Record<string, number>; queries: string[] }
   | { ok: false; status: number; error: string; reason?: "setup" | "no_project" };
 
 export async function runDiscovery(admin: SupabaseClient, input: { userId: string; projectId?: string | null; where?: string }): Promise<DiscoverResult> {
@@ -43,7 +43,7 @@ export async function runDiscovery(admin: SupabaseClient, input: { userId: strin
   }, 3);
 
   const stats = { searched: queries.length, searchFailed: searched.failed, found: picked.length, unreadable: read.failed, ...dropped, undated: 0, passed: 0, wrongKind: dropped.wrongKind, lowFit: 0, added: 0 };
-  const added: Array<{ title: string; kind: string; score: number }> = [];
+  const added: Array<{ title: string; kind: string; score: number; deadline_at?: string | null }> = [];
   const now = Date.now();
   for (const { c, d } of read.ok) {
     if (d.kind !== c.wanted && !d.alternatives.includes(c.wanted)) { stats.wrongKind++; continue; }
@@ -61,7 +61,7 @@ export async function runDiscovery(admin: SupabaseClient, input: { userId: strin
       deadline_at: d.deadline_at, eligibility: d.eligibility, cost: d.cost, source_text: d.source_text, status: "new", source: "discovered", discovered_query: queries.find((q) => q.kind === c.wanted)?.q ?? null,
     });
     if (error) continue;
-    stats.added++; added.push({ title: d.title, kind, score: fit.score });
+    stats.added++; added.push({ title: d.title, kind, score: fit.score, deadline_at: d.deadline_at });
   }
   return { ok: true, added, stats, queries: queries.map((q) => q.q) };
 }

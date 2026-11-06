@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createUserNotification, enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, groqJSON } from "@/app/api/ai/_utils";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 
 export const runtime     = "nodejs";
@@ -123,8 +123,6 @@ export async function POST(request: Request) {
         }
       } catch { /* use what we have */ }
     }
-
-    await createUserNotification(userId, "AI validation feedback generated.", "ai_recommendation");
 
     return NextResponse.json({
       success: true,

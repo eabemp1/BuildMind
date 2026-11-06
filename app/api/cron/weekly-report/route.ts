@@ -13,6 +13,7 @@
  * the founder having to remember to open anything.
  */
 
+import { weeklyRecapMessage } from "@/lib/notifyCopy";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
@@ -134,6 +135,28 @@ export async function GET(request: Request) {
       // Respect the Weekly Report switch in Settings: opted-out users are never claimed or sent to.
       const optedInIds = await filterByNotificationPref(supabase, builderIds, "weeklyReport");
       const claimedBuilderIds = new Set(await claimSendSlots(optedInIds, "weekly_report_push"));
+
+      // The same Friday slot also puts one plain recap in the app: counts of the founder's own records, nothing else.
+      try {
+        const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+        const ids = [...claimedBuilderIds];
+        const [logs, people] = await Promise.all([
+          supabase.from("action_logs").select("user_id").in("user_id", ids).eq("outcome", "completed").gte("created_at", since).limit(5000),
+          supabase.from("conversation_people").select("user_id, status, contacted_at").in("user_id", ids).limit(5000),
+        ]);
+        const done = new Map<string, number>(), replies = new Map<string, number>(), waiting = new Map<string, number>();
+        for (const r of (logs.data ?? []) as Array<{ user_id: string }>) done.set(r.user_id, (done.get(r.user_id) ?? 0) + 1);
+        const cutoff = Date.now() - 3 * 86_400_000;
+        for (const p of (people.data ?? []) as Array<{ user_id: string; status: string; contacted_at: string | null }>) {
+          if (["replied", "booked", "done"].includes(p.status) && p.contacted_at && Date.parse(p.contacted_at) >= Date.now() - 7 * 86_400_000) replies.set(p.user_id, (replies.get(p.user_id) ?? 0) + 1);
+          if (p.status === "sent" && p.contacted_at && Date.parse(p.contacted_at) <= cutoff) waiting.set(p.user_id, (waiting.get(p.user_id) ?? 0) + 1);
+        }
+        const rows = ids.flatMap((id) => {
+          const message = weeklyRecapMessage({ done: done.get(id) ?? 0, replies: replies.get(id) ?? 0, waiting: waiting.get(id) ?? 0 });
+          return message ? [{ user_id: id, type: "weekly_recap", message, is_read: false }] : [];
+        });
+        if (rows.length) await supabase.from("notifications").insert(rows);
+      } catch { /* the push below still goes out */ }
 
       const BATCH = 50;
       for (let i = 0; i < builderIds.length; i += BATCH) {

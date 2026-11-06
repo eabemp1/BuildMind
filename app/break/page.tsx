@@ -146,6 +146,15 @@ export default function BreakPublicPage() {
       const body = await res.json().catch(()=>({}));
       if (!res.ok||!body.success) throw new Error(body?.error??"Analysis failed");
       setResult(body.data); setPreview(Boolean(body.preview)); setNeedsAccount(Boolean(body.needsAccount)); setPhase("result");
+      // Signed-in runs are kept in the same history the logged-in Break page uses, so Market Watch knows who to watch.
+      // Visitors without an account get a 401 here, which is fine: nothing is saved for them.
+      try {
+        const links = Array.isArray(body.data?.competitor_links) ? (body.data.competitor_links as Array<{ title?: string; url?: string }>) : [];
+        void fetch("/api/break-runs", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: idea.trim(), data: { ...body.data, agent_outputs: { competitor: { brief: links.map((l) => ({ name: l.title, url: l.url })) } } } }),
+        }).catch(() => {});
+      } catch { /* saving is best-effort */ }
       // Remember the advice so the first daily action in BuildMind can start from it.
       try { const seed = makeSeed(idea, String(body.data?.weakest?.test ?? body.data?.brutal_advice ?? "")); if (seed) localStorage.setItem(BREAK_SEED_KEY, JSON.stringify(seed)); } catch { /* private mode */ }
     } catch(err) {

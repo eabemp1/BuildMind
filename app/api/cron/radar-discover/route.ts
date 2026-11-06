@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { runDiscovery } from "@/lib/radar/discoverRun";
 import { isPaidSubscription, pickAutoRunUsers, MAX_USERS_PER_RUN, RUN_BUDGET_MS } from "@/lib/radar/autoRun";
+import { radarFoundMessage } from "@/lib/notifyCopy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
         withNew++; added += r.added.length;
         await admin.from("notifications").insert({
           user_id: userId, type: "radar_found", is_read: false,
-          message: `Radar found ${r.added.length} new ${r.added.length === 1 ? "opportunity" : "opportunities"} that fit you: ${r.added.slice(0, 2).map((a) => a.title).join("; ")}. Check the dates on the page before you rely on them.`,
+          message: radarFoundMessage(r.added),
         });
       }
     } catch { failed++; }
