@@ -10,7 +10,7 @@ import PathCard from "@/components/today/PathCard";
 import EnergyCheck from "@/components/today/EnergyCheck";
 import TrackedLinks from "@/components/today/TrackedLinks";
 import { inferSource, needsTrackedLink } from "@/lib/linkNudge";
-import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
+import { prepKindFor } from "@/lib/prep/kinds";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
 import MoodStrip from "@/components/today/MoodStrip";
 import RadarToday from "@/components/radar/RadarToday";
@@ -2395,7 +2395,7 @@ function TodayContent() {
               kicker={actionData.missionLabel}
               accent={missionAccent(actionData.missionKind)}
               reasons={actionData.missionReasons}
-              executeLabel={prepKind ? `Open ${PREP_META[prepKind].label.toLowerCase()}` : "Open script"}
+              executeLabel="BuildMind can draft this for you"
               onExecute={() => router.push(workHref)}
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
               timeText={actionData?.time ?? null}
