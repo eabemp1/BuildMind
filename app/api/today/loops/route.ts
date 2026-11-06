@@ -11,7 +11,7 @@ import { z } from "zod";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
-import { DURATION_CHOICES, MAX_OPEN_LOOPS, dueAtFor, partitionLoops, type Loop } from "@/lib/today/loops";
+import { DURATION_CHOICES, MAX_OPEN_LOOPS, dueAtClock, dueAtFor, partitionLoops, type Loop } from "@/lib/today/loops";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +37,12 @@ export async function GET() {
 const Create = z.object({
   task_text: z.string().trim().min(3).max(500),
   measure: z.string().trim().min(3).max(300),
-  choice: z.enum(Object.keys(DURATION_CHOICES) as [keyof typeof DURATION_CHOICES, ...(keyof typeof DURATION_CHOICES)[]]),
+  choice: z.enum(Object.keys(DURATION_CHOICES) as [keyof typeof DURATION_CHOICES, ...(keyof typeof DURATION_CHOICES)[]]).optional(),
+  /** A wall-clock time in the founder's own timezone ("When today?"). Used instead of choice. */
+  clock: z.object({ h: z.number().int().min(0).max(23), m: z.number().int().min(0).max(59), tomorrow: z.boolean() }).optional(),
+  tzOffset: z.number().int().min(-840).max(840).optional(),
   projectId: z.string().uuid().nullish(),
-});
+}).refine((v) => v.choice || (v.clock && v.tzOffset !== undefined), { message: "choice or clock is required" });
 
 export async function POST(request: Request) {
   const user = await getRouteUser();
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
     project_id: b.projectId ?? null,
     task_text: b.task_text,
     measure: b.measure,
-    due_at: dueAtFor(b.choice),
+    due_at: b.clock ? dueAtClock(b.clock, b.tzOffset ?? 0) : dueAtFor(b.choice!),
   }).select("id, due_at").maybeSingle();
   if (error) return NextResponse.json({ ok: false, error: "Could not save the follow-up" }, { status: 500 });
   return NextResponse.json({ ok: true, id: data?.id, due_at: data?.due_at });

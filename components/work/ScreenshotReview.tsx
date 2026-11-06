@@ -64,7 +64,7 @@ export default function ScreenshotReview({ onBack }: { onBack: () => void }) {
         </div>
         <button type="button" className="wk-btn" disabled={!image || busy} onClick={() => void run()} style={{ ...btn(true), width: "fit-content", opacity: !image || busy ? 0.6 : 1 }}>{busy ? "Reading…" : "Review it"}</button>
         {error && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{error}{upgrade ? " " : ""}{upgrade && <a href="/upgrade" style={{ color: "inherit" }}>See Builder</a>}</p>}
-        <p style={muted}>The review is about what is visible in the image only. The picture is sent to Google's Gemini to be read and is not saved by BuildMind.</p>
+        <p style={muted}>The review is about what is visible in the image only. The picture is sent to an outside AI service to be read (Google Gemini, or Groq or OpenRouter if Gemini is busy). Free AI services may keep what they receive, so hide anything private first. BuildMind does not save it.</p>
       </div>
       {review && (
         <div style={{ ...card, display: "grid", gap: 12 }}>

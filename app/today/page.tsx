@@ -11,6 +11,7 @@ import EnergyCheck from "@/components/today/EnergyCheck";
 import TrackedLinks from "@/components/today/TrackedLinks";
 import { inferSource, needsTrackedLink } from "@/lib/linkNudge";
 import { prepKindFor } from "@/lib/prep/kinds";
+import { draftLabel, type DraftShape } from "@/lib/today/draftLine";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
 import MoodStrip from "@/components/today/MoodStrip";
 import RadarToday from "@/components/radar/RadarToday";
@@ -1328,6 +1329,31 @@ function TodayContent() {
   const workHref = actionData?.action
     ? `/work?${new URLSearchParams({ task: actionData.action, ...(actionData.missionKind ? { mk: actionData.missionKind } : {}), ...(actionData.firstStep ? { step: actionData.firstStep } : {}) }).toString()}`
     : "/work";
+  // One line saying why today's task matters now, from the founder's own records. Empty when there is no real reason.
+  const [whyNowLine, setWhyNowLine] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/today/why-now", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (live) setWhyNowLine(typeof j?.line === "string" ? j.line : null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  // Says on the button whether BuildMind has already drafted this task. Read-only: it never starts a draft.
+  const [draftShape, setDraftShape] = useState<DraftShape | null>(null);
+  const draftTask = actionData?.action ?? null;
+  const draftMk = actionData?.missionKind ?? null;
+  useEffect(() => {
+    if (!draftTask) { setDraftShape(null); return; }
+    let live = true;
+    const qs = new URLSearchParams({ task: draftTask, ...(draftMk ? { mk: draftMk } : {}) });
+    fetch(`/api/today/draft?${qs}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (live) setDraftShape(j?.draft ?? null); })
+      .catch(() => { if (live) setDraftShape(null); });
+    return () => { live = false; };
+  }, [draftTask, draftMk]);
   const mood = moodFor(actionData?.missionKind, prepKind);
   // Active mood layer (lib/today/mood.ts): focus engages the page, calm moods fold the extras away,
   // and every mood change replays the entrance.
@@ -2395,7 +2421,8 @@ function TodayContent() {
               kicker={actionData.missionLabel}
               accent={missionAccent(actionData.missionKind)}
               reasons={actionData.missionReasons}
-              executeLabel="BuildMind can draft this for you"
+              executeLabel={draftLabel(draftShape)}
+              whyNow={whyNowLine}
               onExecute={() => router.push(workHref)}
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
               timeText={actionData?.time ?? null}

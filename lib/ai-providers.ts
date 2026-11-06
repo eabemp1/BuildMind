@@ -1063,26 +1063,62 @@ export async function callModelJSON<T>(
   }
       }
 
+/** One image-reading call to an OpenAI-compatible endpoint (Groq, OpenRouter). Returns the text or throws. */
+async function visionChatCall(
+  url: string, key: string, model: string, prompt: string,
+  images: Array<{ mimeType: string; data: string }>, maxTokens: number, timeoutMs: number,
+  opts: { json: boolean; headers?: Record<string, string> },
+): Promise<string> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, ...(opts.headers ?? {}) },
+    body: JSON.stringify({
+      model, temperature: 0.3, max_tokens: maxTokens,
+      ...(opts.json ? { response_format: { type: "json_object" } } : {}),
+      messages: [{ role: "user", content: [{ type: "text", text: prompt }, ...images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mimeType};base64,${i.data}` } }))] }],
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`vision ${model}: HTTP ${res.status}`);
+  const j = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const out = j.choices?.[0]?.message?.content;
+  if (!out) throw new Error(`vision ${model}: empty response`);
+  return out;
+}
+
 /**
- * geminiVisionJSON — one Gemini call with images attached, JSON out. Gemini only: the other providers here are
- * text-only, so there is no fallback and the caller must handle a thrown error. The wait is capped at 14 seconds.
+ * geminiVisionJSON — read images and answer in JSON. Gemini first (capped at 10 seconds when a fallback key is set,
+ * otherwise 14). If Gemini fails (for example a 503), it tries Groq's vision model, then an OpenRouter free vision
+ * model, each only when its key is set. Models are set with GROQ_VISION_MODEL and OPENROUTER_VISION_MODEL.
+ * Throws if every reader fails, so the caller must handle that.
  */
 export async function geminiVisionJSON<T>(
   prompt: string,
   images: Array<{ mimeType: string; data: string }>,
   options: { maxTokens?: number; timeoutMs?: number } = {},
 ): Promise<T> {
-  const text = await geminiCall(
-    [{ role: "user", content: prompt }],
-    0.3,
-    options.maxTokens ?? 1400,
-    true,
-    { images, timeoutMs: Math.min(options.timeoutMs ?? 14_000, 14_000) },
-  );
-  const clean = sanitizeModelOutput(text);
-  try {
-    return sanitizeParsedValue(JSON.parse(extractJSONText(clean)) as T);
-  } catch {
-    throw new Error(`geminiVisionJSON: response was not JSON. Raw (truncated): ${clean.slice(0, 120)}`);
+  const maxTokens = options.maxTokens ?? 1400;
+  const hasFallback = Boolean(GROQ_API_KEY || OPENROUTER_API_KEY);
+  const readers: Array<() => Promise<string>> = [
+    () => geminiCall([{ role: "user", content: prompt }], 0.3, maxTokens, true, { images, timeoutMs: Math.min(options.timeoutMs ?? 14_000, hasFallback ? 10_000 : 14_000) }),
+  ];
+  if (GROQ_API_KEY) {
+    readers.push(() => visionChatCall("https://api.groq.com/openai/v1/chat/completions", GROQ_API_KEY, process.env.GROQ_VISION_MODEL?.trim() || "qwen/qwen3.8-27b", prompt, images, maxTokens, 7_000, { json: true }));
   }
+  if (OPENROUTER_API_KEY) {
+    readers.push(() => visionChatCall("https://openrouter.ai/api/v1/chat/completions", OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL?.trim() || "google/gemma-4-26b-a4b-it:free", prompt, images, maxTokens, 7_000, {
+      json: false,
+      headers: { "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://buildmind.live", "X-Title": "BuildMind" },
+    }));
+  }
+  let lastErr: unknown = null;
+  for (const read of readers) {
+    try {
+      const clean = sanitizeModelOutput(await read());
+      return sanitizeParsedValue(JSON.parse(extractJSONText(clean)) as T);
+    } catch (err) {
+      lastErr = err; // 503, timeout or unreadable output: try the next reader
+    }
+  }
+  throw new Error(`geminiVisionJSON: every image reader failed. Last error: ${lastErr instanceof Error ? lastErr.message.slice(0, 120) : "unknown"}`);
 }
