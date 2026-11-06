@@ -11,6 +11,7 @@ import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { BREAK_SEED_KEY, makeSeed } from "@/lib/break/frontDoor";
+import { buildFirstTask } from "@/lib/break/firstTask";
 import SampleOutputs from "@/components/break/SampleOutputs";
 
 type Phase = "input" | "loading" | "result";
@@ -123,6 +124,14 @@ export default function BreakPublicPage() {
     } catch (e) { setScanNote(e instanceof Error ? e.message : "Scan failed. Type it in instead."); }
     finally { setScanning(false); }
   };
+
+  // The landing page sends people here with their idea already typed.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("idea");
+      if (q) setIdea(q.slice(0, 600));
+    } catch { /* no window or bad URL */ }
+  }, []);
 
   const canRun = idea.trim().length > 10;
 
@@ -304,6 +313,24 @@ export default function BreakPublicPage() {
                   <p style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.6, margin:0 }}>{sanitizeOutput(result.weakest.test)}</p>
                 </div>
               )}
+
+              {/* First task: what Today would open with after sign-up */}
+              {(() => {
+                const ft = buildFirstTask({ idea, targetUsers, problem, weakestTest: result.weakest?.test, advice: result.brutal_advice });
+                if (!ft) return null;
+                return (
+                  <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.8 }}
+                    style={{ border:"1px solid var(--bm-accent-bd)", borderRadius:12, padding:"16px 18px", marginBottom:28 }}>
+                    <div style={{ fontSize:15, fontWeight:700, marginBottom:6 }}>Your first task</div>
+                    <p style={{ fontSize:13, color:"var(--bm-text)", lineHeight:1.6, margin:"0 0 12px" }}>{sanitizeOutput(ft.task)}</p>
+                    <div style={{ fontSize:12, color:"var(--bm-text3)", marginBottom:6 }}>A starting message you could send to book a conversation:</div>
+                    <p style={{ fontSize:13, color:"var(--bm-text2)", lineHeight:1.6, margin:"0 0 12px", padding:"10px 12px", background:"var(--bm-border)", borderRadius:8 }}>{ft.message}</p>
+                    <p style={{ fontSize:12, color:"var(--bm-text3)", lineHeight:1.55, margin:0 }}>
+                      With a free account this task is waiting on your Today page, and Work drafts messages for the real people you find.
+                    </p>
+                  </motion.div>
+                );
+              })()}
 
               {/* Real products found by search */}
               {!!result.competitor_links?.length && (

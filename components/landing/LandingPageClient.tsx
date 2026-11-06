@@ -805,120 +805,36 @@ interface BreakPublicResponse {
 }
 interface PublicStats { founders?: number; projects?: number; milestones?: number; weekly_tasks?: number; }
 
-// ── Break My Startup ──────────────────────────────────────────────────────────
+// ── Break My Startup — a short hook; the stress test itself lives on /break ──
 function BreakMyStartupSection() {
-  const [idea, setIdea] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<BreakResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleBreak() {
-    if (!idea.trim()) return;
-    setLoading(true);
-    setResult(null);
-    setError(null);
-    try {
-      const res = await fetch("/api/ai/break-public", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea }),
-      });
-      if (!res.ok) throw new Error("Request failed");
-      const payload = (await res.json()) as BreakPublicResponse;
-      if (!payload.success) throw new Error(payload.error ?? "Request failed");
-      const data = payload.data;
-      const probability = data?.survival_probability ?? 40;
-      const overallRisk: RiskSeverity =
-        probability < 25 ? "Critical" : probability < 45 ? "High" : probability < 70 ? "Medium" : "Low";
-      const risks: RiskItem[] = (data?.kill_reasons?.length ? data.kill_reasons : ["Execution risk not enough data yet"]).map((reason, index) => ({
-        category: index === 0 ? "Primary risk" : `Risk ${index + 1}`,
-        severity: index === 0 ? overallRisk : overallRisk === "Critical" ? "High" : overallRisk,
-        description: reason,
-        mitigation: data?.differentiation_plan?.[index] ?? data?.brutal_advice ?? "Talk to 5 target users and validate the riskiest assumption before building more.",
-      }));
-      setResult({ overallRisk, summary: data?.verdict ?? "Stress test complete. Review the risks before deciding what to build next.", risks });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <section className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
       <div className="max-w-3xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 20, scale: 0.94 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-6">
           <div>
-            <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea — Free, No Sign-Up</Badge>
+            <Badge variant="danger" dot className="mb-4">Stress-Test Your Idea, Free</Badge>
             <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">
               Find the one thing most likely to kill your startup
             </h2>
             <p className="text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
-              Paste your idea. The same AI that runs inside BuildMind stress-tests it against the real failure modes — not generic advice, specific threats.
+              Describe your idea. You get the risks that matter most and your first task, on the full Break My Startup page.
             </p>
           </div>
-
-          <div className="flex flex-col gap-3">
+          <form action="/break" method="get" className="flex flex-col gap-3">
+            <label htmlFor="landing-idea" className="sr-only">Describe your startup idea</label>
             <textarea
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-              placeholder="Describe your startup idea or current model — what you're building, who it's for, how you make money..."
+              id="landing-idea"
+              name="idea"
+              maxLength={600}
+              placeholder="Describe your startup idea: what you're building, who it's for, how you make money..."
               className="bm-break-textarea h-44 w-full resize-none rounded-[var(--r-xl)] p-4 text-base outline-none transition-all duration-150 sm:h-36 sm:text-sm"
               style={{ background: "var(--glass-bg-light)", border: "1px solid var(--glass-border)", color: "var(--bm-text)", fontFamily: "inherit", backdropFilter: "blur(8px)" }}
             />
-            <Button onClick={handleBreak} loading={loading} disabled={!idea.trim()} size="lg" className="w-full self-start sm:w-auto">
-              {!loading && <AlertTriangle size={16} />}
-              Break My Startup →
+            <Button type="submit" size="lg" className="w-full self-start sm:w-auto">
+              <AlertTriangle size={16} />
+              Break My Startup <ArrowRight size={16} />
             </Button>
-          </div>
-
-          {error && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-sm p-4 rounded-[var(--r-xl)]" style={{ background: "rgba(224,85,85,0.08)", border: "1px solid rgba(224,85,85,0.2)", color: "var(--bm-red)" }}>
-              <AlertCircle size={16} />{error}
-            </motion.div>
-          )}
-
-          {loading && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="rounded-[var(--r-xl)] p-4 border border-[var(--bm-border)] bg-[var(--bm-bg3)] animate-pulse flex flex-col gap-2">
-                  <div className="h-4 w-32 rounded-full bg-[var(--bm-bg4)]" />
-                  <div className="h-3 w-full rounded-full bg-[var(--bm-bg4)] opacity-70" />
-                  <div className="h-3 w-5/6 rounded-full bg-[var(--bm-bg4)] opacity-50" />
-                </div>
-              ))}
-            </motion.div>
-          )}
-
-          {result && !loading && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-[var(--bm-text2)]">Overall Risk Level:</span>
-                <Badge variant={severityVariant(result.overallRisk)} size="md" dot>{result.overallRisk}</Badge>
-              </div>
-              {result.summary && <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{sanitizeOutput(result.summary)}</p>}
-              {(result.risks ?? []).map((risk, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-                  <Card className="p-4 flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-[var(--bm-text)]">{risk.category}</span>
-                      <Badge variant={severityVariant(risk.severity)} dot>{risk.severity}</Badge>
-                    </div>
-                    <p className="text-sm text-[var(--bm-text2)] leading-relaxed">{sanitizeOutput(risk.description)}</p>
-                    <div className="flex items-start gap-2 text-xs p-2.5 rounded-lg mt-1" style={{ background: "var(--bm-bg3)", color: "var(--bm-text3)" }}>
-                      <Shield size={12} className="shrink-0 mt-0.5" style={{ color: "var(--bm-text3)" }} />
-                      <span>{sanitizeOutput(risk.mitigation)}</span>
-                    </div>
-                  </Card>
-                </motion.div>
-              ))}
-              <Link href="/auth/login?tab=signup">
-                <Button variant="secondary" size="sm">
-                  Save this analysis to your project <ArrowRight size={12} />
-                </Button>
-              </Link>
-            </motion.div>
-          )}
+          </form>
         </motion.div>
       </div>
     </section>
@@ -2335,7 +2251,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
         <div className="hidden md:flex items-center gap-6 text-sm text-[var(--bm-text2)]">
           <a href="#how" className="hover:text-[var(--bm-text)] transition-colors">How it works</a>
           <a href="#features" className="hover:text-[var(--bm-text)] transition-colors">Features</a>
-          <a href="#break" className="hover:text-[var(--bm-text)] transition-colors">Stress-Test</a>
+          <a href="/break" className="hover:text-[var(--bm-text)] transition-colors">Stress-Test</a>
           <a href="#pricing" className="hover:text-[var(--bm-text)] transition-colors">Pricing</a>
         </div>
 
@@ -2388,11 +2304,11 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
                   Start free <ArrowRight size={16} />
                 </Button>
               </Link>
-              <a href="#break" className="w-full sm:w-auto">
+              <Link href="/break" className="w-full sm:w-auto">
                 <Button size="lg" variant="secondary" className="html-btn-secondary w-full sm:w-auto">
                   Try a free teardown, no signup
                 </Button>
-              </a>
+              </Link>
               <button type="button" onClick={() => { track("demo_play"); setDemoOpen(true); }} className="inline-flex items-center gap-2 text-sm text-[var(--bm-text2)] underline-offset-4 hover:underline sm:ml-2">
                 <Play size={12} /> Watch the 30-second demo
               </button>
