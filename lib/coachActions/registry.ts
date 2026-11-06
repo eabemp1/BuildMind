@@ -27,6 +27,11 @@ import { fetchBacklog, shapeBacklog, shapeMilestones, type BacklogView, type Mil
 import { fetchExecutionLog, shapeExecutionLog, type ExecutionLogView } from "./executionLog";
 import { buildFounderIntelligenceReport } from "@/lib/server/founderIntelligenceExport";
 import { buildExecutionIntelligenceVisual, buildProgressVisual } from "@/lib/visuals/intelligenceVisual";
+import { buildStressVisual } from "@/lib/visuals/stressVisual";
+import { loadPmfVisual } from "@/lib/server/pmfLadder";
+import { loadLatestWatch } from "@/lib/server/marketWatch";
+import { buildMarketVisual } from "@/lib/marketWatch/visual";
+import { loadInvestorVisual } from "@/lib/server/investorVisual";
 import { planWeek, energyToday, type WeekPlan } from "./weekPlan";
 import { buildSignalsResult, buildDecisionResult, buildBeliefsResult, buildMomentumResult } from "./intelligenceViews";
 
@@ -511,6 +516,110 @@ const drawProgress = defineAction({
 });
 
 
+// ── draw_stress_test ─────────────────────────────────────────────────────
+// Computed only: milestone dates against the pace in the founder's own tasks. No model call.
+const drawStressTest = defineAction({
+  id: "draw_stress_test",
+  label: "Stress-test my milestones",
+  description: "Your milestone target dates checked against your real pace: which are unlikely, how far behind, and what is holding them up.",
+  minPlan: "free",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const fetched = await fetchBacklog(ctx.admin, ctx.userId, ctx.projectId);
+    if (!fetched.ok) return { ok: false, status: fetched.status, error: fetched.error };
+    const { visual, summary } = buildStressVisual({ milestones: fetched.milestones, tasks: fetched.tasks, now: ctx.now });
+    const behind = summary.high + summary.medium;
+    return {
+      ok: true,
+      result: {
+        actionId: "draw_stress_test",
+        title: "Your milestone stress test",
+        summary: summary.dated === 0 ? "No unfinished milestone has a target date yet." : `${behind} of ${plural(summary.dated, "dated milestone")} ${behind === 1 ? "is" : "are"} behind or at risk at your current pace.`,
+        visual,
+        note: "Straight-line pace since each milestone started. Dates are UTC.",
+      },
+    };
+  },
+});
+
+// ── draw_pmf_ladder ──────────────────────────────────────────────────────
+// Computed only: six observable signs of product-market fit, each observed / not yet / not measured. No score, no model call.
+const drawPmfLadder = defineAction({
+  id: "draw_pmf_ladder",
+  label: "Show my PMF evidence",
+  description: "Six things you can point to as evidence of product-market fit, marked observed, not yet, or not measured. No score.",
+  minPlan: "free",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const { visual, summary } = await loadPmfVisual(ctx.admin, ctx.userId, ctx.projectId, ctx.now);
+    return {
+      ok: true,
+      result: {
+        actionId: "draw_pmf_ladder",
+        title: "Your PMF evidence",
+        summary: `${summary.observed} of ${summary.total} signs observed${summary.notMeasured ? `, ${summary.notMeasured} not measured` : ""}.`,
+        visual,
+        note: "Not a score. Payments count only from live mode.",
+      },
+    };
+  },
+});
+
+// ── draw_market_watch ────────────────────────────────────────────────────
+// Reads the latest saved weekly scan. No network call, no model. Builder only; the scan runs weekly or from the page.
+const drawMarketWatch = defineAction({
+  id: "draw_market_watch",
+  label: "What changed in my market",
+  description: "This week's changes in your competitors' prices, pages and community threads, from the weekly scan.",
+  minPlan: "builder",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const watch = await loadLatestWatch(ctx.admin, ctx.userId, ctx.projectId);
+    const { visual, changeCount } = buildMarketVisual(watch, ctx.now);
+    return {
+      ok: true,
+      result: {
+        actionId: "draw_market_watch",
+        title: "Market Watch",
+        summary: !watch ? "No scan yet." : watch.baseline ? "First scan saved. Next week's scan will show what changed." : changeCount ? `${plural(changeCount, "change")} since last week.` : "Quiet week: nothing changed.",
+        visual,
+        note: "Public pages only. No sentiment is measured.",
+      },
+    };
+  },
+});
+
+// ── draw_investor_update ─────────────────────────────────────────────────
+// Computed only: a one-page snapshot from the founder's own record and connected apps. No model call, no estimates.
+const drawInvestorUpdate = defineAction({
+  id: "draw_investor_update",
+  label: "Draw my investor snapshot",
+  description: "A one-page snapshot of traction and execution from your record and connected apps. Anything BuildMind does not track is left out.",
+  minPlan: "free",
+  paramsSchema: z.object({}),
+  async run(ctx) {
+    const denied = await assertOwnsProject(ctx);
+    if (denied) return denied;
+    const { visual, shown } = await loadInvestorVisual(ctx.admin, ctx.userId, ctx.projectId, ctx.now);
+    return {
+      ok: true,
+      result: {
+        actionId: "draw_investor_update",
+        title: "Your investor snapshot",
+        summary: shown ? `${plural(shown, "number")} from your record.` : "Nothing to show yet.",
+        visual,
+        note: "Live payments only. Retention, burn and runway are not tracked, so they are left out.",
+      },
+    };
+  },
+});
+
 // ── plan_week ─────────────────────────────────────────────────────────────
 // Read-only: a suggested spread of the real open backlog over the next working days. Nothing is saved or changed.
 const planWeekAction = defineAction({
@@ -564,6 +673,10 @@ export const COACH_ACTIONS: Record<CoachActionId, RegisteredAction> = {
   get_execution_log: getExecutionLog,
   draw_execution_intelligence: drawExecutionIntelligence,
   draw_progress: drawProgress,
+  draw_stress_test: drawStressTest,
+  draw_pmf_ladder: drawPmfLadder,
+  draw_market_watch: drawMarketWatch,
+  draw_investor_update: drawInvestorUpdate,
   plan_week: planWeekAction,
 };
 

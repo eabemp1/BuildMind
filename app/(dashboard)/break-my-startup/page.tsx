@@ -983,4 +983,4 @@ export default function BreakMyStartupPage() {
       {view === "agents" ? <AgentsPage /> : <StressTestView />}
     </>
   );
-          }
+}

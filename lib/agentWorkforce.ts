@@ -680,4 +680,4 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
     findings:          allFindings,
     ...(input.focus ? { claimStatus: claimStatus(allFindings) } : {}),
   };
-    }
+}

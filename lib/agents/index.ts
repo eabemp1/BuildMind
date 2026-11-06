@@ -1053,4 +1053,4 @@ Generate 3 pivots that improve on the weakest signals${ctx.founderStyle?.hasSign
   } catch {
     return fallbackPivots;
   }
-          }
+}

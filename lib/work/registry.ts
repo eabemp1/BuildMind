@@ -84,6 +84,17 @@ export const WORK_SPECS: WorkSpec[] = [
     you: "Build the form in your own tool and share it.",
   },
   {
+    id: "moat_canvas", group: "validate", label: "Competitive edge check", blurb: "Grade each claimed edge, and see where you sit among competitors",
+    fields: [
+      long("edges", "What do you say makes you different? One per line", "e.g. Works offline\nPays out in mobile money\nBuilt for market traders", false),
+      short("competitors", "Who do people use today? Names, separated by commas", "e.g. Excel, a WhatsApp group, Acme", false),
+      long("proof", "What have customers actually said or done about these?", "Real quotes or actions only. Leave blank if none.", true),
+    ],
+    shape: "sections",
+    instruction: "Write a competitive edge check as sections. Section 'Edge check': one bullet per edge the founder listed, in the form 'Edge: grade. Reason.' where grade is exactly one of 'Backed by what customers did', 'Plausible, not yet tested' or 'Easy to copy'. Use 'Backed by what customers did' ONLY when the founder's proof field shows customers saying or doing something that supports that edge; otherwise choose between the other two and say why in one sentence. Section 'Hardest to copy': name the one edge that would take a competitor longest to match and why, or say none of them yet. Section 'Our read: where you sit': describe, in plain sentences, how the founder's product differs from each named competitor on the two things that matter most to this audience (say which two). Start this section with 'This is our read from what you told us, not measured data.' Only discuss competitors the founder named; do not invent competitor features, prices or customers. Section 'Test this week': one cheap way to check the weakest edge with real customers.",
+    you: "Ask real customers about the edges marked untested, and correct anything here that is wrong.",
+  },
+  {
     id: "objection_sheet", group: "validate", label: "Objection answers", blurb: "What people will push back on, and honest replies",
     fields: [long("offer", "What are you asking people to do or buy?", "e.g. pay GHS 50 a month for weekly business reports", true), short("audience", "Who will push back?", "e.g. small shop owners")],
     shape: "sections",
@@ -190,12 +201,29 @@ export const EXISTING: ExistingEntry[] = [
   { kind: "action_plan", group: "build", label: "Action plan", blurb: "Your next move, broken into steps", task: "Break my first move into small steps" },
 ];
 
-export interface CatalogEntry { id: string; group: WorkGroup; label: string; blurb: string; source: "spec" | "existing" }
+/** Pictures drawn from the founder's own record. No model writes them, so there is no form to fill in. */
+export interface VisualEntry { id: string; group: WorkGroup; label: string; blurb: string; kind: "stress" | "pmf" | "market" | "investor" }
+export const VISUALS: VisualEntry[] = [
+  { id: "visual:stress", group: "build", label: "Milestone stress test", blurb: "Which target dates you will miss at your real pace", kind: "stress" },
+  { id: "visual:pmf", group: "build", label: "PMF evidence", blurb: "Six signs of fit, observed or not, no score", kind: "pmf" },
+  { id: "visual:market", group: "publish", label: "Market Watch", blurb: "Weekly changes in competitor prices, pages and threads (Builder)", kind: "market" },
+  { id: "visual:investor", group: "raise", label: "Investor snapshot", blurb: "One page of real traction numbers, nothing estimated", kind: "investor" },
+];
+
+/** Small interactive tools that are not a form-then-document flow. */
+export interface ToolEntry { id: string; group: WorkGroup; label: string; blurb: string; kind: "screenshot" }
+export const TOOLS: ToolEntry[] = [
+  { id: "tool:screenshot", group: "publish", label: "Screenshot review", blurb: "Upload a landing page or app screen and get specific fixes (Builder)", kind: "screenshot" },
+];
+
+export interface CatalogEntry { id: string; group: WorkGroup; label: string; blurb: string; source: "spec" | "existing" | "visual" | "tool" }
 
 export function catalog(): CatalogEntry[] {
   return [
     ...WORK_SPECS.map((s) => ({ id: s.id, group: s.group, label: s.label, blurb: s.blurb, source: "spec" as const })),
     ...EXISTING.map((e) => ({ id: `existing:${e.kind}`, group: e.group, label: e.label, blurb: e.blurb, source: "existing" as const })),
+    ...VISUALS.map((v) => ({ id: v.id, group: v.group, label: v.label, blurb: v.blurb, source: "visual" as const })),
+    ...TOOLS.map((t) => ({ id: t.id, group: t.group, label: t.label, blurb: t.blurb, source: "tool" as const })),
   ];
 }
 

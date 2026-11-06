@@ -44,6 +44,7 @@ export const EXPORT_CATEGORIES: ReadonlyArray<ExportCategory> = [
   { table: "project_goals", ownerCol: "user_id", group: "work", label: "Goals and targets", orderBy: "created_at", aiGenerated: false },
   { table: "project_stage_evidence", ownerCol: "user_id", group: "work", label: "Stage evidence (proof attached to stage moves)", orderBy: "created_at" },
   { table: "break_runs", ownerCol: "user_id", group: "work", label: "Break My Startup history (past stress tests)", orderBy: "created_at", aiGenerated: true },
+  { table: "market_watch_snapshots", ownerCol: "user_id", group: "work", label: "Market Watch weekly scans", orderBy: "created_at" },
   { table: "work_items", ownerCol: "user_id", group: "work", label: "Work library (prepared drafts and documents)", orderBy: "created_at", aiGenerated: true },
   { table: "prepared_work", ownerCol: "user_id", group: "work", label: "Prepared work (drafts and kits)", orderBy: "created_at", aiGenerated: true },
   { table: "reflections", ownerCol: "user_id", group: "history", label: "Reflections", orderBy: "created_at" },

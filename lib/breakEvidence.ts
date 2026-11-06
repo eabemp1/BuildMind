@@ -635,4 +635,4 @@ export function buildEvidenceLayer(input: EvidenceInput): EvidenceLayer {
     hypotheses: buildHypotheses(input, falsifiers),
     excludedCompetitors: excluded.length ? excluded : undefined,
   };
-                               }
+                }

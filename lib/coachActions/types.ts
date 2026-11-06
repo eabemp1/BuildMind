@@ -24,6 +24,10 @@ export type CoachActionId =
   | "get_execution_log"
   | "draw_execution_intelligence"
   | "draw_progress"
+  | "draw_stress_test"
+  | "draw_pmf_ladder"
+  | "draw_market_watch"
+  | "draw_investor_update"
   | "plan_week";
 
 import type { VisualSpec } from "@/lib/visuals/spec";

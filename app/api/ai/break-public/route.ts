@@ -11,6 +11,8 @@ import { groqJSON } from "@/app/api/ai/_utils";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 import { webSearch } from "@/lib/search";
 import { publicBreakAllowed, recordCall } from "@/lib/server/aiBudget";
+import { getRouteUser } from "@/app/api/ai/_planCheck";
+import { liveAllowedFor } from "@/lib/break/frontDoor";
 import { DIMENSION_GUIDE, computeSurvival, normalizeSignals, previewScore, previewSignals, weakestTest } from "@/lib/breakScore";
 
 // FIX: this used to hit DDG lite directly with no fallback — DDG's HTML
@@ -58,7 +60,10 @@ export async function POST(request: Request) {
     // never be able to starve signed-in users of AI capacity.
     const dayLimit = await rateLimitAsync(`break-public-day:${getClientIp(request)}`, 12, 24 * 60 * 60 * 1000, { failClosed: true });
     const gate = dayLimit.ok ? await publicBreakAllowed() : { live: false, why: "daily_cap" as const };
-    const live = gate.live;
+    // The live run spends search and AI credit, so it needs an account. Everyone else gets the instant preview.
+    const signedIn = Boolean(await getRouteUser());
+    const needsAccount = !liveAllowedFor(signedIn, process.env.BREAK_PUBLIC_LIVE);
+    const live = gate.live && !needsAccount;
 
     // Light competitor scan (skipped in preview mode — it spends search credits)
     const scrapeResult = live ? await scrapeCompetitors(`${idea} startup tool software`) : { titles: "", scraped: false, links: [] as { title: string; url: string }[] };
@@ -135,7 +140,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
     }
 
     if (aiOk && scrapeResult.links.length) result.competitor_links = scrapeResult.links;
-    return NextResponse.json({ success: true, data: result, competitors_scraped, preview: !aiOk });
+    return NextResponse.json({ success: true, data: result, competitors_scraped, preview: !aiOk, needsAccount });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Analysis failed";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });

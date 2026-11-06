@@ -83,7 +83,6 @@ export async function getAICoachAdvice(projectId: string): Promise<string[]> {
 // ── Task / Milestone mutations (touch multiple tables) ──────────────────────
 import { createClient } from "@/lib/supabase/client";
 import { trackEvent } from "@/lib/analytics";
-import { getProjectSummaries, updateProjectStage } from "@/lib/data/projects";
 import { observeTaskEvent } from "@/lib/founderMemory";
 
 export async function completeTask(taskId: string): Promise<{ newStage: string | null }> {
@@ -104,16 +103,9 @@ export async function completeTask(taskId: string): Promise<{ newStage: string |
 
   if (allDone) {
     await supabase.from("milestones").update({ status: 'completed' }).eq("id", task.milestone_id);
-    const { data: milestone } = await supabase
-      .from("milestones").select("project_id").eq("id", task.milestone_id).maybeSingle();
-    if (milestone) {
-      const summaries = await getProjectSummaries();
-      const updated = summaries.find((s) => s.id === milestone.project_id);
-      if (updated?.startup_stage) {
-        await updateProjectStage(milestone.project_id, updated.startup_stage);
-        return { newStage: updated.startup_stage };
-      }
-    }
+    // Finishing a milestone no longer writes a stage. The stored stage changes only through PATCH
+    // /api/project/stage-evidence (it needs evidence). The old write saved the DISPLAYED stage, which for a project
+    // with no stored stage is the one inferred from milestones, and that can read "Revenue" on a brand-new project.
   }
   return { newStage: null };
 }
@@ -169,15 +161,7 @@ export async function updateTaskStatus(taskId: string, isCompleted: boolean, not
       .eq("id", taskRow.milestone_id);
   }
 
-  if (isMilestoneComplete && !wasMilestoneComplete) {
-    const { data: milestone } = await supabase
-      .from("milestones").select("project_id").eq("id", taskRow.milestone_id).maybeSingle();
-    if (milestone?.project_id) {
-      const summaries = await getProjectSummaries();
-      const updated = summaries.find((s) => s.id === milestone.project_id);
-      if (updated?.startup_stage) await updateProjectStage(milestone.project_id, updated.startup_stage);
-    }
-  }
+  // Stage is not written here either: see completeTask.
 }
 
 export async function updateMilestoneForCurrentUser(

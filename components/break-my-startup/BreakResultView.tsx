@@ -580,4 +580,4 @@ export function BreakResultView(props: BreakResultViewProps) {
       </div>
     </div>
   );
-              }
+}

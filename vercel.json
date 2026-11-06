@@ -66,6 +66,9 @@
     },
     "app/api/cron/radar-discover/route.ts": {
       "maxDuration": 120
+    },
+    "app/api/cron/market-watch/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -144,6 +147,10 @@
     {
       "path": "/api/cron/radar-discover",
       "schedule": "0 6 * * 2,3,5,6"
+    },
+    {
+      "path": "/api/cron/market-watch",
+      "schedule": "0 7 * * 1"
     }
   ]
 }
