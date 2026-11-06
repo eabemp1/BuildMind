@@ -1329,6 +1329,17 @@ function TodayContent() {
   const workHref = actionData?.action
     ? `/work?${new URLSearchParams({ task: actionData.action, ...(actionData.missionKind ? { mk: actionData.missionKind } : {}), ...(actionData.firstStep ? { step: actionData.firstStep } : {}) }).toString()}`
     : "/work";
+  // One line saying why today's task matters now, from the founder's own records. Empty when there is no real reason.
+  const [whyNowLine, setWhyNowLine] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/today/why-now", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (live) setWhyNowLine(typeof j?.line === "string" ? j.line : null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+
   // Says on the button whether BuildMind has already drafted this task. Read-only: it never starts a draft.
   const [draftShape, setDraftShape] = useState<DraftShape | null>(null);
   const draftTask = actionData?.action ?? null;
@@ -2411,6 +2422,7 @@ function TodayContent() {
               accent={missionAccent(actionData.missionKind)}
               reasons={actionData.missionReasons}
               executeLabel={draftLabel(draftShape)}
+              whyNow={whyNowLine}
               onExecute={() => router.push(workHref)}
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
               timeText={actionData?.time ?? null}

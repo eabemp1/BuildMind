@@ -27,6 +27,7 @@
  * nothing can overflow a phone screen.
  */
 
+import WhenToday from "@/components/today/WhenToday";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { storage } from "@/lib/storage";
 import { useCountUp } from "@/components/today/useCountUp";
@@ -59,6 +60,8 @@ export interface TodayCommandCenterProps {
   lowConfidence?: boolean;
   onExecute?: () => void;
   executeLabel?: string;
+  /** One line saying why this task matters now, from the founder's own records. */
+  whyNow?: string | null;
   actionTitle: string | null;
   timeText: string | null;
   done: boolean;
@@ -72,7 +75,7 @@ export interface TodayCommandCenterProps {
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
 
-export default function TodayCommandCenter({ action, kicker, accent, rationale, whyMore, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
+export default function TodayCommandCenter({ action, kicker, accent, rationale, whyMore, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", whyNow, actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
   const { openPane } = useSidePane();
   const askCoach = () => openPane({ kind: "coach", title: "Coach on today's task", prompt: actionTitle ? `I'm about to work on this: "${actionTitle}". What is the smallest first move, and what usually makes people stall on it?` : undefined });
   const showWhy = () => openPane({
@@ -269,6 +272,10 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
         <InkText nodes={action ?? actionTitle ?? "Preparing today's action"} progress={progress} color={ink} />
       </h2>
 
+      {whyNow && !done ? (
+        <p style={{ margin: "12px 0 0", maxWidth: "58ch", fontSize: 14, lineHeight: 1.5, color: ink }}>{whyNow}</p>
+      ) : null}
+
       {firstStep && !done ? (
         <p style={{ margin: "14px 0 0", maxWidth: "58ch", fontSize: 14, lineHeight: 1.55, color: "var(--bm-text2)" }}>
           <span style={{ ...mono, fontSize: 12, color: ink, marginRight: 8 }}>First move</span>{firstStep}
@@ -311,6 +318,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
             </span>
           </div>
         )}
+        {focus.mode === "idle" && !done && actionTitle ? <WhenToday task={actionTitle} ink={ink} /> : null}
 
         {(running || paused || finished) && (
           <div style={{ display: "flex", alignItems: "baseline", gap: narrow ? 14 : 22, flexWrap: "wrap" }}>
