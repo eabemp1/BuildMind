@@ -26,6 +26,7 @@ type Row = {
   artifact_url: string | null; experiment_channel: string | null; experiment_outcome: string | null;
   judgment_text: string | null;
 };
+type Suggestion = { id: string; slotKeys: string[]; source: string; row: Record<string, string> };
 type Readiness = {
   tier: "not_ready" | "checklist_only" | "ready";
   nextStage: string | null;
@@ -93,6 +94,7 @@ export default function LevelUpPanel({
   const [req, setReq] = useState<Requirement | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [filled, setFilled] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [openSlot, setOpenSlot] = useState<string | null>(null);
   const [type, setType] = useState<EvType>("metric");
@@ -112,12 +114,13 @@ export default function LevelUpPanel({
       const next = r?.nextStage ?? lu?.next_stage ?? null;
       if (next) {
         const ev = await fetch(
-          `/api/project/stage-evidence?projectId=${projectId}&fromStage=${encodeURIComponent(currentStage)}&toStage=${encodeURIComponent(next)}`,
+          `/api/project/stage-evidence?projectId=${projectId}&fromStage=${encodeURIComponent(currentStage)}&toStage=${encodeURIComponent(next)}&suggest=1`,
         ).then(x => x.json()).catch(() => null);
         if (ev?.ok) {
           setReq(ev.requirement ?? null);
           setRows(ev.rows ?? []);
           setFilled(ev.completeness?.filledSlotKeys ?? []);
+          setSuggestions(ev.suggestions ?? []);
         }
       }
     } catch { /* panel is optional UI; fail quiet */ }
@@ -151,6 +154,22 @@ export default function LevelUpPanel({
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error ?? "Couldn't save. Try again.");
       setOpenSlot(null); setForm({});
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save. Try again.");
+    } finally { setSaving(false); }
+  }
+
+  async function useSuggestion(s: Suggestion) {
+    if (saving) return;
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch("/api/project/stage-evidence", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, fromStage: currentStage, toStage: next, ...s.row }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error ?? "Couldn't save. Try again.");
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save. Try again.");
@@ -226,6 +245,12 @@ export default function LevelUpPanel({
                           <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 12.5, color: "var(--bm-text2)", background: "var(--bm-bg3)", borderRadius: 8, padding: "7px 9px" }}>
                             <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{rowSummary(r)}</span>
                             <button onClick={() => void remove(r.id)} aria-label="Remove this proof" style={{ all: "unset", cursor: "pointer", color: "var(--bm-text3)", fontSize: 12 }}>Remove</button>
+                          </div>
+                        ))}
+                        {!done && !editing && suggestions.filter((s) => s.slotKeys.includes(slot.key)).slice(0, 2).map((s) => (
+                          <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, fontSize: 12.5, color: "var(--bm-text2)", background: "var(--bm-bg3)", borderRadius: 8, padding: "7px 9px" }}>
+                            <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{s.row.metric_name ? `${s.row.metric_name}: ${s.row.metric_value}` : s.row.artifact_description}</span>
+                            <button onClick={() => void useSuggestion(s)} disabled={saving} style={{ all: "unset", cursor: "pointer", color: "var(--bm-accent)", fontSize: 12, fontWeight: 600 }}>Use this</button>
                           </div>
                         ))}
                         {!editing && (

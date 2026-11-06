@@ -27,5 +27,9 @@ export const COACH_ACTION_CHIPS: CoachActionChip[] = [
   { id: "get_execution_log", label: "Show my execution log", params: {} },
   { id: "draw_execution_intelligence", label: "Draw my execution intelligence", params: {} },
   { id: "draw_progress", label: "Chart my progress", params: {} },
+  { id: "draw_stress_test", label: "Stress-test my milestones", params: {} },
+  { id: "draw_pmf_ladder", label: "Show my PMF evidence", params: {} },
+  { id: "draw_market_watch", label: "What changed in my market?", params: {} },
+  { id: "draw_investor_update", label: "Draw my investor snapshot", params: {} },
   { id: "export_intelligence", label: "Export my intelligence data", params: {} },
 ];

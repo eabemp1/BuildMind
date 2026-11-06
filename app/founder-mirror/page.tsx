@@ -1,5 +1,6 @@
 "use client";
 
+import MirrorSummary from "@/components/founder-mirror/MirrorSummary";
 import { usePlan } from "@/lib/usePlan";
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
@@ -349,6 +350,7 @@ export default function FounderMirrorPage() {
           <div className="font-[Syne] text-[15px] font-bold text-[var(--bm-text)]">Founder Mirror</div>
           {viewToggle}
         </div>
+        <MirrorSummary mirror={mirror} />
         <MirrorStory
           mirror={mirror}
           behavioral={behavioral}

@@ -29,6 +29,10 @@ const ICONS: Record<CoachActionId, typeof Database> = {
   export_intelligence: Database,
   draw_execution_intelligence: Shapes,
   draw_progress: LineChart,
+  draw_stress_test: Shapes,
+  draw_pmf_ladder: Shapes,
+  draw_market_watch: Radar,
+  draw_investor_update: LineChart,
   plan_week: CalendarDays,
 };
 

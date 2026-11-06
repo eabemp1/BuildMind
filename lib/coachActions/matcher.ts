@@ -145,6 +145,15 @@ const DRAW_VERB = /\b(draw|visuali[sz]e|visuali[sz]ation|chart|graph|plot|diagra
 const DRAW_EXECUTION = /\b(execution|intelligence|signals?|decision|beliefs?|patterns?|how i (?:work|operate)|founder (?:model|profile)|everything|my data)\b/;
 const DRAW_PROGRESS = /\b(progress|momentum|milestones?|streak|tasks?|week|weeks|month|performance|consistency|activity|how i(?:'|’)?m doing)\b/;
 
+// "Stress-test my milestones", "will I hit my deadline", "am I behind on my milestones": checked before the generic drawing words.
+// "Do I have product-market fit", "show my PMF evidence": the evidence ladder, never a score.
+const PMF_LADDER = /\b(?:pmf|product[- ]market fit)\b.*\b(?:evidence|signs?|ladder|check|progress)\b|\b(?:do i have|have i got|am i at) (?:pmf|product[- ]market fit)\b|\b(?:show|draw|check) (?:my )?(?:pmf|product[- ]market fit)\b/;
+// "What changed in my market", "any competitor price changes", "show market watch".
+const MARKET_WATCH = /\bmarket watch\b|\bwhat(?:'s| has| have)? changed\b.*\b(?:market|competitors?)\b|\bcompetitors?\b.*\b(?:price changes?|changed (?:their )?pric\w+)\b/;
+// "Draw my investor snapshot", "investor one-pager": the drawn page. The written update is a Work brief, not this.
+const INVESTOR_SNAPSHOT = /\b(?:draw|show|make|build)\b.*\binvestor (?:snapshot|one[- ]?pager|dashboard|page)\b|\binvestor snapshot\b/;
+const STRESS_TEST = /\bstress[- ]?test\b.*\b(milestones?|roadmap|timeline|dates?|deadlines?|plan)\b|\b(?:will|can) i (?:hit|make|meet) (?:my|the) (?:milestones?|deadlines?|target dates?)\b|\bam i (?:on track|behind) (?:on|for|with) (?:my |the )?(?:milestones?|deadlines?|target dates?)\b/;
+
 const PLAN_WEEK = /\b(?:re-?plan|plan|schedule|organi[sz]e|sort out|lay out|map out)\s+(?:out\s+)?(?:my|the|this|next)\s+(?:whole\s+)?week\b|\bwhat should i (?:work on|do|focus on) (?:this|next) week\b/;
 
 export function matchCoachAction(message: string): CoachActionMatch | null {
@@ -152,6 +161,10 @@ export function matchCoachAction(message: string): CoachActionMatch | null {
   const t = (message ?? "").trim().toLowerCase().replace(/[?.!]+$/, "");
   if (!t || t.length > MAX_MATCHABLE_LENGTH) return null;
 
+  if (STRESS_TEST.test(t)) return { id: "draw_stress_test", params: {} };
+  if (INVESTOR_SNAPSHOT.test(t)) return { id: "draw_investor_update", params: {} };
+  if (MARKET_WATCH.test(t)) return { id: "draw_market_watch", params: {} };
+  if (PMF_LADDER.test(t)) return { id: "draw_pmf_ladder", params: {} };
   if (PLAN_WEEK.test(t)) return { id: "plan_week", params: {} };
 
   if (DRAW_VERB.test(t) && /\b(my|me|i|our)\b/.test(t)) {

@@ -57,7 +57,7 @@ NOTES
 ${notes}
 Return JSON only: {"insights":[{"point":"short plain sentence","quote":"exact words from the notes"}]}`;
   let raw: unknown = null;
-  try { raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], { maxTokens: 900 }); } catch { /* handled below */ }
+  try { raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], { maxTokens: 900, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "interview_insights" }); } catch { /* handled below */ }
   if (raw === null) return NextResponse.json({ ok: false, error: "BuildMind could not read the notes just now. Your notes were kept. Please try again." }, { status: 502 });
   const insights = verifyInsights(raw, notes);
   await admin.from("conversation_people").update({ notes, insights, status: "done", updated_at: new Date().toISOString() }).eq("id", b.id).eq("user_id", user.userId);

@@ -10,6 +10,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
+import { BREAK_SEED_KEY, makeSeed } from "@/lib/break/frontDoor";
+import SampleOutputs from "@/components/break/SampleOutputs";
 
 type Phase = "input" | "loading" | "result";
 
@@ -104,6 +106,7 @@ export default function BreakPublicPage() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [needsAccount, setNeedsAccount] = useState(false);
   const [domain, setDomain] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanNote, setScanNote] = useState("");
@@ -133,7 +136,9 @@ export default function BreakPublicPage() {
       });
       const body = await res.json().catch(()=>({}));
       if (!res.ok||!body.success) throw new Error(body?.error??"Analysis failed");
-      setResult(body.data); setPreview(Boolean(body.preview)); setPhase("result");
+      setResult(body.data); setPreview(Boolean(body.preview)); setNeedsAccount(Boolean(body.needsAccount)); setPhase("result");
+      // Remember the advice so the first daily action in BuildMind can start from it.
+      try { const seed = makeSeed(idea, String(body.data?.weakest?.test ?? body.data?.brutal_advice ?? "")); if (seed) localStorage.setItem(BREAK_SEED_KEY, JSON.stringify(seed)); } catch { /* private mode */ }
     } catch(err) {
       setError(err instanceof Error?err.message:"Something went wrong."); setPhase("input");
     }
@@ -183,7 +188,7 @@ export default function BreakPublicPage() {
                   The brutal AI stress test that tells founders why their startup will fail, then turns the result into the next action.
                 </p>
                 <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:16, flexWrap:"wrap" }}>
-                  {["No login required","30-second analysis","Shareable result"].map(t=>(
+                  {["Instant preview, no login","Full analysis with a free account","Shareable result"].map(t=>(
                     <span key={t} style={{ fontSize:11, color:"var(--bm-text4)", display:"flex", alignItems:"center", gap:4 }}>
                       <span style={{ color:"#4ade80" }}>✓</span> {t}
                     </span>
@@ -231,9 +236,10 @@ export default function BreakPublicPage() {
                   }}>
                     {canRun ? "⚡ Break My Startup" : "Describe your startup above"}
                   </button>
-                  <p style={{ textAlign:"center", fontSize:11, color:"var(--bm-border3)", marginTop:10, marginBottom:0 }}>Free · No account needed · Takes ~30 seconds</p>
+                  <p style={{ textAlign:"center", fontSize:11, color:"var(--bm-border3)", marginTop:10, marginBottom:0 }}>Free · Instant preview needs no account · The full analysis is free with an account</p>
                 </div>
               </div>
+              <SampleOutputs />
             </motion.div>
           )}
 
@@ -245,7 +251,9 @@ export default function BreakPublicPage() {
             <motion.div key="result" initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }}>
               {preview && (
                 <div style={{ fontSize:12, lineHeight:1.5, color:"var(--bm-text3)", border:"1px solid var(--bm-border)", borderRadius:8, padding:"8px 12px", marginBottom:20 }}>
-                  This is a quick preview based on how your idea is described, because live analysis is unavailable right now. Try again in a few minutes, or create a free account for the full stress-test.
+                  {needsAccount
+                    ? "This is a quick preview based on how your idea is described. The full analysis reads your competitors' sites and takes a free account."
+                    : "This is a quick preview based on how your idea is described, because live analysis is unavailable right now. Try again in a few minutes, or create a free account for the full stress-test."}
                 </div>
               )}
               {/* Score */}

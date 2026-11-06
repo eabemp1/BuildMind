@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { WORK_SPECS, EXISTING, catalog, searchCatalog, SPEC_BY_ID } from "@/lib/work/registry";
+import { WORK_SPECS, EXISTING, catalog, searchCatalog, SPEC_BY_ID, VISUALS, TOOLS } from "@/lib/work/registry";
 import { cleanInputs, sanitizeText, buildPrompt, normalizeWork, readRefined, figuresToCheck } from "@/lib/work/shape";
 import { prepKindFor } from "@/lib/prep/kinds";
 
@@ -22,7 +22,7 @@ describe("registry", () => {
   });
   it("catalogue has spec and existing entries, and search finds by label", () => {
     const c = catalog();
-    expect(c.length).toBe(WORK_SPECS.length + EXISTING.length);
+    expect(c.length).toBe(WORK_SPECS.length + EXISTING.length + VISUALS.length + TOOLS.length);
     expect(searchCatalog(c, WORK_SPECS[0].label.slice(0, 5)).length).toBeGreaterThan(0);
     expect(searchCatalog(c, "").length).toBe(c.length);
   });

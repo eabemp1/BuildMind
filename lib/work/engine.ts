@@ -18,7 +18,7 @@ export async function generateWork(
   const prompt = buildPrompt(input.spec, input.values, project);
   let raw: unknown;
   try {
-    raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], { maxTokens: input.spec.shape === "sections" ? 2600 : 1800 });
+    raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], { maxTokens: input.spec.shape === "sections" ? 2600 : 1800, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "work" });
   } catch { return null; }
   const allowed = [...Object.values(input.values), project.name, project.description, project.problem, project.targetUsers].join(" ");
   return normalizeWork(raw, input.spec, allowed, unsupportedNumbers);
@@ -26,7 +26,7 @@ export async function generateWork(
 
 export async function refineText(text: string, instruction: string): Promise<string | null> {
   try {
-    const raw = await callModelJSON<unknown>([{ role: "user", content: refinePrompt(text, instruction) }], { maxTokens: 1800 });
+    const raw = await callModelJSON<unknown>([{ role: "user", content: refinePrompt(text, instruction) }], { maxTokens: 1800, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "work_refine" });
     return readRefined(raw);
   } catch { return null; }
 }

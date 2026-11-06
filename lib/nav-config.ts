@@ -143,4 +143,4 @@ export async function syncTasksCompletedFromServer(): Promise<void> {
   } catch {
     // Non-fatal
   }
-}
+    }

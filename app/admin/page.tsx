@@ -25,6 +25,7 @@ import { buildBriefing } from "@/lib/adminBriefing";
 import { BriefingTab } from "./components/BriefingTab";
 import { SignupsTab } from "./components/SignupsTab";
 import { SystemTab } from "./components/SystemTab";
+import { OwnerTab } from "./components/OwnerTab";
 import { adminCss } from "./components/ui";
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ type Plan = "free" | "builder";
 type BillingStatus = "active" | "canceled" | "processing" | "free";
 type MetricStatus = "on_track" | "watch" | "below_target" | "no_data";
 type DoneMap = Record<string, boolean>;
-type Tab = "overview" | "users" | "revenue" | "ai" | "engagement" | "growth" | "proof" | "testimonials" | "ventures" | "signups" | "system";
+type Tab = "overview" | "users" | "revenue" | "ai" | "engagement" | "growth" | "proof" | "testimonials" | "ventures" | "signups" | "system" | "owner";
 
 interface AdminUser { id: string; email: string; plan: Plan; billing_status: BillingStatus; billing_reference: string | null; subscription_id: string | null; streak: number; last_seen: string | null; created_at: string; projects_count: number; ai_calls_this_month: number; }
 interface MRRData { mrr: number; active_builders: number; new_this_month: number; churned_this_month: number; trend: { date: string; mrr: number }[]; }
@@ -132,6 +133,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "testimonials", label: "Testimonials",  icon: MessageSquare },
   { id: "ventures",     label: "My Ventures",   icon: Map },
   { id: "system",       label: "System status", icon: Globe },
+  { id: "owner",        label: "Test tools",    icon: Shield },
 ];
 
 const NAV_GROUPS: { label: string; ids: Tab[] }[] = [
@@ -139,7 +141,7 @@ const NAV_GROUPS: { label: string; ids: Tab[] }[] = [
   { label: "Business", ids: ["users", "revenue", "growth"] },
   { label: "Product",  ids: ["engagement", "ai", "proof"] },
   { label: "Community", ids: ["testimonials", "ventures"] },
-  { label: "Operations", ids: ["system"] },
+  { label: "Operations", ids: ["system", "owner"] },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1329,7 +1331,7 @@ async function fetchDashboard(): Promise<DashboardPayload> {
   return r.json();
 }
 
-const VALID_TABS = new Set<string>(["overview","signups","users","revenue","ai","engagement","growth","proof","testimonials","ventures","system"]);
+const VALID_TABS = new Set<string>(["overview","signups","users","revenue","ai","engagement","growth","proof","testimonials","ventures","system","owner"]);
 
 /**
  * Fix #2 — Page decomposition (audit P0.2)
@@ -1438,6 +1440,7 @@ export default function AdminPage() {
         {tab === "proof"        && <ProofTab key="proof" />}
         {tab === "signups"      && <SignupsTab key="signups" />}
         {tab === "system"       && <SystemTab key="system" />}
+        {tab === "owner"        && <OwnerTab key="owner" />}
 
         {/* Dashboard-data tabs */}
         {!selfLoadingTabs.includes(tab) && (

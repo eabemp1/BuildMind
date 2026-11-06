@@ -28,6 +28,8 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logError } from "@/lib/server/logger";
+import { loadConnectedFacts } from "@/lib/integrations/facts";
+import { suggestEvidence, type EvidenceSuggestion } from "@/lib/stageEvidenceSuggest";
 import {
   getStageEvidenceRequirement,
   computeStageEvidenceCompleteness,
@@ -92,7 +94,18 @@ export async function GET(request: Request) {
     const requirement = getStageEvidenceRequirement(fromStage, toStage);
     const completeness = requirement ? computeStageEvidenceCompleteness(requirement, rows) : null;
 
-    return NextResponse.json({ ok: true, rows, requirement, completeness });
+    // Optional: numbers from connected apps, offered one by one. Never saved here.
+    let suggestions: EvidenceSuggestion[] = [];
+    if (searchParams.get("suggest") === "1" && requirement) {
+      try {
+        const facts = await loadConnectedFacts(admin, user.id, { maxAgeMs: 6 * 3600_000 });
+        const taken = new Set(rows.map((r) => `${r.metric_name ?? ""}|${r.artifact_description ?? ""}`));
+        const { count: withInsights } = await admin.from("conversation_people").select("id", { count: "exact", head: true }).eq("user_id", user.id).not("insights", "is", null).neq("insights", "[]");
+        suggestions = suggestEvidence(facts, { withInsights: withInsights ?? 0 }).filter((s) => !taken.has(`${s.row.metric_name ?? ""}|${s.row.artifact_description ?? ""}`));
+      } catch { /* suggestions are optional */ }
+    }
+
+    return NextResponse.json({ ok: true, rows, requirement, completeness, suggestions });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "Failed" },

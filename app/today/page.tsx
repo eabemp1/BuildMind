@@ -14,6 +14,7 @@ import { PREP_META, prepKindFor } from "@/lib/prep/kinds";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
 import MoodStrip from "@/components/today/MoodStrip";
 import RadarToday from "@/components/radar/RadarToday";
+import TodaySlot from "@/components/today/TodaySlot";
 import RadarBar, { useRadarSignal, markUndone } from "@/components/today/RadarBar";
 import RadarItemCard from "@/components/radar/RadarItemCard";
 import EveningCloseout from "@/components/today/EveningCloseout";
@@ -2199,6 +2200,7 @@ function TodayContent() {
           onLighten={() => handlePreTaskReplace({ reason: "no_motivation", mode: "shrink" })}
         />
       )}
+      {firstRun ? null : <TodaySlot projectId={project?.id} cogLoad={cogLoad} recoveryActive={recoveryActive} />}
       {/* Last night's own first move stays visible in both modes. */}
       {uiMode === "pro" || firstRun ? null : <div className="mood-dim"><TomorrowCarry /></div>}
       {/* Lite (the default) keeps the task first: the other daily cards sit behind one quiet row. Pro shows them in place.

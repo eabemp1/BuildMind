@@ -203,6 +203,8 @@ export default function OverviewPage() {
   const cadence = overview?.aiAdviceQuality ?? Math.round((consistencyBonus / 10) * 100);
   const stage = activeProject?.startup_stage ?? "Idea";
   const milestonesCompleted = overview?.milestonesCompleted ?? 0;
+  const noMilestones = milestonesCompleted === 0 && !(activeProject?.pendingMilestones?.length);
+  const noCadenceYet = overview?.aiAdviceQuality == null && consistencyBonus === 0;
   const totalTasks = activeProject?.tasksTotal ?? 0;
   const doneTasks = activeProject?.tasksCompleted ?? overview?.completedTasks ?? 0; // same project as the total
 
@@ -276,8 +278,9 @@ export default function OverviewPage() {
   const stats = [
     { label: "Startup score", value: score > 0 ? `${score}` : "—", sub: scoreDelta == null ? "baseline" : `${scoreDelta >= 0 ? "+" : ""}${scoreDelta} vs last reading`, tip: "Built from task completion, reflection quality and consistency. Decays slowly if you go quiet." },
     { label: "Streak", value: `${streak}d`, sub: scorecard?.streakDoneToday ? "extended today" : scorecard?.streakAtRisk ? "ends tonight" : streak === 0 ? "start today" : "alive", tip: "Consecutive days with at least one completed, partial or learned action. Blocked and skipped days do not count." },
-    { label: "Milestones", value: `${milestonesCompleted}`, sub: "completed", tip: "Stage-level objectives completed on this project." },
-    { label: "Cadence", value: `${cadence}%`, sub: "last 14 days", tip: "Active days, reflection depth and confidence over the last 14 days. Drops when you go quiet." },
+    // A 0 here would read as "you did nothing" when there is simply no data yet, so say that instead.
+    { label: "Milestones", value: noMilestones ? "—" : `${milestonesCompleted}`, sub: noMilestones ? "none set yet" : "completed", tip: "Stage-level objectives completed on this project." },
+    { label: "Cadence", value: noCadenceYet ? "—" : `${cadence}%`, sub: noCadenceYet ? "needs a few active days" : "last 14 days", tip: "Active days, reflection depth and confidence over the last 14 days. Drops when you go quiet." },
   ];
 
   return (

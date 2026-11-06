@@ -1,9 +1,11 @@
 "use client";
 import React from "react";
 import { useActiveProjectId } from "@/lib/queries";
-import { catalog, SPEC_BY_ID, EXISTING, type CatalogEntry } from "@/lib/work/registry";
+import { catalog, SPEC_BY_ID, EXISTING, VISUALS, TOOLS, type CatalogEntry } from "@/lib/work/registry";
+import { LiveVisual } from "@/components/visuals/LiveVisual";
 import PreparedWork from "@/components/today/PreparedWork";
 import Catalog from "./Catalog";
+import ScreenshotReview from "./ScreenshotReview";
 import BriefForm from "./BriefForm";
 import ResultView, { type WorkItem } from "./ResultView";
 import Library, { type LibraryRow } from "./Library";
@@ -15,6 +17,8 @@ type View =
   | { name: "catalog" }
   | { name: "brief"; specId: string; given?: Record<string, string>; regenerateId?: string | null }
   | { name: "existing"; kind: string; task: string; missionKind?: string | null; firstStep?: string; fromToday?: boolean }
+  | { name: "visual"; kind: "stress" | "pmf" | "market" | "investor" }
+  | { name: "tool"; kind: "screenshot" }
   | { name: "result"; item: WorkItem };
 
 export default function WorkApp() {
@@ -35,6 +39,9 @@ export default function WorkApp() {
       const p = new URLSearchParams(window.location.search);
       const task = (p.get("task") ?? "").slice(0, 400);
       if (task) setView({ name: "existing", kind: "", task, missionKind: p.get("mk") || null, firstStep: p.get("step")?.slice(0, 400) || undefined, fromToday: true });
+      // A link such as /work?open=visual:market opens that drawn view straight away.
+      const open = VISUALS.find((v) => v.id === p.get("open"));
+      if (open && !task) setView({ name: "visual", kind: open.kind });
     } catch { /* no query string */ }
   }, []);
 
@@ -47,7 +54,13 @@ export default function WorkApp() {
 
   function pick(e: CatalogEntry) {
     setError("");
-    if (e.source === "existing") {
+    if (e.source === "tool") {
+      const t = TOOLS.find((y) => y.id === e.id);
+      if (t) setView({ name: "tool", kind: t.kind });
+    } else if (e.source === "visual") {
+      const v = VISUALS.find((y) => y.id === e.id);
+      if (v) setView({ name: "visual", kind: v.kind });
+    } else if (e.source === "existing") {
       const kind = e.id.replace("existing:", "");
       const x = EXISTING.find((y) => y.kind === kind);
       if (x) setView({ name: "existing", kind, task: x.task });
@@ -113,6 +126,14 @@ export default function WorkApp() {
           <div><button type="button" className="wk-btn" onClick={back} style={btn()}>{view.fromToday ? "Back to Work" : "Back"}</button></div>
           {view.fromToday && <Link href="/today" style={{ ...muted, fontSize: 13, width: "fit-content" }}>Today's task: {view.task}</Link>}
           <PreparedWork task={view.task} missionKind={view.missionKind ?? null} firstStep={view.firstStep} projectId={projectId} />
+        </div>
+      )}
+      {view.name === "tool" && view.kind === "screenshot" && <ScreenshotReview onBack={back} />}
+      {view.name === "visual" && (
+        <div className="wk-fade" style={{ display: "grid", gap: 14 }}>
+          <div><button type="button" className="wk-btn" onClick={back} style={btn()}>Back</button></div>
+          <LiveVisual kind={view.kind} projectId={projectId} />
+          {!projectId && <p style={muted}>Open a project to see this.</p>}
         </div>
       )}
       {view.name === "result" && SPEC_BY_ID[view.item.kind] && (

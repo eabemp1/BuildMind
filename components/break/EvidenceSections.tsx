@@ -342,4 +342,4 @@ export function TestSections({ layer, rec, investigate }: { layer: EvidenceLayer
       {rec.error && <p role="alert" style={{ ...smallText, color: "var(--bm-red)" }}>{rec.error}</p>}
     </div>
   );
-                }
+}

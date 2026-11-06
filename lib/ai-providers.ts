@@ -492,6 +492,8 @@ export interface GeminiOptions {
   thinking?: "low" | "medium" | "high";
   /** Per-attempt timeout. Defaults to PROVIDER_TIMEOUT_MS. */
   timeoutMs?: number;
+  /** Images attached to the last user message (base64, no data: prefix). Gemini only. */
+  images?: Array<{ mimeType: string; data: string }>;
 }
 
 async function geminiCall(
@@ -504,9 +506,13 @@ async function geminiCall(
   if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not set");
   const systemMsg = messages.find(m => m.role === "system")?.content ?? "";
   const userMessages = messages.filter(m => m.role !== "system");
-  const contents = userMessages.map(m => ({
+  const lastUser = userMessages.map((m) => m.role).lastIndexOf("user");
+  const contents = userMessages.map((m, i) => ({
     role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
+    parts: [
+      { text: m.content },
+      ...(i === lastUser && opts.images?.length ? opts.images.map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })) : []),
+    ],
   }));
   const timeoutMs = opts.timeoutMs ?? PROVIDER_TIMEOUT_MS;
   const thinkingLevel = opts.thinking ?? GEMINI_THINKING_LEVEL;
@@ -1056,3 +1062,27 @@ export async function callModelJSON<T>(
     );
   }
       }
+
+/**
+ * geminiVisionJSON — one Gemini call with images attached, JSON out. Gemini only: the other providers here are
+ * text-only, so there is no fallback and the caller must handle a thrown error. The wait is capped at 14 seconds.
+ */
+export async function geminiVisionJSON<T>(
+  prompt: string,
+  images: Array<{ mimeType: string; data: string }>,
+  options: { maxTokens?: number; timeoutMs?: number } = {},
+): Promise<T> {
+  const text = await geminiCall(
+    [{ role: "user", content: prompt }],
+    0.3,
+    options.maxTokens ?? 1400,
+    true,
+    { images, timeoutMs: Math.min(options.timeoutMs ?? 14_000, 14_000) },
+  );
+  const clean = sanitizeModelOutput(text);
+  try {
+    return sanitizeParsedValue(JSON.parse(extractJSONText(clean)) as T);
+  } catch {
+    throw new Error(`geminiVisionJSON: response was not JSON. Raw (truncated): ${clean.slice(0, 120)}`);
+  }
+}
