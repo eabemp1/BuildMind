@@ -4,7 +4,7 @@ import { loadFounderState } from "@/lib/server/founderStateLoad";
 import { needsWebResearch, planResearch, gatherResearch, formatResearchBlock, publicSources, type ResearchResult } from "@/lib/webResearch";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createUserNotification, enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
+import { enforceAndTrackAIUsage, groqJSON, hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
@@ -548,8 +548,6 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
           expected_evidence: typeof ra.expected_evidence === "string" ? ra.expected_evidence.trim() : undefined,
         }
       : undefined;
-
-    await createUserNotification(userId, "BuildMind has a new coaching response for you.", "ai_recommendation");
 
     // Log quality — enables tracking whether coach responses are specific enough
     const { version: promptVersion, variant } = getPromptForRequest("coach_system", userId);

@@ -2091,7 +2091,7 @@ function TodayContent() {
   });
 
   return (
-    <div className="today-mood" data-mood={mood} data-tick={moodTick} data-engaged={engaged ? "true" : "false"} data-calm={calm && !engaged ? "true" : "false"} style={{ maxWidth: "var(--mood-max, 920px)", width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip" }}>
+    <div className="today-mood" data-mood={mood} data-tick={moodTick} data-engaged={engaged ? "true" : "false"} data-calm={calm && !engaged ? "true" : "false"} style={{ maxWidth: "var(--mood-max, 920px)", width: "100%", minWidth: 0, boxSizing: "border-box", margin: "0 auto", padding: isMobile ? "0 2px 28px" : "20px 8px 48px", overflowX: "clip", paddingBottom: !checkinInView && !done && actionData?.action ? 96 : undefined }}>
 
       {/* Task-first top of page. Only the Lite/Pro toggle lives here: streak, momentum,
           stage progress and the weekly picture are in the Morning Briefing and the
@@ -2361,19 +2361,17 @@ function TodayContent() {
         <div style={{ padding: isMobile ? "4px 2px 0" : "8px 0 0" }}>
 
           {/* Meta row — simplified */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 10px", marginBottom: 12 }}>
             {project?.startup_stage && (
               <span className="bm-badge bm-badge-accent" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 {plainStage(project.startup_stage)}
               </span>
             )}
             {/teardown/i.test(`${actionData?.action ?? ""} ${actionData?.why ?? ""}`) && (
-              <span className="bm-badge bm-badge-neutral">From your teardown</span>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text2)" }}>From your teardown</span>
             )}
             {actionData.isAI && !actionLoading && (
-              <span className="bm-badge bm-badge-neutral">
-                Context calibrated
-              </span>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text2)" }}>Context calibrated</span>
             )}
             {actionLoading && (
               <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
@@ -2382,7 +2380,7 @@ function TodayContent() {
               </span>
             )}
             {!actionData.isAI && !actionLoading && (
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text4)", fontStyle: "italic" }}>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", fontStyle: "italic" }}>
                 Baseline objective
               </span>
             )}

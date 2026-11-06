@@ -69,7 +69,7 @@ function DailyLoopStatusBar() {
       alignItems: "center",
       gap: 10,
       fontSize: 11,
-      color: "var(--bm-text4)",
+      color: "var(--bm-text2)",
       overflowX: "auto",
       whiteSpace: "nowrap",
       scrollbarWidth: "none",
@@ -78,14 +78,14 @@ function DailyLoopStatusBar() {
       <span style={{ color: "var(--bm-border2)" }}>·</span>
       <span>
         Task:{" "}
-        <span style={{ color: loopState.taskDone ? "var(--bm-accent)" : "var(--bm-text4)", fontWeight: loopState.taskDone ? 500 : 400 }}>
+        <span style={{ color: loopState.taskDone ? "var(--bm-accent)" : "var(--bm-text2)", fontWeight: loopState.taskDone ? 500 : 400 }}>
           {loopState.taskDone ? "done" : "not yet"}
         </span>
       </span>
       <span style={{ color: "var(--bm-border2)" }}>·</span>
       <span>
         Reflection:{" "}
-        <span style={{ color: loopState.reflectionDone ? "var(--bm-accent)" : "var(--bm-text4)", fontWeight: loopState.reflectionDone ? 500 : 400 }}>
+        <span style={{ color: loopState.reflectionDone ? "var(--bm-accent)" : "var(--bm-text2)", fontWeight: loopState.reflectionDone ? 500 : 400 }}>
           {loopState.reflectionDone ? "done" : "pending"}
         </span>
       </span>
