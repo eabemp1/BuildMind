@@ -259,7 +259,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
 
       <div style={{ marginTop: narrow ? 26 : 38, display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
         <span style={{ ...mono, fontSize: 12, color: ink }}>{done ? "Done" : lowConfidence ? "Finding out first" : kicker ?? "Today"}</span>
-        {timeText ? <span style={{ ...mono, fontSize: 12, color: "var(--bm-text4)" }}>{timeText}</span> : null}
+        {timeText ? <span style={{ ...mono, fontSize: 12, color: "var(--bm-text3)" }}>Whole task: {timeText}</span> : null}
       </div>
 
       <h2
@@ -301,7 +301,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: narrow ? 10 : 18 }}>
             <button type="button" data-tour="today-start" className="bm-ink-btn" onClick={start} disabled={!actionTitle}
               style={{ fontSize: 16, fontWeight: 700, padding: "14px 24px", borderRadius: 999, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "var(--mood-on-accent, #15130a)", background: ink, border: "none", fontFamily: "inherit", flex: narrow ? "1 1 100%" : "0 0 auto" }}>
-              Start {minutes}-minute focus
+              Start a {minutes}-minute focus block
             </button>
             <div role="group" aria-label="Block length" style={{ display: "flex", gap: 4, alignItems: "center" }}>
               {FOCUS_PRESETS.map((p) => (
@@ -343,7 +343,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
             {platform === "android" && <><button type="button" className="bm-ink-link" onClick={setPhoneTimer} style={link({ fontSize: 13, padding: "6px 2px" })}>set it in Clock</button>{" or "}</>}
             <button type="button" className="bm-ink-link" onClick={addToCalendar} style={link({ fontSize: 13, padding: "6px 2px" })}>add an alert to Calendar</button>.
             {reminderNote && <div role="status" style={{ marginTop: 6, color: "var(--bm-text2)" }}>{reminderNote}</div>}
-            {platform === "ios" && !reminderNote && <div style={{ marginTop: 6, color: "var(--bm-text4)", fontSize: 12 }}>iPhone does not let websites set Clock timers, so this uses Calendar, which alerts the same way.</div>}
+            {platform === "ios" && !reminderNote && <div style={{ marginTop: 6, color: "var(--bm-text3)", fontSize: 12 }}>iPhone does not let websites set Clock timers, so this uses Calendar, which alerts the same way.</div>}
           </div>
         )}
 
@@ -358,14 +358,14 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
           <span style={{ ...mono, color: "var(--bm-text)" }}>{streakShown}</span>-day streak
           {snap ? <> &middot; <span style={{ ...mono, color: "var(--bm-text)" }}>{snap.activeDaysThisWeek}/{snap.daysElapsedThisWeek}</span> days this week</> : null}
           {focus.minutesToday > 0 ? <> &middot; <span style={{ ...mono, color: "var(--bm-text)" }}>{focus.minutesToday}m</span> focused</> : null}
-          <div suppressHydrationWarning style={{ color: "var(--bm-text3)", marginTop: 2 }}>{nudge}</div>
+          <div suppressHydrationWarning style={{ color: "var(--bm-text2)", marginTop: 2 }}>{nudge}</div>
         </div>
         {week.length > 0 && (
           <div role="img" aria-label={`This week: ${week.filter((d) => d.done).length} days with a completed action`} style={{ display: "flex", gap: 7, alignItems: "flex-end" }}>
             {week.map((d, i) => (
               <div key={d.date} title={d.date} style={{ display: "grid", justifyItems: "center", gap: 5 }}>
                 <span style={{ width: 11, height: 11, borderRadius: "50%", background: d.done ? ink : "transparent", border: `1.5px solid ${d.done ? ink : d.isToday ? ink : "var(--bm-border3)"}`, opacity: d.isFuture ? 0.4 : 1 }} />
-                <span style={{ ...mono, fontSize: 10, color: d.isToday ? "var(--bm-text)" : "var(--bm-text4)" }}>{WEEKDAY_LABELS[i]?.[0]}</span>
+                <span style={{ ...mono, fontSize: 10, color: d.isToday ? "var(--bm-text)" : "var(--bm-text3)" }}>{WEEKDAY_LABELS[i]?.[0]}</span>
               </div>
             ))}
           </div>
