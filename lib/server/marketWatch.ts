@@ -13,22 +13,34 @@ const MAX_THREAD_QUERIES = 3;
 
 export interface WatchedSource { name: string; url: string }
 
-/** Pull named competitors with a usable URL from a saved Break My Startup payload. */
+/**
+ * Pull named competitors with a usable URL from a saved Break My Startup payload.
+ * The competitor agent's own list comes first. When that is empty (the agent failed or named nobody), the competitor
+ * pages the run found by searching are used instead, so a run is never left with nothing to watch.
+ */
 export function competitorsFromRun(payload: unknown): WatchedSource[] {
-  const p = payload as { agent_outputs?: { competitor?: { brief?: Array<{ name?: unknown; url?: unknown }> } } } | null;
-  const out: WatchedSource[] = [];
-  const seen = new Set<string>();
-  for (const c of p?.agent_outputs?.competitor?.brief ?? []) {
-    const name = typeof c.name === "string" ? c.name.trim().slice(0, 80) : "";
-    const url = typeof c.url === "string" ? c.url.trim() : "";
-    if (!name || !url || !isSafePublicUrl(url)) continue;
-    const k = name.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push({ name, url });
-    if (out.length >= MAX_COMPETITORS) break;
-  }
-  return out;
+  const p = payload as {
+    agent_outputs?: { competitor?: { brief?: Array<{ name?: unknown; url?: unknown }> } };
+    competitors?: Array<{ title?: unknown; url?: unknown }>;
+  } | null;
+  const collect = (rows: Array<{ name?: unknown; url?: unknown }>): WatchedSource[] => {
+    const out: WatchedSource[] = [];
+    const seen = new Set<string>();
+    for (const c of rows) {
+      const name = typeof c.name === "string" ? c.name.trim().slice(0, 80) : "";
+      const url = typeof c.url === "string" ? c.url.trim() : "";
+      if (!name || !url || !isSafePublicUrl(url)) continue;
+      const k = name.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ name, url });
+      if (out.length >= MAX_COMPETITORS) break;
+    }
+    return out;
+  };
+  const fromBrief = collect(p?.agent_outputs?.competitor?.brief ?? []);
+  if (fromBrief.length) return fromBrief;
+  return collect((Array.isArray(p?.competitors) ? p!.competitors! : []).map((c) => ({ name: c?.title, url: c?.url })));
 }
 
 export type ScanOutcome =

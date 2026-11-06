@@ -51,6 +51,14 @@ describe("competitorsFromRun", () => {
     expect(out.find((c) => c.name === "Local")).toBeUndefined();
     expect(out).toHaveLength(5);
   });
+  it("falls back to the competitor pages the run found when the agent list is empty", () => {
+    const out = competitorsFromRun({ agent_outputs: { competitor: { brief: [] } }, competitors: [{ title: "Acme", url: "https://acme.com" }, { title: "Bad", url: "http://127.0.0.1" }] });
+    expect(out).toEqual([{ name: "Acme", url: "https://acme.com" }]);
+  });
+  it("prefers the agent list over the search pages", () => {
+    const out = competitorsFromRun({ agent_outputs: { competitor: { brief: [{ name: "A", url: "https://a.com" }] } }, competitors: [{ title: "Z", url: "https://z.com" }] });
+    expect(out.map((c) => c.name)).toEqual(["A"]);
+  });
   it("returns nothing for an empty payload", () => expect(competitorsFromRun(null)).toEqual([]));
 });
 
