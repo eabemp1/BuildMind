@@ -629,26 +629,30 @@ HARD RULES:
 5. Only name product features, integrations, customers, users, prices or results that appear in FOUNDER DATA, the reflection history or the signals above. Never invent a feature the founder "built", a customer, or something users "asked for". Items under RECENT TASKS are things that were SUGGESTED, not facts: a feature that only appears there may not exist. If the task needs a fact you do not have, make "first_step" the check that confirms it.
 6. If the latest reflection says the founder could not do or find something, today's task must remove that obstacle or take a different route to the same goal. Do not hand back the step that just failed.`;
 
+        // A new founder's task is the hand-written one and the final step overrides whatever the model writes,
+        // so the model is not asked at all: they used to wait through two or three AI calls whose answer was thrown away.
+        const fromBank = (): StructuredAction => ({
+          kind: mission.kind,
+          platform: kindFallback.platform || undefined,
+          count: 3,
+          user_type: targetUsers || "your target users",
+          task: kindFallback.action,
+          rationale: `Because you're at ${stage} stage and this is the highest-leverage move today.`,
+          draft: kindFallback.message,
+          done_when: kindFallback.done_when,
+          first_step: kindFallback.first_step,
+          minutes: mission.minutes,
+        });
         let structuredA: StructuredAction;
-        try {
+        if (curated) structuredA = fromBank();
+        else try {
           structuredA = await callModelJSON<StructuredAction>(
             [{ role: "system", content: systemA }, { role: "user", content: "Give me today's single most important task. Return JSON only." }],
             { role: "reasoning", temperature: 0.6, maxTokens: 700, deadlineMs: requestDeadline },
           );
         } catch (err) {
           logError("today-action-stream/agentA", err, { userId, stage, provider: "callModelJSON" });
-          structuredA = {
-            kind: mission.kind,
-            platform: kindFallback.platform || undefined,
-            count: 3,
-            user_type: targetUsers || "your target users",
-            task: kindFallback.action,
-            rationale: `Because you're at ${stage} stage and this is the highest-leverage move today.`,
-            draft: kindFallback.message,
-            done_when: kindFallback.done_when,
-            first_step: kindFallback.first_step,
-            minutes: mission.minutes,
-          };
+          structuredA = fromBank();
         }
         const composedA = composeConcreteTask(structuredA, mission);
         const agentAFields = {
@@ -676,7 +680,8 @@ HARD RULES:
         let criticReason = "Looks good.";
         let improvedVersion: string | null = null;
 
-        try {
+        // No critic for the hand-written first task: nothing it says can change what is shown.
+        if (!curated) try {
           const parsed = await callModelJSON<{
             verdict?: string;
             reason?: string;
