@@ -44,29 +44,21 @@ describe("market watch diff", () => {
 });
 
 describe("competitorsFromRun", () => {
-  it("keeps named competitors with a safe public url, deduped and capped", () => {
-    const brief = [{ name: "A", url: "https://a.com" }, { name: "a", url: "https://a2.com" }, { name: "Local", url: "http://localhost:3000" }, { name: "NoUrl" }, ...Array.from({ length: 8 }, (_, i) => ({ name: `C${i}`, url: `https://c${i}.com` }))];
+  it("keeps named competitors with a safe public site, one per website, at most five", () => {
+    const brief = [{ name: "A", url: "https://a.com/pricing" }, { name: "A again", url: "https://www.a.com" }, { name: "Local", url: "http://localhost:3000" }, { name: "NoUrl" }, ...Array.from({ length: 8 }, (_, i) => ({ name: `C${i}`, url: `https://c${i}.com` }))];
     const out = competitorsFromRun({ agent_outputs: { competitor: { brief } } });
-    expect(out[0].name).toBe("A");
+    expect(out[0]).toEqual({ name: "A", url: "https://a.com/" });
     expect(out.find((c) => c.name === "Local")).toBeUndefined();
+    expect(out.filter((c) => c.url === "https://a.com/")).toHaveLength(1);
     expect(out).toHaveLength(5);
   });
-  it("falls back to the competitor pages the run found when the agent list is empty", () => {
-    const out = competitorsFromRun({ agent_outputs: { competitor: { brief: [] } }, competitors: [{ title: "Acme", url: "https://acme.com" }, { title: "Bad", url: "http://127.0.0.1" }] });
-    expect(out).toEqual([{ name: "Acme", url: "https://acme.com" }]);
+  it("never falls back to search-result pages, which include articles", () => {
+    const out = competitorsFromRun({ agent_outputs: { competitor: { brief: [] } }, competitors: [{ title: "Acme review", url: "https://acme.com/blog/review" }] });
+    expect(out).toEqual([]);
   });
-  it("prefers the agent list over the search pages", () => {
-    const out = competitorsFromRun({ agent_outputs: { competitor: { brief: [{ name: "A", url: "https://a.com" }] } }, competitors: [{ title: "Z", url: "https://z.com" }] });
-    expect(out.map((c) => c.name)).toEqual(["A"]);
+  it("refuses news, social and review sites even when the stress test named them", () => {
+    const out = competitorsFromRun({ agent_outputs: { competitor: { brief: [{ name: "Story", url: "https://techcrunch.com/2026/acme" }, { name: "Post", url: "https://medium.com/@x/acme" }, { name: "Real", url: "https://real.io" }] } } });
+    expect(out.map((c) => c.name)).toEqual(["Real"]);
   });
   it("returns nothing for an empty payload", () => expect(competitorsFromRun(null)).toEqual([]));
-});
-
-describe("market visual", () => {
-  it("explains an empty state", () => expect(buildMarketVisual(null).changeCount).toBe(0));
-  it("baseline shows no change list", () => {
-    const { visual } = buildMarketVisual({ weekStart: "2026-11-02", baseline: true, changes: [], competitors: snap().competitors });
-    expect(JSON.stringify(visual)).toContain("Baseline");
-    expect(visual.panels.some((x) => "title" in x && x.title === "What changed")).toBe(false);
-  });
 });

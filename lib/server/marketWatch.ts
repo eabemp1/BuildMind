@@ -4,43 +4,35 @@
  * returns what changed since the last one. Builder-only (callers check the plan). Never throws.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readPages, isSafePublicUrl } from "@/lib/pageReader";
+import { readPages } from "@/lib/pageReader";
+import { MAX_COMPETITORS, mergeSources, type WatchSource } from "@/lib/marketWatch/sources";
 import { discussionSearch } from "@/lib/search";
 import { diffSnapshots, sortChanges, weekStartOf, type MarketChange, type MarketSnapshot, type WatchedCompetitor, type WatchedThread } from "@/lib/marketWatch/diff";
 
-export const MAX_COMPETITORS = 5;
 const MAX_THREAD_QUERIES = 3;
 
-export interface WatchedSource { name: string; url: string }
+export type WatchedSource = WatchSource;
 
 /**
- * Pull named competitors with a usable URL from a saved Break My Startup payload.
- * The competitor agent's own list comes first. When that is empty (the agent failed or named nobody), the competitor
- * pages the run found by searching are used instead, so a run is never left with nothing to watch.
+ * The competitors the stress test itself named, as company homepages. Search results are not used: they include
+ * articles and reviews, which are not competitors. When the run named nobody, the founder adds their own.
  */
 export function competitorsFromRun(payload: unknown): WatchedSource[] {
-  const p = payload as {
-    agent_outputs?: { competitor?: { brief?: Array<{ name?: unknown; url?: unknown }> } };
-    competitors?: Array<{ title?: unknown; url?: unknown }>;
-  } | null;
-  const collect = (rows: Array<{ name?: unknown; url?: unknown }>): WatchedSource[] => {
-    const out: WatchedSource[] = [];
-    const seen = new Set<string>();
-    for (const c of rows) {
-      const name = typeof c.name === "string" ? c.name.trim().slice(0, 80) : "";
-      const url = typeof c.url === "string" ? c.url.trim() : "";
-      if (!name || !url || !isSafePublicUrl(url)) continue;
-      const k = name.toLowerCase();
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push({ name, url });
-      if (out.length >= MAX_COMPETITORS) break;
-    }
-    return out;
-  };
-  const fromBrief = collect(p?.agent_outputs?.competitor?.brief ?? []);
-  if (fromBrief.length) return fromBrief;
-  return collect((Array.isArray(p?.competitors) ? p!.competitors! : []).map((c) => ({ name: c?.title, url: c?.url })));
+  const p = payload as { agent_outputs?: { competitor?: { brief?: Array<{ name?: unknown; url?: unknown }> } } } | null;
+  const rows = (p?.agent_outputs?.competitor?.brief ?? []).map((c) => ({
+    name: typeof c.name === "string" ? c.name : "",
+    url: typeof c.url === "string" ? c.url : "",
+  })).filter((c) => c.name && c.url);
+  return mergeSources([], rows);
+}
+
+/** Competitors the founder added by hand for this project. */
+export async function loadManualCompetitors(admin: SupabaseClient, userId: string, projectId: string | null): Promise<WatchedSource[]> {
+  let q = admin.from("market_watch_competitors").select("name, url").eq("user_id", userId).order("created_at", { ascending: true }).limit(MAX_COMPETITORS);
+  q = projectId ? q.eq("project_id", projectId) : q.is("project_id", null);
+  const { data, error } = await q;
+  if (error) return [];
+  return ((data ?? []) as Array<{ name: string; url: string }>).map((r) => ({ name: r.name, url: r.url }));
 }
 
 export type ScanOutcome =
@@ -53,9 +45,9 @@ export async function runMarketWatch(admin: SupabaseClient, input: { userId: str
     let q = admin.from("break_runs").select("payload").eq("user_id", input.userId).order("created_at", { ascending: false }).limit(1);
     if (input.projectId) q = q.eq("project_id", input.projectId);
     const { data: run } = await q.maybeSingle();
-    const sources = competitorsFromRun((run as { payload?: unknown } | null)?.payload);
-    if (!run) return { ok: false, reason: "no_competitors", message: "No saved stress test yet. Run Break My Startup while signed in, then scan again." };
-    if (!sources.length) return { ok: false, reason: "no_competitors", message: "Your last stress test did not find any competitor websites. Run it again with more detail on what you build and who it is for." };
+    const manual = await loadManualCompetitors(admin, input.userId, input.projectId);
+    const sources = mergeSources(manual, competitorsFromRun((run as { payload?: unknown } | null)?.payload));
+    if (!sources.length) return { ok: false, reason: "no_competitors", message: run ? "No competitor websites to watch yet. Add the ones you compete with under Competitors to watch." : "No competitors to watch yet. Add the ones you compete with, or run Break My Startup while signed in." };
 
     const digests = await readPages(sources.map((s) => s.url));
     const competitors: WatchedCompetitor[] = sources.map((s, i) => {

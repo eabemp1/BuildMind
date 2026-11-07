@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { VisualBoard } from "@/components/visuals/VisualBoard";
 import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
+import MarketCompetitors from "@/components/visuals/MarketCompetitors";
 import type { CoachActionResult } from "@/lib/coachActions/types";
 
 /**
@@ -73,6 +74,7 @@ export function LiveVisual({ kind, projectId, title, askPrompt }: {
         </div>
       )}
       {scanMsg && <div style={{ fontSize: 13, color: "var(--bm-text3)", marginBottom: 8 }}>{scanMsg}</div>}
+      {kind === "market" && projectId && !(err?.status === 403) ? <MarketCompetitors projectId={projectId} /> : null}
       {res?.visual && <VisualBoard spec={res.visual} showHeader={false} />}
     </section>
   );

@@ -277,6 +277,11 @@ export interface SignalSummary {
 
 // ─── Agent 1: Market Research ─────────────────────────────────────────────────
 
+/** Says in the server log why an agent fell back, so a blank result can be traced to a timeout, a bad reply or a provider error. */
+function logAgentFallback(agent: string, err: unknown): void {
+  console.warn(`[break-agent] ${agent} fell back: ${err instanceof Error ? err.message.slice(0, 160) : "unknown error"}`);
+}
+
 async function runMarketResearchAgent(ctx: StartupContext): Promise<MarketResearchOutput> {
   const system = `You are a specialist Market Research Agent in a startup validation pipeline.
 Your ONLY job: assess genuine market demand for this startup idea.
@@ -338,7 +343,8 @@ Assess market demand. Be specific. Lower confidence when uncertain.`;
       ...result,
       confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.3)),
     };
-  } catch {
+  } catch (err) {
+    logAgentFallback("market", err);
     return fallback;
   }
 }
@@ -412,7 +418,7 @@ Map the competitive landscape. Name specific gaps. Be precise.`;
   try {
     const result = await callModelJSON<CompetitorOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 1100 },
+      { role: "fast", maxTokens: 1600 },
     );
     if (!result.saturation_level) return fallback;
     return {
@@ -421,7 +427,8 @@ Map the competitive landscape. Name specific gaps. Be precise.`;
       competitive_moat_score: Math.min(10, Math.max(0, Number(result.competitive_moat_score) || 3)),
       confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.25)),
     };
-  } catch {
+  } catch (err) {
+    logAgentFallback("competitor", err);
     return fallback;
   }
 }
@@ -499,7 +506,8 @@ Assess timing. Is this the right moment? What forces are at play?`;
       trend_confidence: Math.min(1, Math.max(0, Number(result.trend_confidence) || 0.3)),
       confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.3)),
     };
-  } catch {
+  } catch (err) {
+    logAgentFallback("trend", err);
     return fallback;
   }
 }
@@ -576,7 +584,8 @@ Assess user pain intensity and demand authenticity. Be specific.`;
       ...result,
       confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.2)),
     };
-  } catch {
+  } catch (err) {
+    logAgentFallback("sentiment", err);
     return fallback;
   }
 }
@@ -666,7 +675,8 @@ Identify the real risks. Be specific and brutal. If founder behavioral context s
       ...result,
       confidence: Math.min(1, Math.max(0, Number(result.confidence) || 0.4)),
     };
-  } catch {
+  } catch (err) {
+    logAgentFallback("risk", err);
     return fallback;
   }
 }

@@ -38,14 +38,18 @@ export async function GET(request: Request) {
   const paid = ((subs.data ?? []) as Array<{ user_id: string; plan: string; status: string; current_period_end: string | null; grace_period_ends_at: string | null }>).filter((r) => isPaidSubscription(r, now)).map((r) => r.user_id);
   if (!paid.length) return NextResponse.json({ success: true, paid: 0, scanned: 0 });
 
-  const [runs, done] = await Promise.all([
+  const [runs, done, manual] = await Promise.all([
     admin.from("break_runs").select("user_id, project_id, created_at").in("user_id", paid).order("created_at", { ascending: false }).limit(5000),
     admin.from("market_watch_snapshots").select("user_id").eq("week_start", week).in("user_id", paid).limit(5000),
+    admin.from("market_watch_competitors").select("user_id, project_id").in("user_id", paid).limit(5000),
   ]);
   if (runs.error) return NextResponse.json({ success: false, error: "Could not read Break My Startup runs." }, { status: 503 });
   const scanned = new Set(((done.data ?? []) as Array<{ user_id: string }>).map((r) => r.user_id));
   const latest = new Map<string, string | null>();
   for (const r of (runs.data ?? []) as Array<{ user_id: string; project_id: string | null }>) if (!latest.has(r.user_id) && !scanned.has(r.user_id)) latest.set(r.user_id, r.project_id);
+
+  // Founders who added competitors by hand are scanned even when they never ran Break My Startup.
+  if (!manual.error) for (const r of (manual.data ?? []) as Array<{ user_id: string; project_id: string | null }>) if (!latest.has(r.user_id) && !scanned.has(r.user_id)) latest.set(r.user_id, r.project_id);
 
   let ok = 0, withChanges = 0, failed = 0;
   for (const [userId, projectId] of [...latest].slice(0, MAX_USERS)) {
