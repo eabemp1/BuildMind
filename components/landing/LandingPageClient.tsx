@@ -841,6 +841,40 @@ function BreakMyStartupSection() {
   );
 }
 
+// ── Work — what BuildMind writes for you, so the hard part is only sending it ──
+const WORK_EXAMPLES = [
+  { label: "Interview kit", blurb: "Questions to ask, and a message to book people" },
+  { label: "Outreach messages", blurb: "Three tailored messages and a follow-up" },
+  { label: "WhatsApp message", blurb: "A natural first message, and a follow-up if they go quiet" },
+  { label: "Where to find people", blurb: "Real places and live conversations" },
+  { label: "Short survey", blurb: "Questions that reveal what people actually do" },
+  { label: "Objection answers", blurb: "What people will push back on, and honest replies" },
+];
+
+function WorkSection() {
+  return (
+    <section className="px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
+      <div className="max-w-3xl mx-auto">
+        <h2 className="mb-3 text-3xl font-bold tracking-tight text-[var(--bm-text)] sm:text-4xl">The messages are written. You send them.</h2>
+        <p className="mb-8 text-base leading-relaxed text-[var(--bm-text2)] sm:text-lg">
+          Work drafts what you need to talk to real people, from what you told BuildMind about your idea. You read it, change it and send it yourself. Nothing is sent for you.
+        </p>
+        <ul className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          {WORK_EXAMPLES.map((w) => (
+            <li key={w.label}>
+              <p className="text-sm font-semibold text-[var(--bm-text)]">{w.label}</p>
+              <p className="text-sm leading-relaxed text-[var(--bm-text2)]">{w.blurb}</p>
+            </li>
+          ))}
+        </ul>
+        <Link href="/auth/login?tab=signup" className="mt-8 inline-block">
+          <Button size="md">Start free <ArrowRight size={14} /></Button>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 // ── Pricing section ───────────────────────────────────────────────────────────
 function PricingSection() {
   return (
@@ -2519,6 +2553,8 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
 
       {/* Break My Startup — interactive hook, no login needed */}
       <div id="break"><BreakMyStartupSection /></div>
+
+      <WorkSection />
 
       {/* §4 Pricing + Testimonials */}
       <div id="pricing"><PricingSection /></div>
