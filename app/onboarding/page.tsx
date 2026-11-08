@@ -441,7 +441,7 @@ function IdentityInputScreen({
           lineHeight: 1.6,
           marginBottom: 28,
         }}>
-          Two things. That&apos;s all we need to start building your execution system.
+          Two quick things. You&apos;ll get one small task a day, and BuildMind helps you do it.
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
@@ -544,14 +544,14 @@ function IdentityInputScreen({
 
 // ── Step 3 — Founder State (what's worrying you) ─────────────────────────────
 const WORRY_CHIPS = [
-  "Not shipping fast enough",
+  "Not finishing things fast enough",
   "A competitor is ahead of me",
-  "Avoiding sales conversations",
+  "Avoiding talking to customers",
   "Don't know if people want this",
-  "Running out of runway",
-  "Cofounder tension",
-  "Burning out",
-  "Too many directions at once",
+  "Running out of money",
+  "Problems with my partner",
+  "Feeling exhausted",
+  "Too many things at once",
 ];
 
 function FounderStateScreen({
@@ -604,7 +604,7 @@ function FounderStateScreen({
           lineHeight: 1.6,
           marginBottom: 22,
         }}>
-          Not a trick question. BuildMind uses this to calibrate every task, every alert, every recommendation.
+          Not a trick question. BuildMind uses this to pick tasks that fit you.
         </p>
 
         {/* Multi-select worry chips */}
@@ -711,10 +711,10 @@ function FounderStateScreen({
 // ── Screen 2 — Startup description + stage chips ─────────────────────────────
 const STAGE_CHIPS = [
   "Just an idea",
-  "Building the MVP",
-  "Launched, no revenue",
+  "Building the first version",
+  "Launched, no sales yet",
   "First paying customers",
-  "Growing, finding PMF",
+  "Growing, finding what works",
 ];
 
 function InputScreen({ onSubmit, onBack }: { onSubmit: (idea: string, stage: string) => void; onBack?: () => void }) {
@@ -1242,7 +1242,7 @@ function StageScreen({ onComplete }: { onComplete: (stage: string) => void }) {
               margin: 0,
             }}
           >
-            Be honest - BuildMind calibrates everything to your real stage.
+            Be honest - BuildMind fits everything to where you really are.
             <br />
             You can change this later.
           </p>
@@ -1378,7 +1378,7 @@ function IdentityScreen({ onComplete, startupStage, founderWorries }: {
     { key: "Stage", value: stage },
     { key: "Risk", value: worries[0] || "Not specified" },
     { key: "Avoiding", value: worries.find(w => w.toLowerCase().includes("avoid") || w.toLowerCase().includes("sales")) || "Identified in Step 3" },
-    { key: "Fear", value: worries.find(w => w.toLowerCase().includes("burnout") || w.toLowerCase().includes("runway")) || worries[1] || "Calibrated" },
+    { key: "Fear", value: worries.find(w => w.toLowerCase().includes("exhausted") || w.toLowerCase().includes("money")) || worries[1] || "Calibrated" },
     { key: "Strength", value: "Shipping focus" },
   ];
 
@@ -1838,10 +1838,10 @@ function OnboardingInner() {
         <OnboardingShell key="strike_loading" step={3} maxWidth={560}>
           <div style={{ textAlign: "center", padding: "56px 0" }}>
             <p style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 700, color: "var(--bm-text)", marginBottom: 8 }}>
-              Stress-testing your idea…
+              Checking your idea…
             </p>
             <p style={{ fontSize: 13, color: "var(--bm-text2)", lineHeight: 1.6 }}>
-              Break My Startup is looking for the gap nobody has claimed. This takes a few seconds.
+              BuildMind is looking for what makes your idea different. This takes a few seconds.
             </p>
           </div>
         </OnboardingShell>
