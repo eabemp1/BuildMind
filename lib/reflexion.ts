@@ -22,6 +22,7 @@
  * All existing exports are preserved and unchanged.
  */
 
+import { withLanguageRule } from "@/lib/language";
 import type { AgentPipelineResult, SignalSummary, StartupContext } from "@/lib/agents";
 import { callModel, callModelJSON } from "@/lib/ai-providers";
 import type { ViabilityScoreResult } from "@/lib/scoring";
@@ -1110,7 +1111,7 @@ Stage: ${stage}
 Domain: ${domain || "not specified"}`;
 
   const parsed = await callModelJSON<Record<string, string>>([
-    { role: "system", content: prompt },
+    { role: "system", content: withLanguageRule(prompt) },
     { role: "user", content: `Startup: "${startupDescription}"` },
   ], { role: "fast", temperature: 0.5, maxTokens: 400 })
     .catch(() => ({} as Record<string, string>));

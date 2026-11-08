@@ -1,3 +1,4 @@
+import { withLanguageRule } from "@/lib/language";
 import { founderStatePromptBlock } from "@/lib/founderState";
 import { cleanThread, buildThreadBlock, refersBack, wantsNextStep } from "@/lib/coachThread";
 import { loadFounderState } from "@/lib/server/founderStateLoad";
@@ -524,7 +525,7 @@ Message: ${message}
 Return ONLY the JSON. No preamble. No markdown fences.`;
 
     // Inject cross-feature continuity block before the base system prompt
-    const systemPrompt = injectContinuityIntoSystemPrompt(baseSystemPrompt, recentInteractions);
+    const systemPrompt = withLanguageRule(injectContinuityIntoSystemPrompt(baseSystemPrompt, recentInteractions));
 
     const result = await groqJSON<{ reasoning: string[]; answer: string; recommended_action?: { what_to_do?: string; why_now?: string; expected_evidence?: string } }>(systemPrompt, message, { prefer: "gemini", geminiTimeoutMs: 8_000, feature: "coach" });
 
