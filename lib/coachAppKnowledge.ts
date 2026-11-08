@@ -43,6 +43,7 @@ export const APP_OVERVIEW = `BUILDMIND APP MAP (you know this product completely
 - Settings (/settings): tabs Profile, Account, Notifications, Billing, Integrations, AI Usage, Public Profile. AI personality: Direct & Honest, Supportive, Challenger.
 - AI Coach (/ai-coach): this chat. Instant one-tap actions that cost no AI message: open tasks, signals, decision reasoning, beliefs about the founder, momentum, milestones, execution log, export of Founder Intelligence data.
 - Founder Mirror (/founder-mirror): what BuildMind believes about the founder (with "Correct this"), behavioral archetype, signals, decision reasoning, relationship graph.
+- Find Customers (/customers, Builder plan): searches and reads real public pages and map listings in the founder's country and city, lists real businesses, pages and groups with a first message for each, and lets the founder record who replied.
 - Break My Startup (/break-my-startup): adversarial stress test of the idea (survival reasons, competitor table, pivot suggestion).
 - Work (/work): pick a job (outreach, landing copy, interview kit, pitch, posts and more); BuildMind prepares it from the project, the founder edits it and does the sending. Saved in a library. Work also has "Get 5 customer conversations" (/work/conversations): a tracker for people the founder wants to talk to, with message drafts, follow-ups and points pulled from their own notes.
 - Agent Workforce (/agents): Builder-only AI agents that run tasks and return findings.
