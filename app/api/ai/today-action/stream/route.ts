@@ -53,6 +53,7 @@ import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuali
 import { ALLOWED_PLATFORMS, composeConcreteTask, type StructuredAction } from "@/lib/today/compose";
 import { fallbackForKind } from "@/lib/todayFallbacks";
 import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
+import { loadSavedStrike } from "@/lib/server/savedStrike";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
 import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
 import { fitMissionToState } from "@/lib/founderState";
@@ -531,7 +532,7 @@ export async function POST(request: Request) {
         const fallbackInput = { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage };
         const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
         // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
-        const curated = isFirstRun(recentTasks) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction) : null;
+        const curated = isFirstRun(recentTasks) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
         const kindFallback = curated ?? fallbackForKind(mission.kind, fallbackInput, fallbackSeed, personalisationCtx.ledger);
         const qualityCtx = {
           ledger: personalisationCtx.ledger,

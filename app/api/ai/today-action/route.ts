@@ -3,6 +3,7 @@ import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
 import { fallbackForKind } from "@/lib/todayFallbacks";
 import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
+import { loadSavedStrike } from "@/lib/server/savedStrike";
 import { groundTargetUsers, groundingPromptBlock, wantsGrounding } from "@/lib/todayGrounding";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
 import { loadSwapHistory, recordSwap } from "@/lib/today/swapStore";
@@ -685,7 +686,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const fallbackInput = { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: problem || title || "this problem", productName: title?.trim() || "your product", stage };
     const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
     // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
-    const curated = isFirstRun(recentTasksParsed) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction) : null;
+    const curated = isFirstRun(recentTasksParsed) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
     const kindFallback = curated ?? fallbackForKind(mission.kind, fallbackInput, fallbackSeed, personalisationCtx.ledger);
 
     // NOTE: founderIntelligence loading + prediction recording already
