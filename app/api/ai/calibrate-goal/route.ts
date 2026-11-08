@@ -44,9 +44,9 @@ export async function POST(req: Request) {
     Idea:       "talk to potential users and validate the core problem",
     Validation: "get 3+ genuine commitments (time, money, or workflow change)",
     MVP:        "ship a working version to at least 2 real users",
-    Launch:     "drive 10+ qualified visitors or sign-ups through one channel",
-    Growth:     "retain at least 60% of users week-over-week",
-    Revenue:    "close or upsell one paying customer",
+    Launch:     "message 10 people from one channel and track who replies",
+    Growth:     "talk to 3 users who stopped using it and ask why",
+    Revenue:    "have 2 pricing conversations with real customers",
   };
 
   const hint = stageHints[stage] ?? "make one high-leverage move forward";
@@ -102,7 +102,7 @@ Context:
 The goal must:
 1. Be specific to the ${stage} stage
 2. Be achievable in one week
-3. Include a measurable outcome where possible
+3. Be measurable by one thing BuildMind records: people the founder talks to ("talk to 3 people who ..."), replies or commitments received ("get 2 replies / booked calls"), or daily actions finished. Put the number in the sentence. Never use visitors, revenue or sign-up counts, because BuildMind cannot measure those
 4. Sound like a YC partner's advice — direct and practical, 1-2 sentences, max 60 words
 
 Then set target_tasks to roughly how many discrete actions THAT SPECIFIC GOAL implies (not a generic number — "talk to 3 people" implies ~3-4 tasks, "ship a working version to 2 users" implies more, ~6-8). Set target_score (55-95) based on how ambitious this specific goal is relative to the current execution score.
@@ -137,7 +137,7 @@ Return JSON only: { "goal_text": string, "target_score": number, "target_tasks":
       Idea:       `This week, talk to 3 people who match your target user profile. Don't pitch — just listen. One honest conversation beats ten planning sessions.`,
       Validation: `This week, get 2 genuine commitment signals — someone who books a call, pre-pays, or changes their workflow for your product. Track every response.`,
       MVP:        `This week, put your MVP in front of 2 real users and watch them use it without guidance. Document every friction point they hit.`,
-      Launch:     `This week, run one distribution experiment with a defined hypothesis. Measure click-through rate and time-on-page before optimising anything.`,
+      Launch:     `This week, message 10 people from one channel and track who replies. One channel, one message, no tweaking until you have the answers.`,
       Growth:     `This week, call 2 churned users. Ask only one question: what would have made you stay? Listen without defending.`,
       Revenue:    `This week, have one pricing conversation with an existing user. Find out what they'd pay for the next tier before you build it.`,
     };
