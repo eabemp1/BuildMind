@@ -12,6 +12,7 @@
  *  4. localDayKey uses UTC (toISOString().slice(0,10)) to match server-side today.
  */
 
+import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
 import { logError } from "@/lib/server/logger";
@@ -102,13 +103,6 @@ function inferProjectAudience(targetUsers: string, title: string, description = 
   return title?.trim() ? `${title.trim()} target users` : "people in your target segment";
 }
 
-function inferProjectProblem(problem: string, title: string, description = ""): string {
-  if (problem?.trim()) return truncateWords(problem.trim(), 8).replace(/[.!?]+$/, "");
-  const haystack = `${title} ${description}`.toLowerCase();
-  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description?.trim()) return truncateWords(description.trim(), 8).replace(/[.!?]+$/, "");
-  return title?.trim() ? `${title.trim()} and the workflow it improves` : "their current workflow";
-}
 
 // Simple deterministic string hash — no crypto needed, just needs to be
 // stable and reasonably distributed for variant rotation.
