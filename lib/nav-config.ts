@@ -40,6 +40,7 @@ import {
   Gauge,
   Layers,
   Hammer,
+  Users,
   Package,
   Rocket,
   Settings,
@@ -89,6 +90,7 @@ export const NAV: readonly NavItemConfig[] = [
   { href: "/ai-coach",         label: "AI Coach",        icon: Brain,          enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   // Now a tab inside /progress. The route stays so old links work.
   { href: "/founder-mirror",   label: "Founder Mirror",  icon: UserCircle,     enabled: true,  hidden: true, section: "Intelligence", badge: null, showDot: false, unlocksAt: 7 },
+  { href: "/customers",       label: "Find Customers",  icon: Users,          enabled: true,  hidden: false, section: "Intelligence", badge: "NEW", showDot: false, unlocksAt: 0 },
   { href: "/break-my-startup", label: "Break My Startup",icon: Hammer,         enabled: true,  hidden: false, section: "Intelligence", badge: null, showDot: false, unlocksAt: 3 },
   // Hidden: it repeats what Break My Startup already does. The route stays so existing links work.
   { href: "/agents",           label: "Agent Workforce",  icon: Bot,           enabled: true,  hidden: true, section: "Intelligence", badge: "NEW", showDot: false, requiredPlan: "builder" as Plan, unlocksAt: 5 },
