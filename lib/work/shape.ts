@@ -3,7 +3,7 @@
  * clean what comes back, and flag anything the founder must check. No network, no database, so it is
  * fully testable. The server half is lib/work/engine.ts.
  */
-import { voiceBlock } from "@/lib/work/voice";
+import { voiceBlock, founderBlock } from "@/lib/work/voice";
 import type { PrepNeed, PrepSection, PrepVariant } from "@/lib/prep/kinds";
 import type { WorkSpec } from "@/lib/work/registry";
 
@@ -36,7 +36,7 @@ export function cleanInputs(spec: WorkSpec, raw: unknown): { values: Record<stri
   return { values };
 }
 
-export function buildPrompt(spec: WorkSpec, values: Record<string, string>, project: WorkProject, voice = ""): string {
+export function buildPrompt(spec: WorkSpec, values: Record<string, string>, project: WorkProject, voice = "", founderName = ""): string {
   const brief = spec.fields.map((f) => `${f.label}: ${values[f.key] ?? "(not given)"}`).join("\n");
   const shape = spec.shape === "variants"
     ? `Fill "variants" with exactly ${spec.count ?? 3} items. Use "sections" only for at most 2 short sections such as "Before you send". Leave nothing else.`
@@ -53,6 +53,7 @@ RULES
 QUALITY BAR (check your draft against every line before you answer)
 - Specific beats generic. Anyone could have written a line that would fit any startup, so cut it or make it fit this one, using the founder's own words from PROJECT and BRIEF.
 - Open with something for the reader: their situation, a question they would answer, or what they get. Never open with the founder or the product.
+- When the product comes up, say in one concrete sentence who it is for and what they get (for example: "one small task a day, and BuildMind helps you do it"). Never describe it with vague words such as consistency, execution, system, framework or productivity.
 - One clear ask per piece, easy to say yes or no to. Say what the next step is in plain words.
 - Versions must differ in approach (a different angle, length or ask), not be the same text reworded.
 - Short sentences, everyday words, varied openings. Read it as a tired stranger would: is each line clear the first time?
@@ -61,7 +62,7 @@ QUALITY BAR (check your draft against every line before you answer)
 
 JOB: ${spec.label}
 ${spec.instruction}
-${voiceBlock(voice)}
+${voiceBlock(voice)}${founderBlock(founderName)}
 PROJECT
 Name: ${project.name || "(not given)"}
 What it is: ${project.description || "(not given)"}

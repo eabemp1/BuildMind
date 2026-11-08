@@ -21,3 +21,15 @@ ${t}
 """
 `;
 }
+
+/** First name only, letters and common name marks, at most 30 characters. Empty when nothing usable. */
+export function founderFirstName(full: unknown): string {
+  const first = (typeof full === "string" ? full.trim().split(/\s+/)[0] : "") ?? "";
+  const clean = first.replace(/[^\p{L}\p{M}'’-]/gu, "").slice(0, 30);
+  return clean.length >= 2 ? clean : "";
+}
+
+export function founderBlock(name: unknown): string {
+  const n = founderFirstName(name);
+  return n ? `\nTHE FOUNDER'S NAME: ${n}\nSign messages and emails with this name. Never write a placeholder for the founder's own name.\n` : "";
+}
