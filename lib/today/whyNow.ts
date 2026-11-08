@@ -14,6 +14,11 @@ export interface WhyNowFacts {
 
 const s = (n: number) => (n === 1 ? "" : "s");
 
+/** Where the line can take the founder to act on it: people waiting means the follow-up drafts. */
+export function whyNowHref(f: WhyNowFacts): string | null {
+  return f.waiting > 0 ? "/work/conversations" : null;
+}
+
 export function pickWhyNow(f: WhyNowFacts): string | null {
   if (f.waiting > 0) return f.waiting === 1 ? "1 person is waiting on your follow-up." : `${f.waiting} people are waiting on your follow-up.`;
   if (f.sentRecent > 0 && f.repliedRecent > 0) return `You messaged ${f.sentRecent} ${f.sentRecent === 1 ? "person" : "people"} recently. ${f.repliedRecent} replied.`;

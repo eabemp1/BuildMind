@@ -1313,11 +1313,12 @@ function TodayContent() {
     : "/work";
   // One line saying why today's task matters now, from the founder's own records. Empty when there is no real reason.
   const [whyNowLine, setWhyNowLine] = useState<string | null>(null);
+  const [whyNowLink, setWhyNowLink] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     fetch("/api/today/why-now", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (live) setWhyNowLine(typeof j?.line === "string" ? j.line : null); })
+      .then((j) => { if (live) { setWhyNowLine(typeof j?.line === "string" ? j.line : null); setWhyNowLink(typeof j?.href === "string" ? j.href : null); } })
       .catch(() => {});
     return () => { live = false; };
   }, []);
@@ -2403,6 +2404,7 @@ function TodayContent() {
               reasons={actionData.missionReasons}
               executeLabel={draftLabel(draftShape)}
               whyNow={whyNowLine}
+              whyNowHref={whyNowLink}
               onExecute={() => router.push(workHref)}
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
               timeText={actionData?.time ?? null}

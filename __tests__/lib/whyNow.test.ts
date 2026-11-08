@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickWhyNow } from "@/lib/today/whyNow";
+import { pickWhyNow, whyNowHref } from "@/lib/today/whyNow";
 import { whenChoices, timeLabel } from "@/lib/today/whenToday";
 
 const none = { waiting: 0, sentRecent: 0, repliedRecent: 0, marketChanges: 0 };
@@ -34,4 +34,11 @@ describe("whenChoices", () => {
     expect(c[1]).toMatchObject({ label: "Tomorrow 9:00 AM", h: 9, tomorrow: true });
   });
   it("formats times", () => { expect(timeLabel(0, 5)).toBe("12:05 AM"); expect(timeLabel(15, 0)).toBe("3:00 PM"); });
+});
+
+describe("whyNowHref", () => {
+  it("links to the follow-up drafts only when people are waiting", () => {
+    expect(whyNowHref({ waiting: 2, sentRecent: 0, repliedRecent: 0, marketChanges: 0 })).toBe("/work/conversations");
+    expect(whyNowHref({ waiting: 0, sentRecent: 3, repliedRecent: 1, marketChanges: 1 })).toBeNull();
+  });
 });
