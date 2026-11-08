@@ -679,7 +679,8 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const { mission: swapped, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
     // Fit to how the founder is doing right now (lib/founderState.ts): lighter and shorter, never less important.
     const mission = fitMissionToState(swapped, tctx.founderState);
-    const missionGrounding = wantsGrounding(mission.kind) && projectId ? await groundTargetUsers({ key: projectId, targetUsers, problem }) : [];
+    // A new founder gets the hand-written or strike task (below), so the lookup would be wasted.
+    const missionGrounding = wantsGrounding(mission.kind) && projectId && !isFirstRun(recentTasksParsed) ? await groundTargetUsers({ key: projectId, targetUsers, problem }) : [];
     lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
     if (swapPlan) lastReflectionContext += `\n\n${[swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n")}`;
     if (missionGrounding.length) lastReflectionContext += `\n\n${groundingPromptBlock(missionGrounding)}`;
@@ -878,7 +879,8 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       const loopBudgetMs = Math.max(4000, 24000 - (Date.now() - requestStartedAt));
       let loopTimer: ReturnType<typeof setTimeout> | undefined;
       try {
-        reflexionOutput = await Promise.race([
+        // The first-run task replaces the loop's text anyway (see `curated` below), so do not run it.
+        reflexionOutput = curated ? null : await Promise.race([
           runReflexionLoop(taskSeed, reflexionContext),
           new Promise<never>((_, reject) => { loopTimer = setTimeout(() => reject(new Error("reflexion loop exceeded its time budget")), loopBudgetMs); }),
         ]);

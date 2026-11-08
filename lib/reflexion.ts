@@ -1070,6 +1070,26 @@ function structureSignals(signals: SignalSummary, pipeline: AgentPipelineResult)
 
 // ─── Existing functions (unchanged) ──────────────────────────────────────────
 
+/** Reads the critic's answer on a first task: keep the original unless it failed and gave a usable rewrite. Pure. */
+export function applyStrikeCritique(task: string, critique: unknown): string {
+  const c = (critique ?? {}) as { ok?: unknown; better?: unknown };
+  const better = typeof c.better === "string" ? c.better.replace(/\s+/g, " ").trim() : "";
+  if (c.ok === false && better.length >= 25 && better.length <= 220) return better;
+  return task;
+}
+
+/** One extra look at the strike's first task, because nothing else judges it. Any failure keeps the original. */
+async function improveStrikeTask(idea: string, stage: string, task: string): Promise<string> {
+  try {
+    const critique = await callModelJSON<Record<string, unknown>>([
+      { role: "system", content: `You judge the first task given to a solo founder. A task FAILS if any of these is true: it is more than one action; it would take more than 30 minutes; it needs code, scraping or special tools; it assumes a city, customer or place the founder never mentioned; it only collects data when the real risk is whether people want this (at an early stage, talking to or watching one real person beats research); it uses technical or startup jargon; it has no clear moment when it is done.
+If it passes, return {"ok":true}. If it fails, return {"ok":false,"better":"one sentence under 30 words, plain words, one action, doable in 30 minutes with a phone, that tests whether people really have this problem"}. JSON only.` },
+      { role: "user", content: `Stage: ${stage}\nIdea: "${idea}"\nTask: "${task}"` },
+    ], { role: "fast", temperature: 0.2, maxTokens: 200 });
+    return applyStrikeCritique(task, critique);
+  } catch { return task; }
+}
+
 /**
  * runReflexionStrike — the onboarding Reflexion Strike (Playbook §2.1)
  * One-sentence startup description → market gap + first task in ~15 seconds
@@ -1094,9 +1114,12 @@ Domain: ${domain || "not specified"}`;
     { role: "user", content: `Startup: "${startupDescription}"` },
   ], { role: "fast", temperature: 0.5, maxTokens: 400 })
     .catch(() => ({} as Record<string, string>));
+  const firstTask = parsed.firstTask
+    ? await improveStrikeTask(startupDescription, stage, parsed.firstTask)
+    : "Find one person who has this problem and send them a message in the next 30 minutes.";
   return {
     marketGap: parsed.marketGap ?? "The market has a real gap here — let's validate it.",
-    firstTask: parsed.firstTask ?? "Find one person who has this problem and send them a message in the next 30 minutes.",
+    firstTask,
     rationale: parsed.rationale ?? "Because talking to one real person beats a week of planning.",
   };
 }
