@@ -88,3 +88,24 @@ describe("customer map", () => {
     expect(rankRows([low, thin, row]).map((r) => r.channel)).toEqual(["whatsapp", "email"]);
   });
 });
+
+import { targetsFounders } from "@/lib/leads/plan";
+import { thinReason } from "@/lib/leads/engine";
+
+describe("founder customers", () => {
+  it("allows founder communities only when the customers are founders", () => {
+    expect(targetsFounders("Solo founders, Early Stage founders")).toBe(true);
+    expect(targetsFounders("chop bar owners")).toBe(false);
+    expect(isGenericLead("r/Startups", "https://reddit.com/r/startups", true)).toBe(false);
+    const i = cleanInput({ country: "Ghana", city: "Accra", customer: "solo founders", problem: "x" });
+    expect(cleanQueries(["startup founders Accra meetup", "founder community Ghana", "Accra tech hub founders"], i)).toHaveLength(3);
+  });
+});
+
+describe("thinReason", () => {
+  it("says what actually went wrong", () => {
+    expect(thinReason(0, { resultsFound: 0, pagesRead: 0, places: 0 })).toMatch(/search key|quota/);
+    expect(thinReason(0, { resultsFound: 5, pagesRead: 0, places: 0 })).toMatch(/could be opened/);
+    expect(thinReason(1, { resultsFound: 20, pagesRead: 8, places: 3 })).toMatch(/8 pages and 3 map listings/);
+  });
+});

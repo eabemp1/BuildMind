@@ -33,8 +33,7 @@ export default function CustomersPage() {
   const [working, setWorking] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [note, setNote] = useState("");
-  const [copied, setCopied] = useState<string | null>(null);
+    const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
     const id = getActiveProjectId();
@@ -46,12 +45,16 @@ export default function CustomersPage() {
     if (project && !customer) setCustomer(project.target_users ?? "");
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function loadSaved() {
+  type RunInfo = { id: string; status: "running" | "done" | "failed"; lead_count: number; reason: string | null; error: string | null };
+  const [run, setRun] = useState<RunInfo | null>(null);
+
+  async function loadSaved(replace = false) {
     if (!project) return;
     const r = await fetch(`/api/leads?projectId=${project.id}&country=${encodeURIComponent(country)}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null);
     if (!r?.ok) return;
     setWorking(r.working ?? []);
-    if (!leads.length) {
+    setRun(r.run ?? null);
+    if (replace || !leads.length) {
       setLeads((r.leads ?? []).map((l: { id: string; lead_name: string; lead_kind: string; lead_url: string; payload: Partial<LeadRow>; status: Status; channel: Channel | null }) => ({
         id: l.id, name: l.lead_name, kind: l.lead_kind, url: l.lead_url, status: l.status, channel: l.channel,
         where: l.payload?.where ?? "", why_fit: l.payload?.why_fit ?? "", evidence: l.payload?.evidence ?? "",
@@ -61,9 +64,17 @@ export default function CustomersPage() {
   }
   useEffect(() => { void loadSaved(); }, [project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function run() {
+  // While a search runs in the background, check on it every few seconds. It keeps running if you leave this page.
+  const running = run?.status === "running";
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => { void loadSaved(true); }, 4000);
+    return () => clearInterval(t);
+  }, [running, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function start() {
     if (!project) return;
-    setBusy(true); setError(""); setNote("");
+    setBusy(true); setError("");
     try {
       const res = await fetch("/api/leads/find", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -71,9 +82,7 @@ export default function CustomersPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) { setError(json?.error ?? "Something went wrong. Try again."); return; }
-      setLeads(json.leads);
-      if (json.thin) setNote("I found few real places for this. Try a bigger city, or describe your customers a different way, for example by what they sell or where they work.");
-      void loadSaved();
+      await loadSaved(true);
     } catch {
       setError("Could not reach the server. Try again.");
     } finally {
@@ -91,7 +100,7 @@ export default function CustomersPage() {
     try { await navigator.clipboard.writeText(l.first_message); setCopied(l.url); setTimeout(() => setCopied(null), 1500); } catch { /* ignore */ }
   }
 
-  const ready = country.trim().length >= 2 && customer.trim().length >= 3 && !busy && !!project;
+  const ready = country.trim().length >= 2 && customer.trim().length >= 3 && !busy && !running && !!project;
 
   return (
     <div className="mx-auto max-w-[760px] px-4 py-6 sm:px-6 sm:py-8">
@@ -119,10 +128,10 @@ export default function CustomersPage() {
               </select>
             </label>
           )}
-          <Button className="mt-4 w-full sm:w-auto" disabled={!ready} onClick={() => void run()}>
-            {busy ? <><Loader2 size={14} className="animate-spin" /> Searching and reading pages…</> : "Find my first customers"}
+          <Button className="mt-4 w-full sm:w-auto" disabled={!ready} onClick={() => void start()}>
+            {busy || running ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : "Find my first customers"}
           </Button>
-          {busy && <p className="mt-2 text-[12px] text-[var(--bm-text3)]">This takes a few minutes because it reads real pages. You can leave this tab open.</p>}
+          {running && <p className="mt-2 text-[13px] leading-relaxed text-[var(--bm-text2)]">Searching and reading real pages. This takes a few minutes. You can use other pages and come back; the results will be here.</p>}
           {error && <p role="alert" className="mt-3 text-[13px] text-[var(--bm-red)]">{error}</p>}
         </Card>
       )}
@@ -135,7 +144,8 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {note && <p className="mt-5 text-[13px] text-[var(--bm-text2)]">{note}</p>}
+      {run?.status === "failed" && <p role="alert" className="mt-5 text-[13px] text-[var(--bm-red)]">{run.error ?? "The search failed."} Try again.</p>}
+      {run?.status === "done" && run.reason && <p className="mt-5 text-[13px] leading-relaxed text-[var(--bm-text2)]">{run.reason}</p>}
 
       <ul className="mt-5 flex flex-col gap-3">
         {leads.map((l) => (

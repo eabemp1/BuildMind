@@ -27,7 +27,13 @@ export async function GET(req: NextRequest) {
     const { data: rows } = await admin.from("customer_map").select("country,lead_kind,channel,founders,contacted,replied,converted").eq("country", country);
     working = rankRows((rows ?? []) as MapRow[]).slice(0, 4).map(describeRow);
   }
-  return NextResponse.json({ ok: true, leads: mine ?? [], working });
+  let rq = admin.from("lead_runs").select("id,status,lead_count,reason,error,created_at,finished_at").eq("user_id", auth.userId).order("created_at", { ascending: false }).limit(1);
+  if (projectId) rq = rq.eq("project_id", projectId);
+  const { data: lastRun } = await rq.maybeSingle();
+  // A run that has been "running" for over 6 minutes was cut off; show it as failed instead of spinning forever.
+  const run = lastRun && lastRun.status === "running" && Date.now() - new Date(lastRun.created_at).getTime() > 6 * 60_000
+    ? { ...lastRun, status: "failed", error: "The search was cut off. Try again." } : lastRun;
+  return NextResponse.json({ ok: true, leads: mine ?? [], working, run: run ?? null });
 }
 
 const Update = z.object({

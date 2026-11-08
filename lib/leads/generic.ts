@@ -10,7 +10,8 @@ const GENERIC_RE = [
   /\b(startup|founders?) (community|group|subreddit|forum)s?\b/i,
 ];
 
-export function isGenericLead(name: string, url: string): boolean {
+export function isGenericLead(name: string, url: string, allow = false): boolean {
+  if (allow) return false; // the founder's customers ARE founders, so founder communities are real leads
   const text = `${name} ${url}`;
   return GENERIC_RE.some((re) => re.test(text));
 }

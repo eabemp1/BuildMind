@@ -27,7 +27,7 @@ function normUrl(u: string): string {
   } catch { return u.toLowerCase(); }
 }
 
-export function validateLeads(raw: unknown, allowedUrls: string[], max = 12): Lead[] {
+export function validateLeads(raw: unknown, allowedUrls: string[], max = 12, allowFounderCommunities = false): Lead[] {
   const list = Array.isArray(raw) ? raw : [];
   const allowed = new Set(allowedUrls.map(normUrl));
   const seenUrl = new Set<string>();
@@ -42,7 +42,7 @@ export function validateLeads(raw: unknown, allowedUrls: string[], max = 12): Le
     const message = s(r.first_message, 500);
     if (!name || !url || evidence.length < 25 || message.length < 20) continue;
     if (!allowed.has(normUrl(url))) continue; // never trust a URL the searches did not return
-    if (isGenericLead(name, url)) continue;
+    if (isGenericLead(name, url, allowFounderCommunities)) continue;
     const key = normUrl(url);
     const nameKey = name.toLowerCase();
     if (seenUrl.has(key) || seenName.has(nameKey)) continue;
