@@ -1,5 +1,6 @@
 "use client";
 
+import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { plainStage, stageBand } from "@/lib/stages";
 import { FinishExtras } from "@/components/today/FinishExtras";
 import { lessonFor } from "@/lib/today/lesson";
@@ -269,13 +270,6 @@ function inferProjectAudience(targetUsers: string, productName: string, descript
   return productName.trim() ? `${productName.trim()} target users` : "people in your target segment";
 }
 
-function inferProjectProblem(problem: string, productName: string, description = ""): string {
-  if (problem.trim()) return problem.trim();
-  const haystack = `${productName} ${description}`.toLowerCase();
-  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description.trim()) return truncateChars(description, 120);
-  return productName.trim() ? `${productName.trim()} and the workflow it improves` : "their current workflow";
-}
 
 function buildContextualStaticAction(
   stageKey: string,

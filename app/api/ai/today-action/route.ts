@@ -1,4 +1,5 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
+import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
 import { fallbackForKind } from "@/lib/todayFallbacks";
@@ -95,15 +96,6 @@ function inferProjectAudience(targetUsers: string, title: string, description = 
   return title?.trim() ? `${title.trim()} target users` : "people in your target segment";
 }
 
-function inferProjectProblem(problem: string, title: string, description = ""): string {
-  // First eight words, no trailing punctuation: a whole pasted paragraph inside a task
-  // sentence reads badly and leaves ".." where the template adds its own full stop.
-  if (problem?.trim()) return problem.trim().split(/\s+/).slice(0, 8).join(" ").replace(/[.!?,;:]+$/, "");
-  const haystack = `${title} ${description}`.toLowerCase();
-  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "verifiable consent tracking and audit logging";
-  if (description?.trim()) return description.trim().split(/\s+/).slice(0, 8).join(" ").replace(/[.!?,;:]+$/, "");
-  return title?.trim() ? `${title.trim()} and the workflow it improves` : "their current workflow";
-}
 
 function buildContextualFallback(stage: string, targetUsers: string, problem: string, title: string, description = ""): TodayAction {
   const userType = inferProjectAudience(targetUsers, title, description, problem);
@@ -684,7 +676,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
     if (swapPlan) lastReflectionContext += `\n\n${[swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n")}`;
     if (missionGrounding.length) lastReflectionContext += `\n\n${groundingPromptBlock(missionGrounding)}`;
-    const fallbackInput = { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: problem || title || "this problem", productName: title?.trim() || "your product", stage };
+    const fallbackInput = { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: inferProjectProblem(problem, title, projectContext), productName: title?.trim() || "your product", stage };
     const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
     // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
     const curated = isFirstRun(recentTasksParsed) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
