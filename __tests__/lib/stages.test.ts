@@ -160,7 +160,7 @@ describe("stageBand", () => {
   });
   it("understands older free-text stages", () => {
     expect(stageBand("First paying customers")).toBe("growth");
-    expect(stageBand("Building the MVP")).toBe("building");
+    expect(stageBand("Building the first version")).toBe("building");
     expect(stageBand("Just an idea")).toBe("idea");
   });
   it("defaults to validation for anything unknown or empty, never to traction", () => {
@@ -194,5 +194,17 @@ describe("plainStage", () => {
   it("returns an unknown value unchanged and an empty one as empty", () => {
     expect(plainStage("Pre-seed")).toBe("Pre-seed");
     expect(plainStage(null)).toBe("");
+  });
+});
+
+describe("onboarding stage chips", () => {
+  it.each([
+    ["Just an idea", "idea"],
+    ["Building the first version", "building"],
+    ["Launched, no sales yet", "launch"],
+    ["First paying customers", "growth"],
+    ["Growing, finding what works", "growth"],
+  ])("%s maps to %s", (chip, band) => {
+    expect(stageBand(chip)).toBe(band);
   });
 });
