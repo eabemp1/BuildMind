@@ -887,26 +887,8 @@ function TodayContent() {
           isActionData(cached.data)
         ) {
           setAiAction({ ...cached.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...cached.data, isAI: true };
-          // Still sync server cache in background — non-blocking
-          void fetchBehaviorState<{ today_action_cache: CachedTodayAction & { generatedAt?: string } }>(["today_action_cache"])
-            .then((serverCache) => {
-              const serverTs = serverCache.today_action_cache?.generatedAt
-                ? new Date(serverCache.today_action_cache.generatedAt).getTime()
-                : 0;
-              // If server has a newer overnight cache, upgrade silently
-              if (
-                serverTs > cachedAt &&
-                serverCache.today_action_cache?.date === today &&
-                serverCache.today_action_cache?.projectId === projectId &&
-                serverCache.today_action_cache?.stage === currentStage &&
-                isActionData(serverCache.today_action_cache.data)
-              ) {
-                storage.setJSON(cacheKey, serverCache.today_action_cache);
-                storage.set(`bm_today_action_cache_ts_${userId}`, String(serverTs));
-                setAiAction({ ...serverCache.today_action_cache.data, isAI: true }); setAiFetchFailed(false); lastGoodActionRef.current = { ...serverCache.today_action_cache.data, isAI: true };
-              }
-            })
-            .catch(() => {});
+          // The task already shown today stays. A background copy from the server used to replace it
+          // silently, which made the task change while the founder was reading it.
           return;
         }
         // Stale localStorage entry — only remove if stage also matches (genuine bad data),
