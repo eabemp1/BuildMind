@@ -139,6 +139,8 @@ const BANK: Record<Band, Variant[]> = {
 export interface SavedStrike { task: string; why: string; at: string }
 
 const STRIKE_MAX_AGE_MS = 3 * 86_400_000;
+const STRIKE_MAX_CHARS = 220;
+const TECHNICAL_RE = /\b(?:scrap\w*|crawl\w*|apis?|sdk|scripts?|dataset|database|backend|pipeline)\b/i;
 
 /**
  * The strike's task as the first task, when it is safe to use. It reads the founder's whole idea, so it is more
@@ -149,10 +151,11 @@ const STRIKE_MAX_AGE_MS = 3 * 86_400_000;
 export function strikeFirstTask(saved: unknown, ledger?: Ledger, excludeAction?: string, now = Date.now()): KindFallback | null {
   const o = (saved ?? {}) as Record<string, unknown>;
   const clean = (v: unknown, n: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, n) : "");
-  const action = clean(o.task, 260);
+  // Never cut a task: one that is too long, or full of technical words, is dropped and the bank is used.
+  const action = clean(o.task, 600);
   const why = clean(o.why, 200);
   const at = Date.parse(clean(o.at, 40));
-  if (action.length < 25 || !Number.isFinite(at) || now - at > STRIKE_MAX_AGE_MS || now < at - 60_000) return null;
+  if (action.length < 25 || action.length > STRIKE_MAX_CHARS || TECHNICAL_RE.test(action) || !Number.isFinite(at) || now - at > STRIKE_MAX_AGE_MS || now < at - 60_000) return null;
   if (action === excludeAction) return null;
   if (guardRules(action, ledger).length > 0) return null;
   return {

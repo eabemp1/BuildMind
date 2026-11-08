@@ -303,6 +303,12 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
               style={{ fontSize: 16, fontWeight: 700, padding: "14px 24px", borderRadius: 999, cursor: actionTitle ? "pointer" : "not-allowed", opacity: actionTitle ? 1 : 0.5, color: "var(--mood-on-accent, #15130a)", background: ink, border: "none", fontFamily: "inherit", flex: narrow ? "1 1 100%" : "0 0 auto" }}>
               Start a {minutes}-minute focus block
             </button>
+            {onExecute ? (
+              <button type="button" data-tour="today-work" className="bm-ink-link" onClick={onExecute}
+                style={{ fontSize: 14, fontWeight: 600, padding: "12px 18px", borderRadius: 999, cursor: "pointer", color: "var(--bm-text)", background: "transparent", border: `1.5px solid ${ink}`, fontFamily: "inherit", flex: narrow ? "1 1 100%" : "0 0 auto" }}>
+                {executeLabel}
+              </button>
+            ) : null}
             <div role="group" aria-label="Block length" style={{ display: "flex", gap: 4, alignItems: "center" }}>
               {FOCUS_PRESETS.map((p) => (
                 <button key={p} type="button" className="bm-ink-link" aria-pressed={minutes === p} onClick={() => { setMinutes(p); setFocus((f) => resetFocus(f, p)); }}
@@ -314,7 +320,6 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
             <span style={{ display: "inline-flex", gap: 14, flexWrap: "wrap", marginLeft: narrow ? 0 : "auto" }}>
               <button type="button" data-tour="today-why" className="bm-ink-link" onClick={showWhy} style={link()}>Why this</button>
               <button type="button" className="bm-ink-link" onClick={askCoach} style={link()}>Ask the coach</button>
-              {onExecute ? <button type="button" className="bm-ink-link" onClick={onExecute} style={link()}>{executeLabel}</button> : null}
             </span>
           </div>
         )}

@@ -1733,7 +1733,7 @@ function OnboardingInner() {
       const supabase = createClient();
       // Keep the strike's first task (only a real answer, never the generic fallback) so Today can open with it.
       const firstTask = strikeResult && !strikeResult.generic && strikeResult.firstTask?.trim()
-        ? { task: strikeResult.firstTask.trim().slice(0, 260), why: (strikeResult.rationale ?? "").trim().slice(0, 200), at: new Date().toISOString() }
+        ? { task: strikeResult.firstTask.trim().slice(0, 600), why: (strikeResult.rationale ?? "").trim().slice(0, 200), at: new Date().toISOString() }
         : undefined;
       await supabase.auth.updateUser({ data: { onboarding_completed: true, ...(firstTask ? { first_task: firstTask } : {}) } });
       fetch("/api/user/welcome-email", { method: "POST" }).catch(() => {});

@@ -1082,7 +1082,7 @@ export async function runReflexionStrike(
   const prompt = `You are BuildMind, an agentic execution partner for solo founders.
 A founder just described their startup in one sentence. Respond with:
 1. marketGap: The crowded part of this market + the gap nobody has claimed yet (2 sentences, specific)
-2. firstTask: One concrete action they can complete in the next 30 minutes that validates whether this gap is real
+2. firstTask: One concrete action they can finish in 30 minutes with a phone and no tools, that shows whether this gap is real. One sentence, under 30 words, everyday words only (no technical words such as scrape, API, script or database). It must be something to do, like asking a real person or checking one real thing
 3. rationale: Why this task, why now (1 sentence)
 
 Be brutally specific. No generic startup advice.
