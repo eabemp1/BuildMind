@@ -520,7 +520,7 @@ export async function POST(request: Request) {
         const { mission: swapped, swap: swapPlan } = applySwap(plannedMission, parseSwap(body?.swap, excludeAction), swapHistory);
         // Fit to how the founder is doing right now (lib/founderState.ts): lighter and shorter, never less important.
         const mission = fitMissionToState(swapped, tctx.founderState);
-        const grounding = wantsGrounding(mission.kind)
+        const grounding = wantsGrounding(mission.kind) && !isFirstRun(recentTasks)
           ? await groundTargetUsers({ key: projectId, targetUsers, problem })
           : [];
         const groundingBlock = groundingPromptBlock(grounding);
@@ -545,7 +545,7 @@ export async function POST(request: Request) {
         };
         emit("mission", { kind: mission.kind, label: mission.label, minutes: mission.minutes, reasons: mission.reasons, grounded: grounding.length });
 
-        emit("agent_a", { status: "running", label: "Agent A generating your task…" });
+        emit("agent_a", { status: "running", label: curated ? "Preparing your first task…" : "Agent A generating your task…" });
 
         const activeGoalsLine =
           personalisationCtx.activeGoals.length > 0
@@ -675,7 +675,7 @@ HARD RULES:
 
         // ── Agent B — Critic ──────────────────────────────────────────────
         const criticPersona = getWeeklyCriticPersona(undefined, userId);
-        emit("agent_b", { status: "running", label: `Agent B (${criticPersona.name}) critiquing…` });
+        emit("agent_b", { status: "running", label: curated ? "Checking it fits what you told us…" : `Agent B (${criticPersona.name}) critiquing…` });
 
         let criticVerdict: "pass" | "fail" = "pass";
         let criticReason = "Looks good.";
