@@ -146,7 +146,7 @@ export async function groqChat(systemPrompt: string, messages: { role: "user" | 
  * groqJSON — calls Groq expecting a JSON object response.
  * Use this for structured data (roadmaps, analysis, etc).
  */
-export async function groqJSON<T>(systemPrompt: string, userPrompt: string, extra: { prefer?: "gemini"; geminiTimeoutMs?: number; feature?: string } = {}): Promise<T> {
+export async function groqJSON<T>(systemPrompt: string, userPrompt: string, extra: { prefer?: "gemini"; geminiTimeoutMs?: number; feature?: string; temperature?: number } = {}): Promise<T> {
   return callModelJSON<T>(
     [
       { role: "system", content: systemPrompt },

@@ -125,7 +125,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
     result = { ...defaultResult, weakest: weakestTest(previewSignals(idea, users, problem)) };
     if (live) try {
       await recordCall("public");
-      const ai = await groqJSON<Omit<typeof defaultResult, "survival_probability"> & { signals?: unknown }>(systemPrompt, userPrompt);
+      const ai = await groqJSON<Omit<typeof defaultResult, "survival_probability"> & { signals?: unknown }>(systemPrompt, userPrompt, { temperature: 0.1 });
       const signals = normalizeSignals(ai?.signals);
       if (ai?.verdict && ai?.kill_reasons?.length && signals) {
         aiOk = true;

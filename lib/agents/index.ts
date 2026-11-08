@@ -334,7 +334,7 @@ Assess market demand. Be specific. Lower confidence when uncertain.`;
   try {
     const result = await callModelJSON<MarketResearchOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
+      { role: "fast", temperature: 0.1, maxTokens: 700 },
     );
     // Validate required fields
     if (!result.demand_signals || !result.confidence) return fallback;
@@ -418,7 +418,7 @@ Map the competitive landscape. Name specific gaps. Be precise.`;
   try {
     const result = await callModelJSON<CompetitorOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 1600 },
+      { role: "fast", temperature: 0.1, maxTokens: 1600 },
     );
     if (!result.saturation_level) return fallback;
     return {
@@ -497,7 +497,7 @@ Assess timing. Is this the right moment? What forces are at play?`;
   try {
     const result = await callModelJSON<TrendOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
+      { role: "fast", temperature: 0.1, maxTokens: 700 },
     );
     if (!result.timing_signal) return fallback;
     return {
@@ -576,7 +576,7 @@ Assess user pain intensity and demand authenticity. Be specific.`;
   try {
     const result = await callModelJSON<SentimentOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
+      { role: "fast", temperature: 0.1, maxTokens: 700 },
     );
     if (!result.pain_intensity) return fallback;
     return {
@@ -667,7 +667,7 @@ Identify the real risks. Be specific and brutal. If founder behavioral context s
     const result = await callModelJSON<RiskOutput>(
       [{ role: "system", content: system }, { role: "user", content: user }],
       // Break My Startup is the page where depth matters most, so Gemini leads here. Today never does.
-      { role: "reasoning", maxTokens: 800, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "break_risk" },
+      { role: "reasoning", temperature: 0.1, maxTokens: 800, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "break_risk" },
     );
     if (!result.top_risks || !Array.isArray(result.top_risks)) return fallback;
     return {
@@ -687,7 +687,10 @@ Identify the real risks. Be specific and brutal. If founder behavioral context s
  * mergeSignals — converts 5 agent outputs into a unified SignalSummary
  * used by the scoring engine and report generator.
  */
-function mergeSignals(
+/** Nearest 5, kept inside 0 to 100. */
+export const snap5 = (n: number): number => Math.max(0, Math.min(100, Math.round(n / 5) * 5));
+
+export function mergeSignals(
   market: MarketResearchOutput | null,
   competitor: CompetitorOutput | null,
   trend: TrendOutput | null,
@@ -713,7 +716,9 @@ function mergeSignals(
 
   // ── Uniqueness score (0–100) ──
   const moatBase = competitor ? Math.round((competitor.competitive_moat_score / 10) * 60) : 30;
-  const gapBonus = competitor ? Math.min(40, (competitor.market_gaps?.length ?? 0) * 8) : 10;
+  // Buckets, not a raw count: a model that lists 3 gaps one run and 5 the next used to move this by 16 points.
+  const gaps = competitor?.market_gaps?.length ?? 0;
+  const gapBonus = competitor ? (gaps === 0 ? 0 : gaps <= 2 ? 16 : 32) : 10;
   const uniqueness_score = Math.min(100, moatBase + gapBonus);
 
   // ── Risk score (0–100, higher = more risky) ──
@@ -747,12 +752,14 @@ function mergeSignals(
 
   const competitor_gaps: string[] = competitor?.market_gaps ?? [];
 
+  // These are estimates from a model and a few web pages, so they are shown in steps of 5. Re-running the
+  // same idea then lands on the same number unless the evidence really changed.
   return {
-    demand_score,
-    competition_score,
-    timing_score,
-    uniqueness_score,
-    risk_score,
+    demand_score: snap5(demand_score),
+    competition_score: snap5(competition_score),
+    timing_score: snap5(timing_score),
+    uniqueness_score: snap5(uniqueness_score),
+    risk_score: snap5(risk_score),
     overall_confidence,
     all_risks,
     all_opportunities,
@@ -892,7 +899,7 @@ If a field cannot be inferred from the text, write "Not specified" — do not in
   try {
     const result = await callModelJSON<ParsedStartupSchema>(
       [{ role: "system", content: system }, { role: "user", content: `Startup idea: "${rawIdea}"` }],
-      { role: "fast", maxTokens: 400 },
+      { role: "fast", temperature: 0.1, maxTokens: 400 },
     );
     return {
       problem: result.problem || rawIdea,
@@ -1048,7 +1055,7 @@ Generate 3 pivots that improve on the weakest signals${ctx.founderStyle?.hasSign
   try {
     const result = await callModelJSON<{ pivots: PivotSuggestion[] }>(
       [{ role: "system", content: system }, { role: "user", content: user }],
-      { role: "fast", maxTokens: 700 },
+      { role: "fast", temperature: 0.1, maxTokens: 700 },
     );
     if (!result.pivots || result.pivots.length < 3) return fallbackPivots;
     return result.pivots.slice(0, 3).map(p => ({
