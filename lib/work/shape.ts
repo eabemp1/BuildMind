@@ -129,12 +129,17 @@ export function normalizeWork(
   };
 }
 
-export const REFINE_PRESETS = ["Shorter", "More direct", "Warmer", "More formal", "Simpler words", "Add a clear ask"] as const;
+export const REFINE_PRESETS = ["Shorter", "More direct", "Warmer", "More formal", "Simpler words", "Add a clear ask", "For WhatsApp"] as const;
+
+const PRESET_TEXT: Record<string, string> = {
+  "For WhatsApp": "Rewrite as a short WhatsApp message: 2 to 4 short sentences, no subject line, no formal sign-off, one clear question at the end.",
+};
 
 export function refinePrompt(text: string, instruction: string): string {
-  return `Rewrite the text below following the instruction. Keep every fact in it. Do not add new claims, numbers, names, prices or links. Keep any [add: ...] markers exactly as they are. Change only what the instruction asks for. Keep the same language, and the same format (for example a 'Subject:' line stays).
+  const how = PRESET_TEXT[instruction] ?? instruction;
+  return `Rewrite the text below following the instruction. Keep every fact in it. Do not add new claims, numbers, names, prices or links. Keep any [add: ...] markers exactly as they are. Change only what the instruction asks for. Keep the same language. Keep the same format unless the instruction changes it (for example a 'Subject:' line stays). Use everyday words and never add marketing words such as leverage, seamless or game-changer.
 
-INSTRUCTION: ${instruction}
+INSTRUCTION: ${how}
 
 TEXT:
 ${text}
