@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { callModelJSON } from "@/lib/ai-providers";
 import { unsupportedNumbers } from "@/lib/distribution/engine";
 import { loadProject } from "@/lib/prep/engine";
+import { withLanguageRule } from "@/lib/language";
 import type { WorkSpec } from "@/lib/work/registry";
 import { buildPrompt, normalizeWork, readRefined, refinePrompt, type WorkResult } from "@/lib/work/shape";
 
@@ -15,7 +16,8 @@ export async function generateWork(
   input: { spec: WorkSpec; values: Record<string, string>; projectId?: string | null; voice?: string; founderName?: string },
 ): Promise<WorkResult | null> {
   const project = await loadProject(admin, userId, input.projectId);
-  const prompt = buildPrompt(input.spec, input.values, project, input.voice ?? "", input.founderName ?? "");
+  const base = buildPrompt(input.spec, input.values, project, input.voice ?? "", input.founderName ?? "");
+  const prompt = withLanguageRule(base);
   let raw: unknown;
   try {
     raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], { maxTokens: input.spec.shape === "sections" ? 2600 : 1800, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "work" });
