@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { WORK_SPECS, EXISTING, catalog, searchCatalog, SPEC_BY_ID, VISUALS, TOOLS } from "@/lib/work/registry";
-import { cleanInputs, sanitizeText, buildPrompt, normalizeWork, readRefined, figuresToCheck } from "@/lib/work/shape";
+import { cleanInputs, sanitizeText, buildPrompt, normalizeWork, readRefined, figuresToCheck, JARGON } from "@/lib/work/shape";
 import { prepKindFor } from "@/lib/prep/kinds";
 
 const project = { name: "Acme", description: "d", problem: "p", targetUsers: "u", stage: "Validation" };
@@ -102,3 +102,23 @@ describe("readRefined", () => {
 });
 
 describe("SPEC_BY_ID", () => { it("maps every spec", () => { for (const s of WORK_SPECS) expect(SPEC_BY_ID[s.id]).toBe(s); }); });
+
+describe("quality bar", () => {
+  const spec = SPEC_BY_ID["whatsapp_message"] ?? WORK_SPECS[0];
+  it("every prompt carries the quality bar", () => {
+    for (const s of WORK_SPECS) expect(buildPrompt(s, {}, project)).toContain("QUALITY BAR");
+  });
+  it("no kind's own instruction uses the jargon the bar forbids", () => {
+    for (const s of WORK_SPECS) expect(s.instruction.match(JARGON) ?? []).toEqual([]);
+  });
+  it("flags marketing words for the founder instead of changing them", () => {
+    const raw = { title: "t", summary: "s", variants: [{ label: "a", text: "We leverage a seamless ecosystem." }] };
+    const r = normalizeWork(raw, spec, "", noneUnsupported)!;
+    expect(r.variants[0].text).toContain("leverage");
+    expect(r.needs.some((n) => /plain/i.test(n.label) && /leverage/.test(n.why) && /seamless/.test(n.why))).toBe(true);
+  });
+  it("says nothing when the words are plain", () => {
+    const raw = { title: "t", summary: "s", variants: [{ label: "a", text: "Hi Ama, do you have 5 minutes this week?" }] };
+    expect(normalizeWork(raw, spec, "", noneUnsupported)!.needs).toEqual([]);
+  });
+});
