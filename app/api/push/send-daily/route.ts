@@ -60,32 +60,32 @@ function configureVapidDetails() {
 // NOTE: Recovery Mode overrides these with a personalised message (NEW IN V4)
 const DAILY_MESSAGES = [
   {
-    title: "⚡ BuildMind — Your action is ready",
-    body: "Today's task is waiting. One action. Already decided. Open it.",
+    title: "Today's task is ready",
+    body: "One small task, chosen for your stage. Most take 10 to 15 minutes.",
     url: "/today",
     tag: "daily-action",
   },
   {
-    title: "🔥 Your momentum is building",
-    body: "One action. That's all it takes. Open BuildMind and do today's task.",
+    title: "Your task for today",
+    body: "Open it, do the first step, and tell BuildMind how it went.",
     url: "/today",
     tag: "daily-action",
   },
   {
-    title: "⚡ One task. That's all.",
-    body: "Not a checklist. Not a plan. One specific action for your startup today.",
+    title: "One task today",
+    body: "Not a list. One action for your startup, ready to start.",
     url: "/today",
     tag: "daily-action",
   },
   {
-    title: "🧠 What did you build yesterday?",
-    body: "Reflect on yesterday. Get your action for today. 2 minutes.",
+    title: "How did yesterday go?",
+    body: "Tell BuildMind what you did. It takes 2 minutes and shapes today's task.",
     url: "/reflect",
     tag: "daily-reflect",
   },
   {
-    title: "📋 Weekly report ready",
-    body: "Your intention vs action report for this week is ready. How did you do?",
+    title: "Your weekly report is ready",
+    body: "See what you planned and what you actually did this week.",
     url: "/reports",
     tag: "weekly-report",
   },
@@ -95,14 +95,14 @@ const DAILY_MESSAGES = [
 // These replace the standard daily notification with warmth instead of pressure.
 const RECOVERY_MODE_MESSAGES = [
   {
-    title: "BuildMind — one small thing",
-    body: "I know last week was rough. Let's restart clean today — one small thing.",
+    title: "A small task is ready",
+    body: "It has been a few days. Start with one small task, 10 minutes is enough.",
     url: "/today",
     tag: "recovery-mode",
   },
   {
-    title: "No pressure. One step.",
-    body: "You're not falling — you're holding. That's enough for today. One task is ready.",
+    title: "Pick up where you left off",
+    body: "One small task is ready. Doing it keeps your plan moving.",
     url: "/today",
     tag: "recovery-mode",
   },
@@ -390,7 +390,7 @@ export async function POST(req: NextRequest) {
           tag = rm.tag;
         } else if (briefing?.action) {
           // Use today's personalised briefing if available — this is the real value
-          title = "⚡ BuildMind — Your action is ready";
+          title = "Today's task is ready";
           body = briefing.action.slice(0, 100);
           url = "/today";
           tag = "daily-action";

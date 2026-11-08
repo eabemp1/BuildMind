@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { WORK_SPECS, EXISTING, catalog, searchCatalog, SPEC_BY_ID, VISUALS, TOOLS } from "@/lib/work/registry";
-import { cleanInputs, sanitizeText, buildPrompt, normalizeWork, readRefined, figuresToCheck, JARGON } from "@/lib/work/shape";
+import { cleanInputs, sanitizeText, buildPrompt, normalizeWork, readRefined, figuresToCheck, JARGON, REFINE_PRESETS, refinePrompt } from "@/lib/work/shape";
 import { cleanVoice } from "@/lib/work/voice";
 import { prepKindFor } from "@/lib/prep/kinds";
 
@@ -121,6 +121,14 @@ describe("quality bar", () => {
   it("says nothing when the words are plain", () => {
     const raw = { title: "t", summary: "s", variants: [{ label: "a", text: "Hi Ama, do you have 5 minutes this week?" }] };
     expect(normalizeWork(raw, spec, "", noneUnsupported)!.needs).toEqual([]);
+  });
+});
+
+describe("refine presets", () => {
+  it("expands the WhatsApp preset into a real instruction", () => {
+    expect(REFINE_PRESETS).toContain("For WhatsApp");
+    expect(refinePrompt("Hello there", "For WhatsApp")).toMatch(/WhatsApp message: 2 to 4 short sentences/);
+    expect(refinePrompt("Hello there", "Shorter")).toContain("INSTRUCTION: Shorter");
   });
 });
 

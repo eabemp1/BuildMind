@@ -11,7 +11,7 @@ import Link from "next/link";
 import { BrandMark } from "@/components/layout/logo";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { BREAK_SEED_KEY, makeSeed } from "@/lib/break/frontDoor";
-import { buildFirstTask } from "@/lib/break/firstTask";
+import { fallbackFirstTask, type FirstTask } from "@/lib/break/firstTask";
 import SampleOutputs from "@/components/break/SampleOutputs";
 
 type Phase = "input" | "loading" | "result";
@@ -25,6 +25,7 @@ type BreakResult = {
   differentiation_plan: string[];
   competitor_summary?: string;
   weakest?: { label: string; test: string };
+  first_task?: FirstTask;
   competitor_links?: { title: string; url: string }[];
 };
 
@@ -325,8 +326,7 @@ export default function BreakPublicPage() {
 
               {/* First task: what Today would open with after sign-up */}
               {(() => {
-                const ft = buildFirstTask({ idea, targetUsers, problem, weakestTest: result.weakest?.test, advice: result.brutal_advice });
-                if (!ft) return null;
+                const ft = result.first_task ?? fallbackFirstTask();
                 return (
                   <motion.div initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.8 }}
                     style={{ border:"1px solid var(--bm-accent-bd)", borderRadius:12, padding:"16px 18px", marginBottom:28 }}>
