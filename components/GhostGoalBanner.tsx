@@ -32,6 +32,11 @@ export interface WeeklyGoal {
   current_score: number;
   status: "active" | "surpassed" | "on_track" | "missed";
   week_start: string;
+  /** What the goal's own words are measured by (read live by GET /api/weekly-goal). */
+  metric_kind?: "conversations" | "replies" | "actions";
+  metric_label?: string;
+  metric_done?: number;
+  metric_target?: number;
 }
 
 interface GhostGoalBannerProps {
@@ -217,18 +222,21 @@ export default function GhostGoalBanner({
     if (!goal) return "var(--bm-text4)";
     if (goal.status === "surpassed") return "var(--bm-teal, #4AB8B0)";
     if (goal.status === "on_track")  return "var(--bm-accent)";
-    const behind = currentScore < (goal.target_score ?? 70) * 0.6;
-    return behind ? "var(--bm-red, #E05555)" : "var(--bm-text3)";
+    return "var(--bm-text3)";
   };
   const ghostColor = getGhostColor();
 
-  const scorePct  = goal ? Math.min(100, Math.round((goal.current_score / Math.max(1, goal.target_score)) * 100)) : 0;
+  // The number on screen is the one the goal's own words ask for (conversations, replies or Today actions).
+  const mDone   = goal ? goal.metric_done ?? goal.tasks_done : 0;
+  const mTarget = goal ? goal.metric_target ?? goal.target_tasks : 1;
+  const mLabel  = goal?.metric_label ?? "Today actions done";
+  const metricPct = Math.min(100, Math.round((mDone / Math.max(1, mTarget)) * 100));
   const taskPct   = goal ? Math.min(100, Math.round((goal.tasks_done / Math.max(1, goal.target_tasks)) * 100)) : 0;
-  const surpassed = goal?.status === "surpassed";
-  const behind    = goal ? goal.current_score < goal.target_score * 0.5 && goal.tasks_done < Math.floor(goal.target_tasks * 0.5) : false;
+  const surpassed = goal ? mDone >= mTarget : false;
+  const behind    = goal ? !surpassed && mDone < Math.floor(mTarget * 0.5) && new Date().getUTCDay() >= 4 : false;
 
   const chipGlyph = !goal ? "◎" : surpassed ? "✦" : behind ? "⚠" : "◎";
-  const chipLabel = !goal ? "Vigil" : `Vigil ${goal.tasks_done}/${goal.target_tasks}`;
+  const chipLabel = !goal ? "Vigil" : `Vigil ${mDone}/${mTarget}`;
 
   return (
     <>
@@ -386,30 +394,27 @@ export default function GhostGoalBanner({
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <ProgressRing value={goal.current_score} max={goal.target_score} color={ghostColor} size={32} />
-                        <span style={{ fontSize: 8, color: "var(--bm-text4)", marginTop: 2 }}>exec</span>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <ProgressRing value={goal.tasks_done} max={goal.target_tasks} color={ghostColor} size={32} />
-                        <span style={{ fontSize: 8, color: "var(--bm-text4)", marginTop: 2 }}>tasks</span>
+                        <ProgressRing value={mDone} max={mTarget} color={ghostColor} size={32} />
+                        <span style={{ fontSize: 8, color: "var(--bm-text4)", marginTop: 2 }}>{mDone}/{mTarget}</span>
                       </div>
                     </div>
                   </div>
 
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Execution score</span>
-                      <span style={{ fontSize: 10, color: ghostColor, fontWeight: 700 }}>{goal.current_score} / {goal.target_score}{surpassed && " ✓"}</span>
+                      <span style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{mLabel}</span>
+                      <span style={{ fontSize: 10, color: ghostColor, fontWeight: 700 }}>{mDone} / {mTarget}{surpassed && " ✓"}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 99, background: "var(--bm-bg3)", overflow: "hidden" }}>
-                      <motion.div initial={{ width: 0 }} animate={{ width: `${scorePct}%` }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                      <motion.div initial={{ width: 0 }} animate={{ width: `${metricPct}%` }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                         style={{ height: "100%", background: ghostColor, borderRadius: 99 }} />
                     </div>
                   </div>
 
+                  {goal.metric_kind && goal.metric_kind !== "actions" ? (
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Tasks this week</span>
+                      <span style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Today actions done</span>
                       <span style={{ fontSize: 10, color: ghostColor, fontWeight: 700 }}>{goal.tasks_done} / {goal.target_tasks}{taskPct >= 100 && " ✓"}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 99, background: "var(--bm-bg3)", overflow: "hidden" }}>
@@ -417,6 +422,7 @@ export default function GhostGoalBanner({
                         style={{ height: "100%", background: ghostColor, borderRadius: 99 }} />
                     </div>
                   </div>
+                  ) : null}
 
                   {surpassed && (
                     <div style={{ display: "flex", gap: 6, padding: "8px 10px", borderRadius: 8, background: "rgba(74,184,176,0.08)", border: "1px solid rgba(74,184,176,0.2)" }}>

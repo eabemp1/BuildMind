@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadGhostWeeks, loadTzOffset, founderLocalNow } from "@/lib/ghostRaceData";
 import { ghostTarget } from "@/lib/ghostRace";
+import { goalMetric, countConversations } from "@/lib/ghostMetric";
 
 /** Returns the ISO date string for the Monday of the week containing `d` */
 function weekStart(d: Date): string {
@@ -84,7 +85,23 @@ export async function GET(req: Request) {
     try {
       const weeks = await loadGhostWeeks(admin, user.id, week, tz);
       // Target comes from the Ghost Race too, so the goal and the race can't disagree.
-      return NextResponse.json({ ok: true, data: { ...data, current_score: liveScore, tasks_done: weeks.current.total, target_tasks: ghostTarget(weeks.completed).ghost } });
+      const ghost = ghostTarget(weeks.completed).ghost;
+      // What the goal's own words are measured by: conversations, replies, or Today actions.
+      const m = goalMetric(String(data.goal_text ?? ""));
+      let metricDone = weeks.current.total;
+      let metricTarget = ghost;
+      let usedKind: "conversations" | "replies" | "actions" = "actions";
+      if (m.kind !== "actions") {
+        try {
+          const { data: people } = await admin.from("conversation_people").select("status, contacted_at, project_id").eq("user_id", user.id).limit(2000);
+          const mine = ((people ?? []) as Array<{ status: string; contacted_at: string | null; project_id: string | null }>).filter((p) => !p.project_id || p.project_id === projectId);
+          const c = countConversations(mine, week);
+          metricDone = m.kind === "replies" ? c.replies : c.started;
+          metricTarget = m.target ?? Math.min(10, Math.max(1, Number(data.target_tasks) || 3));
+          usedKind = m.kind;
+        } catch { /* fall back to Today actions */ }
+      }
+      return NextResponse.json({ ok: true, data: { ...data, current_score: liveScore, tasks_done: weeks.current.total, target_tasks: ghost, metric_kind: usedKind, metric_label: usedKind === "actions" ? "Today actions done" : m.label, metric_done: metricDone, metric_target: metricTarget } });
     } catch { /* fall back to the stored counter */ }
     return NextResponse.json({ ok: true, data: { ...data, current_score: liveScore } });
   }
