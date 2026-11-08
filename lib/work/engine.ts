@@ -12,10 +12,10 @@ import { buildPrompt, normalizeWork, readRefined, refinePrompt, type WorkResult 
 export async function generateWork(
   admin: SupabaseClient,
   userId: string,
-  input: { spec: WorkSpec; values: Record<string, string>; projectId?: string | null },
+  input: { spec: WorkSpec; values: Record<string, string>; projectId?: string | null; voice?: string },
 ): Promise<WorkResult | null> {
   const project = await loadProject(admin, userId, input.projectId);
-  const prompt = buildPrompt(input.spec, input.values, project);
+  const prompt = buildPrompt(input.spec, input.values, project, input.voice ?? "");
   let raw: unknown;
   try {
     raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], { maxTokens: input.spec.shape === "sections" ? 2600 : 1800, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "work" });

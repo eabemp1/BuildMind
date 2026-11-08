@@ -12,6 +12,7 @@ import { SPEC_BY_ID, WORK_SPECS } from "@/lib/work/registry";
 import { getEffectivePlan } from "@/lib/server/plan";
 import { docAccess } from "@/lib/work/access";
 import { cleanInputs } from "@/lib/work/shape";
+import { loadVoice } from "@/lib/server/voice";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
   if (blocked) return blocked;
 
   const projectId = body.projectId && UUID.test(body.projectId) ? body.projectId : null;
-  const result = await generateWork(admin, user.userId, { spec, values, projectId });
+  const result = await generateWork(admin, user.userId, { spec, values, projectId, voice: await loadVoice(user.userId) });
   if (!result) return NextResponse.json({ ok: false, error: "BuildMind could not prepare this just now. Nothing was used up on your side. Please try again." }, { status: 502 });
 
   const row = { user_id: user.userId, project_id: projectId, kind: spec.id, title: result.title, inputs: values, payload: result, edits: {}, status: "draft", note: null, updated_at: new Date().toISOString() };

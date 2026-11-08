@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { WORK_SPECS, EXISTING, catalog, searchCatalog, SPEC_BY_ID, VISUALS, TOOLS } from "@/lib/work/registry";
 import { cleanInputs, sanitizeText, buildPrompt, normalizeWork, readRefined, figuresToCheck, JARGON, REFINE_PRESETS, refinePrompt } from "@/lib/work/shape";
+import { cleanVoice } from "@/lib/work/voice";
 import { prepKindFor } from "@/lib/prep/kinds";
 
 const project = { name: "Acme", description: "d", problem: "p", targetUsers: "u", stage: "Validation" };
@@ -128,5 +129,22 @@ describe("refine presets", () => {
     expect(REFINE_PRESETS).toContain("For WhatsApp");
     expect(refinePrompt("Hello there", "For WhatsApp")).toMatch(/WhatsApp message: 2 to 4 short sentences/);
     expect(refinePrompt("Hello there", "Shorter")).toContain("INSTRUCTION: Shorter");
+  });
+});
+
+describe("voice sample", () => {
+  const sample = "Hi Kofi, thanks for replying so fast. I'd love to hear how you handle this today, no rush at all.";
+  it("is cleaned and capped", () => {
+    expect(cleanVoice("  a \n\n\n\n b ")).toBe("a \n\n b");
+    expect(cleanVoice("x".repeat(5000))).toHaveLength(1200);
+    expect(cleanVoice(42)).toBe("");
+  });
+  it("goes into the prompt as tone only, and not when too short", () => {
+    const p = buildPrompt(SPEC_BY_ID["whatsapp_message"] ?? WORK_SPECS[0], {}, project, sample);
+    expect(p).toContain("THE FOUNDER'S OWN WRITING");
+    expect(p).toContain(sample);
+    expect(p).toMatch(/take no facts/);
+    expect(buildPrompt(WORK_SPECS[0], {}, project, "Hi")).not.toContain("OWN WRITING");
+    expect(buildPrompt(WORK_SPECS[0], {}, project)).not.toContain("OWN WRITING");
   });
 });

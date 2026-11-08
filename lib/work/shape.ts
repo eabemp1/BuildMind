@@ -3,6 +3,7 @@
  * clean what comes back, and flag anything the founder must check. No network, no database, so it is
  * fully testable. The server half is lib/work/engine.ts.
  */
+import { voiceBlock } from "@/lib/work/voice";
 import type { PrepNeed, PrepSection, PrepVariant } from "@/lib/prep/kinds";
 import type { WorkSpec } from "@/lib/work/registry";
 
@@ -35,7 +36,7 @@ export function cleanInputs(spec: WorkSpec, raw: unknown): { values: Record<stri
   return { values };
 }
 
-export function buildPrompt(spec: WorkSpec, values: Record<string, string>, project: WorkProject): string {
+export function buildPrompt(spec: WorkSpec, values: Record<string, string>, project: WorkProject, voice = ""): string {
   const brief = spec.fields.map((f) => `${f.label}: ${values[f.key] ?? "(not given)"}`).join("\n");
   const shape = spec.shape === "variants"
     ? `Fill "variants" with exactly ${spec.count ?? 3} items. Use "sections" only for at most 2 short sections such as "Before you send". Leave nothing else.`
@@ -60,7 +61,7 @@ QUALITY BAR (check your draft against every line before you answer)
 
 JOB: ${spec.label}
 ${spec.instruction}
-
+${voiceBlock(voice)}
 PROJECT
 Name: ${project.name || "(not given)"}
 What it is: ${project.description || "(not given)"}

@@ -8,7 +8,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { FOLLOW_UP_AFTER_DAYS } from "@/lib/conversations/track";
 import { loadLatestWatch } from "@/lib/server/marketWatch";
-import { pickWhyNow } from "@/lib/today/whyNow";
+import { pickWhyNow, whyNowHref } from "@/lib/today/whyNow";
 
 export const dynamic = "force-dynamic";
 const DAY = 86_400_000;
@@ -40,14 +40,15 @@ export async function GET() {
     } catch { /* no milestone line */ }
     const rows = recent.error ? [] : (recent.data ?? []) as Array<{ status: string }>;
     const fresh = watch && !watch.baseline && Date.parse(watch.weekStart) >= now - 8 * DAY;
-    const line = pickWhyNow({
+    const facts = {
       waiting: waiting.error ? 0 : waiting.count ?? 0,
       sentRecent: rows.length,
       repliedRecent: rows.filter((r) => ["replied", "booked", "done"].includes(r.status)).length,
       marketChanges: fresh ? watch!.changes.length : 0,
       milestone,
-    });
-    return NextResponse.json({ ok: true, line }, { headers: H });
+    };
+    const line = pickWhyNow(facts);
+    return NextResponse.json({ ok: true, line, href: line ? whyNowHref(facts) : null }, { headers: H });
   } catch {
     return NextResponse.json({ ok: true, line: null }, { headers: H });
   }

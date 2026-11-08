@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickWhyNow } from "@/lib/today/whyNow";
+import { pickWhyNow, whyNowHref } from "@/lib/today/whyNow";
 import { whenChoices, timeLabel } from "@/lib/today/whenToday";
 
 const none = { waiting: 0, sentRecent: 0, repliedRecent: 0, marketChanges: 0 };
@@ -47,5 +47,12 @@ describe("milestone reason", () => {
     expect(pickWhyNow({ ...none2, milestone: { title: "x", days: 9 } })).toBeNull();
     expect(pickWhyNow({ ...none2, milestone: { title: "x", days: -30 } })).toBeNull();
     expect(pickWhyNow({ ...none2, waiting: 1, milestone: { title: "x", days: 1 } })).toBe("1 person is waiting on your follow-up.");
+  });
+});
+
+describe("whyNowHref", () => {
+  it("links to the follow-up drafts only when people are waiting", () => {
+    expect(whyNowHref({ waiting: 2, sentRecent: 0, repliedRecent: 0, marketChanges: 0 })).toBe("/work/conversations");
+    expect(whyNowHref({ waiting: 0, sentRecent: 3, repliedRecent: 1, marketChanges: 1 })).toBeNull();
   });
 });

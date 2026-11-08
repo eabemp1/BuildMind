@@ -62,6 +62,8 @@ export interface TodayCommandCenterProps {
   executeLabel?: string;
   /** One line saying why this task matters now, from the founder's own records. */
   whyNow?: string | null;
+  /** Where the why-now line can take the founder to act on it (for example the follow-up drafts). */
+  whyNowHref?: string | null;
   actionTitle: string | null;
   timeText: string | null;
   done: boolean;
@@ -75,7 +77,7 @@ export interface TodayCommandCenterProps {
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
 
-export default function TodayCommandCenter({ action, kicker, accent, rationale, whyMore, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", whyNow, actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
+export default function TodayCommandCenter({ action, kicker, accent, rationale, whyMore, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", whyNow, whyNowHref, actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
   const { openPane } = useSidePane();
   const askCoach = () => openPane({ kind: "coach", title: "Coach on today's task", prompt: actionTitle ? `I'm about to work on this: "${actionTitle}". What is the smallest first move, and what usually makes people stall on it?` : undefined });
   const showWhy = () => openPane({
@@ -273,7 +275,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
       </h2>
 
       {whyNow && !done ? (
-        <p style={{ margin: "12px 0 0", maxWidth: "58ch", fontSize: 14, lineHeight: 1.5, color: ink }}>{whyNow}</p>
+        <p style={{ margin: "12px 0 0", maxWidth: "58ch", fontSize: 14, lineHeight: 1.5, color: ink }}>{whyNow}{whyNowHref ? <> <a href={whyNowHref} className="bm-ink-link" style={{ color: ink, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3 }}>Draft the follow-up</a></> : null}</p>
       ) : null}
 
       {firstStep && !done ? (

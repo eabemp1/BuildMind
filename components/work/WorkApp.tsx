@@ -1,4 +1,5 @@
 "use client";
+import VoiceSample from "./VoiceSample";
 import React from "react";
 import { useActiveProjectId } from "@/lib/queries";
 import { catalog, SPEC_BY_ID, EXISTING, VISUALS, TOOLS, type CatalogEntry } from "@/lib/work/registry";
@@ -114,6 +115,7 @@ export default function WorkApp() {
       {home && tab === "new" && (
         <Catalog entries={entries} recent={rows.slice(0, 3).map((r) => ({ id: r.id, title: r.title, kind: r.kind }))} onPick={pick} onOpenItem={(id) => void openItem(id)} />
       )}
+      {home && tab === "new" && <VoiceSample />}
       {home && tab === "library" && <Library rows={rows} setup={setup} onOpen={(id) => void openItem(id)} />}
 
       {view.name === "brief" && SPEC_BY_ID[view.specId] && (
