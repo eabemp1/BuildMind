@@ -32,9 +32,9 @@ const CSS = `
 .vb-w{grid-column:1/-1}
 .vb-h{margin:0;font-size:13px;font-weight:600;color:${C.text2 ?? C.text3};line-height:1.3}
 .vb-c{margin:3px 0 0;font-size:11.5px;line-height:1.45;color:${C.text3}}
-.vb-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:0;border:1px solid ${C.border};border-radius:10px;background:${C.card};overflow:hidden}
+.vb-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:0;border:1px solid ${C.border};border-radius:10px;background:${C.card};overflow:hidden}
 .vb-stat{padding:10px 12px;min-width:0;border-right:1px solid ${C.border};border-bottom:1px solid ${C.border};margin:0 -1px -1px 0}
-.vb-stat b{display:block;font-family:${display};font-size:18px;font-weight:600;line-height:1.1;color:${C.text};overflow-wrap:anywhere}
+.vb-stat b{display:block;font-family:${display};font-size:18px;font-weight:600;line-height:1.15;color:${C.text};overflow-wrap:break-word;word-break:normal;hyphens:none}
 .vb-stat span{display:block;margin-top:4px;font-size:11px;line-height:1.3;color:${C.text3}}
 .vb-stat i{display:block;width:14px;height:2px;margin-top:6px;border-radius:2px}
 .vb-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:${C.text2}}
