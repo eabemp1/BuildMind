@@ -75,6 +75,12 @@ describe("strikeFirstTask", () => {
     expect(strikeFirstTask(good, undefined, good.task, now)).toBeNull();
     expect(strikeFirstTask(null, undefined, undefined, now)).toBeNull();
   });
+  it("drops, never cuts, a long or technical task", () => {
+    const long = "Identify and list the top three local online grocery stores in your target city that do not have public APIs, then manually scrape the price of a single product from each site and compare them to see if there is a real gap in the market.";
+    expect(strikeFirstTask({ ...good, task: long }, undefined, undefined, now)).toBeNull();
+    expect(strikeFirstTask({ ...good, task: "Scrape the price of rice from three shop websites today." }, undefined, undefined, now)).toBeNull();
+    expect(strikeFirstTask(good, undefined, undefined, now)!.action).toBe(good.task);
+  });
   it("rejects a task that breaks the usual rules", () => {
     expect(strikeFirstTask({ ...good, task: "Ask the founder to message one barber about bookings today." }, undefined, undefined, now)).toBeNull();
   });
