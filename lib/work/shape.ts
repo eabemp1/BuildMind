@@ -49,6 +49,15 @@ RULES
 - Write for the founder's real audience in their real market. Do not assume US conventions, currency or channels.
 - Do exactly the job below and nothing else.
 
+QUALITY BAR (check your draft against every line before you answer)
+- Specific beats generic. Anyone could have written a line that would fit any startup, so cut it or make it fit this one, using the founder's own words from PROJECT and BRIEF.
+- Open with something for the reader: their situation, a question they would answer, or what they get. Never open with the founder or the product.
+- One clear ask per piece, easy to say yes or no to. Say what the next step is in plain words.
+- Versions must differ in approach (a different angle, length or ask), not be the same text reworded.
+- Short sentences, everyday words, varied openings. Read it as a tired stranger would: is each line clear the first time?
+- Nothing that sounds like marketing copy or startup jargon (for example: leverage, seamless, game-changer, cutting-edge, empower, unlock, supercharge, streamline, ecosystem, scalable, holistic, world-class, execution system).
+- Everything must be something the founder could honestly say out loud. If it would feel false, leave it out.
+
 JOB: ${spec.label}
 ${spec.instruction}
 
@@ -72,6 +81,9 @@ function cleanBody(t: string): string {
 
 /** Numbers that are counts or timings written by the template itself ("10 slides", "15-minute", "Day 3") are not claims. */
 const BENIGN = /\b(?:slide|day|week|email|step|question|option|version)\s*\d+\b|\b\d+[- ]?(?:minutes?|mins?|words?|days?|hours?|weeks?|slides?|questions?|emails?|steps?|seconds?)\b/gi;
+
+/** Words that make a message read like an advert. Shown to the founder as a check, never silently changed. */
+export const JARGON = /\b(?:leverag(?:e|es|ed|ing)|seamless(?:ly)?|game[- ]?chang(?:er|ing)|cutting[- ]edge|empower(?:s|ed|ing)?|unlock(?:s|ed|ing)?|supercharg(?:e|es|ed|ing)|streamlin(?:e|es|ed|ing)|ecosystem|scalable|holistic|world[- ]class|next[- ]level|revolutionar(?:y|ise|ize)|synerg(?:y|ies)|execution system|10x)\b/gi;
 
 export function figuresToCheck(text: string, allowed: string, unsupported: (t: string, a: string) => string[]): string[] {
   return Array.from(new Set(unsupported(text.replace(BENIGN, " "), allowed)));
@@ -100,6 +112,8 @@ export function normalizeWork(
 
   const all = [...variants.map((v) => v.text), ...sections.flatMap((s) => [s.body ?? "", ...(s.bullets ?? [])])].join("\n");
   const needs: PrepNeed[] = [];
+  const jargon = Array.from(new Set((all.match(JARGON) ?? []).map((w) => w.toLowerCase())));
+  if (jargon.length) needs.push({ label: "Swap a few words for plain ones", why: `These can sound like marketing talk and put readers off: ${jargon.slice(0, 6).join(", ")}. Say it the way you would to a friend.` });
   const gaps = (all.match(/\[add:[^\]]*\]/gi) ?? []).length;
   if (gaps > 0) needs.push({ label: `Fill ${gaps} gap${gaps === 1 ? "" : "s"} marked [add: ...]`, why: "BuildMind did not have these facts, so it left a marker instead of guessing. Replace each one with something true before you use this." });
   if (spec.claims) {
