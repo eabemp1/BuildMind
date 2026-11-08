@@ -18,14 +18,29 @@ export function parseImage(dataUrl: unknown): { mimeType: string; data: string }
   return { mimeType, data: m[2] };
 }
 
+export const MAX_IMAGES = 4;
+/** Vercel rejects request bodies over about 4.5 MB, so the whole set shares one budget. */
+export const MAX_TOTAL_BASE64_CHARS = 4_000_000;
+
+/** Up to MAX_IMAGES images, in order. Null if any is unreadable or the set is too large. */
+export function parseImages(list: unknown): Array<{ mimeType: string; data: string }> | null {
+  if (!Array.isArray(list) || list.length === 0 || list.length > MAX_IMAGES) return null;
+  const out: Array<{ mimeType: string; data: string }> = [];
+  for (const x of list) { const p = parseImage(x); if (!p) return null; out.push(p); }
+  return out.reduce((n, p) => n + p.data.length, 0) > MAX_TOTAL_BASE64_CHARS ? null : out;
+}
+
 const FOCUS: Record<ReviewKind, string> = {
   landing: "This is a screenshot of a landing page. Judge, as a stranger would in five seconds: can I tell what it is, who it is for, why I should care, and what to do next? Also look at: the headline, proof (only what is visible), the call to action, and anything that looks untrustworthy or cluttered.",
   app: "This is a screenshot of an app screen. Judge, as a first-time user would: is it clear what this screen is for, what the main action is, and what happens next? Also look at: labels, empty or error states, and anything that would confuse someone new.",
 };
 
-export function reviewPrompt(kind: ReviewKind, note: string): string {
-  return `You are reviewing a screenshot for a solo founder. ${FOCUS[kind]}
-${note ? `The founder says: ${note}\n` : ""}RULES
+export function reviewPrompt(kind: ReviewKind, note: string, count = 1): string {
+  const several = count > 1
+    ? `There are ${count} screenshots, in order. They are consecutive parts of the same page or flow, so something missing from one may appear in another. Look at all of them before judging, and never say something is missing if it shows in any image. Say which image (1 to ${count}) you mean.\n`
+    : "This is one screenshot, which may show only part of the page. Do not say something is missing just because it is not visible here; say it is not visible in this screenshot.\n";
+  return `You are reviewing ${count > 1 ? "screenshots" : "a screenshot"} for a solo founder. ${FOCUS[kind]}
+${several}${note ? `The founder says: ${note}\n` : ""}RULES
 - Only describe what is visible in the image. If text is too small to read, say so; do not guess it.
 - Do not invent numbers, customers, or what the product does beyond what the image shows.
 - Do not give a score. Be specific: quote the visible words you are talking about.

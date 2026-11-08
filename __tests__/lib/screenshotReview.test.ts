@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseImage, normalizeReview, reviewPrompt, MAX_BASE64_CHARS } from "@/lib/work/screenshot";
+import { parseImage, parseImages, normalizeReview, reviewPrompt, MAX_BASE64_CHARS, MAX_TOTAL_BASE64_CHARS } from "@/lib/work/screenshot";
 
 const b64 = (n: number) => "A".repeat(n);
 
@@ -35,5 +35,18 @@ describe("screenshot review", () => {
     expect(normalizeReview(null)).toBeNull();
     expect(normalizeReview({ summary: "ok", clear: [], problems: [] })).toBeNull();
     expect(normalizeReview({ clear: ["a"] })).toBeNull();
+  });
+  it("takes 1 to 4 images that share one size budget", () => {
+    const ok = `data:image/png;base64,${b64(200)}`;
+    expect(parseImages([ok, ok])).toHaveLength(2);
+    expect(parseImages([])).toBeNull();
+    expect(parseImages([ok, ok, ok, ok, ok])).toBeNull();
+    expect(parseImages([ok, "nope"])).toBeNull();
+    const big = `data:image/png;base64,${b64(MAX_TOTAL_BASE64_CHARS / 2 + 1)}`;
+    expect(parseImages([big, big])).toBeNull();
+  });
+  it("tells the reader the images are parts of one page", () => {
+    expect(reviewPrompt("landing", "", 3)).toMatch(/3 screenshots[\s\S]*never say something is missing/i);
+    expect(reviewPrompt("landing", "", 1)).toMatch(/may show only part/i);
   });
 });
