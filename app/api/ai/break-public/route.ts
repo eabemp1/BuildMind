@@ -13,6 +13,7 @@ import { webSearch } from "@/lib/search";
 import { publicBreakAllowed, recordCall } from "@/lib/server/aiBudget";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { liveAllowedFor } from "@/lib/break/frontDoor";
+import { readFirstTask, type FirstTask } from "@/lib/break/firstTask";
 import { DIMENSION_GUIDE, computeSurvival, normalizeSignals, previewScore, previewSignals, weakestTest } from "@/lib/breakScore";
 
 // FIX: this used to hit DDG lite directly with no fallback — DDG's HTML
@@ -77,7 +78,8 @@ export async function POST(request: Request) {
   "survive_reasons": ["reason 1", "reason 2"],
   "brutal_advice": "the single most important thing to do right now — specific to this idea",
   "signals": { "problem_severity": 0-5, "target_clarity": 0-5, "demand_evidence": 0-5, "differentiation": 0-5, "reachability": 0-5, "monetization": 0-5, "feasibility": 0-5 },
-  "differentiation_plan": ["specific edge 1", "how to position differently", "one action in 30 days"]
+  "differentiation_plan": ["specific edge 1", "how to position differently", "one action in 30 days"],
+  "first_task": { "task": "...", "message": "..." }
 }
 
 Rules:
@@ -86,6 +88,8 @@ Rules:
 - kill_reasons: must be SPECIFIC to this idea, not generic startup clichés
 - brutal_advice: one concrete action, not platitudes
 - differentiation_plan: reference the actual competitors if found
+- first_task.task: ONE action the founder can finish in 30 minutes with a phone and no tools, that shows whether people really have this problem. One sentence, under 30 words, everyday words. Ask or watch a real person; never research, code, scraping or building. Use the real people and place from the idea, and never invent a city.
+- first_task.message: the message to send that person to start that conversation. 2 to 4 short sentences, plain and warm, one question at the end, use [name] for their name and no other placeholder. Never paste the founder's idea text into it word for word.
 No preamble. No markdown. Only JSON.`;
 
     const userPrompt = `Idea: ${idea}
@@ -116,7 +120,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
       ],
     };
 
-    let result: typeof defaultResult & { weakest?: ReturnType<typeof weakestTest>; competitor_links?: { title: string; url: string }[] } = defaultResult;
+    let result: typeof defaultResult & { first_task?: FirstTask; weakest?: ReturnType<typeof weakestTest>; competitor_links?: { title: string; url: string }[] } = defaultResult;
     let aiOk = false;
     result = { ...defaultResult, weakest: weakestTest(previewSignals(idea, users, problem)) };
     if (live) try {
@@ -133,6 +137,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
           survival_probability: computeSurvival(signals, `${idea} ${users} ${problem}`),
           differentiation_plan: (ai.differentiation_plan ?? []).slice(0, 3),
           weakest: weakestTest(signals),
+          first_task: readFirstTask((ai as { first_task?: unknown }).first_task) ?? undefined,
         };
       }
     } catch {
