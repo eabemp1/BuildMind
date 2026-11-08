@@ -35,3 +35,17 @@ describe("whenChoices", () => {
   });
   it("formats times", () => { expect(timeLabel(0, 5)).toBe("12:05 AM"); expect(timeLabel(15, 0)).toBe("3:00 PM"); });
 });
+
+describe("milestone reason", () => {
+  const none2 = { waiting: 0, sentRecent: 0, repliedRecent: 0, marketChanges: 0 };
+  it("names a milestone due within 3 days or overdue", () => {
+    expect(pickWhyNow({ ...none2, milestone: { title: "Launch beta", days: 2 } })).toBe('Your milestone "Launch beta" is due in 2 days.');
+    expect(pickWhyNow({ ...none2, milestone: { title: "Launch beta", days: 0 } })).toBe('Your milestone "Launch beta" is due today.');
+    expect(pickWhyNow({ ...none2, milestone: { title: "Pricing", days: -2 } })).toBe('Your milestone "Pricing" was due 2 days ago.');
+  });
+  it("ignores a distant or very old one, and people waiting still win", () => {
+    expect(pickWhyNow({ ...none2, milestone: { title: "x", days: 9 } })).toBeNull();
+    expect(pickWhyNow({ ...none2, milestone: { title: "x", days: -30 } })).toBeNull();
+    expect(pickWhyNow({ ...none2, waiting: 1, milestone: { title: "x", days: 1 } })).toBe("1 person is waiting on your follow-up.");
+  });
+});

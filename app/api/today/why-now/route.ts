@@ -27,6 +27,17 @@ export async function GET() {
       admin.from("conversation_people").select("status").eq("user_id", user.userId).neq("status", "to_contact").gte("contacted_at", cutoff).limit(200),
       loadLatestWatch(admin, user.userId, null),
     ]);
+    // Soonest open milestone with a date, for the project the founder works on most recently.
+    let milestone: { title: string; days: number } | null = null;
+    try {
+      const { data: proj } = await admin.from("projects").select("id").eq("user_id", user.userId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (proj?.id) {
+        const { data: ms } = await admin.from("milestones").select("title, target_date").eq("project_id", proj.id).neq("status", "completed").not("target_date", "is", null).order("target_date", { ascending: true }).limit(1);
+        const m = (ms ?? [])[0] as { title: string; target_date: string } | undefined;
+        const t = m ? Date.parse(`${String(m.target_date).slice(0, 10)}T00:00:00Z`) : NaN;
+        if (m && Number.isFinite(t)) milestone = { title: m.title, days: Math.ceil((t - now) / DAY) };
+      }
+    } catch { /* no milestone line */ }
     const rows = recent.error ? [] : (recent.data ?? []) as Array<{ status: string }>;
     const fresh = watch && !watch.baseline && Date.parse(watch.weekStart) >= now - 8 * DAY;
     const line = pickWhyNow({
@@ -34,6 +45,7 @@ export async function GET() {
       sentRecent: rows.length,
       repliedRecent: rows.filter((r) => ["replied", "booked", "done"].includes(r.status)).length,
       marketChanges: fresh ? watch!.changes.length : 0,
+      milestone,
     });
     return NextResponse.json({ ok: true, line }, { headers: H });
   } catch {
