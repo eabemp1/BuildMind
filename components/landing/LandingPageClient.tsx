@@ -2451,6 +2451,18 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
         </>)}
       </section>
 
+      {/* A real founder's words, used with his permission */}
+      <section aria-label="What a founder said" className="px-5 py-10 sm:px-8 sm:py-14" style={{ borderTop: subtleSectionBorder }}>
+        <figure className="mx-auto max-w-[680px] text-center">
+          <blockquote className="text-[18px] leading-[1.6] text-[var(--bm-text)] sm:text-[21px]">
+            &ldquo;BuildMind is a highly encouraging platform, and highly useful for founders. The way it replied didn&rsquo;t sound rigid or programmed. It spoke like it knew the vision and the value of my product.&rdquo;
+          </blockquote>
+          <figcaption className="mt-4 text-[14px] text-[var(--bm-text3)]">
+            Chinaza Success Joseph, Founder of Chixus
+          </figcaption>
+        </figure>
+      </section>
+
       <section id="how" className="html-section px-5 py-[60px] sm:px-8 sm:py-24" style={{ borderTop: subtleSectionBorder }}>
         <div className="mx-auto max-w-[1100px]">
           <DayTimeline />
