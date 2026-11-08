@@ -175,7 +175,7 @@ export const WORK_SPECS: WorkSpec[] = [
     id: "content_calendar", group: "build", label: "Two-week content plan", blurb: "What to post and when, tied to one goal",
     fields: [short("channels", "Which channels?", "e.g. LinkedIn and WhatsApp status"), short("goal", "What is the goal?", "e.g. 20 people on the waitlist")],
     shape: "sections",
-    instruction: "Write a two-week content plan as two sections, 'Week 1' and 'Week 2', each with up to 7 bullets of the form 'Day N: channel: what to post (one line) and the point it makes'. Mix teaching, behind-the-scenes and one clear invitation to act per week. Every idea must be something the founder can make from their own knowledge today. No invented results.",
+    instruction: "Write a two-week content plan as two sections, 'Week 1' and 'Week 2', each with up to 7 bullets of the form 'Day N: channel: the post or message itself, ready to paste (under 50 words)'. Write the real words, not a topic. Give every day a different angle: a lesson from the founder's own experience, a mistake and what it taught, a question that invites replies, a short teardown, a small useful tip. Never repeat an angle, and never say 'behind-the-scenes' twice. Use plain, everyday words and no startup jargon. For public communities such as Reddit or forums, give value only and no link; at most one soft line such as 'I built a tool for this, it is in my profile if you want to try it', and never in the first week. For WhatsApp or direct messages, write one-to-one notes to a single person, never a broadcast. Use only facts the founder gave. No invented results, numbers or customers; mark anything missing as [add: ...].",
     you: "Write and post each item yourself.",
   },
 ];
