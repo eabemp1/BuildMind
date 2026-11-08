@@ -135,7 +135,40 @@ const BANK: Record<Band, Variant[]> = {
  * The curated first task for this founder, or null when none fits (then normal generation runs).
  * `excludeAction` is the task they just replaced, so Replace never shows the same one back.
  */
-export function firstRunTask(stage: string, input: FallbackInput, seed: string, ledger?: Ledger, excludeAction?: string): KindFallback | null {
+/** What onboarding saves on the account (user metadata `first_task`): the Reflexion Strike's first task for this idea. */
+export interface SavedStrike { task: string; why: string; at: string }
+
+const STRIKE_MAX_AGE_MS = 3 * 86_400_000;
+
+/**
+ * The strike's task as the first task, when it is safe to use. It reads the founder's whole idea, so it is more
+ * personal than the bank, but it is one unchecked answer, so it must pass the same rules as every other task, be
+ * recent, be a real sentence, and not be the one the founder just swapped away. Anything else returns null and
+ * the hand-written bank is used.
+ */
+export function strikeFirstTask(saved: unknown, ledger?: Ledger, excludeAction?: string, now = Date.now()): KindFallback | null {
+  const o = (saved ?? {}) as Record<string, unknown>;
+  const clean = (v: unknown, n: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, n) : "");
+  const action = clean(o.task, 260);
+  const why = clean(o.why, 200);
+  const at = Date.parse(clean(o.at, 40));
+  if (action.length < 25 || !Number.isFinite(at) || now - at > STRIKE_MAX_AGE_MS || now < at - 60_000) return null;
+  if (action === excludeAction) return null;
+  if (guardRules(action, ledger).length > 0) return null;
+  return {
+    action,
+    platform: "",
+    message: "",
+    why: why || "It is the quickest way to find out if your idea is real.",
+    time: "30 minutes",
+    done_when: "You have done it and written down what happened.",
+    first_step: "Open what you need for this and start with the first part.",
+  };
+}
+
+export function firstRunTask(stage: string, input: FallbackInput, seed: string, ledger?: Ledger, excludeAction?: string, saved?: unknown): KindFallback | null {
+  const fromStrike = strikeFirstTask(saved, ledger, excludeAction);
+  if (fromStrike) { console.info("[first-run] source=strike"); return fromStrike; }
   // Growth tasks start from existing users; a founder who has said they have none is planned as Launch.
   const { band } = effectiveBand(stage, { noUsers: ledger?.facts.some((f) => f.kind === "no_users") });
   const variants = BANK[band].map((v) => v(input)).filter((v) => v.action !== excludeAction);
@@ -144,7 +177,7 @@ export function firstRunTask(stage: string, input: FallbackInput, seed: string, 
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   for (let n = 0; n < variants.length; n++) {
     const v = variants[(h + n) % variants.length];
-    if (!ledger || guardRules(`${v.action} ${v.first_step}`, ledger, v.message).length === 0) return v;
+    if (!ledger || guardRules(`${v.action} ${v.first_step}`, ledger, v.message).length === 0) { console.info("[first-run] source=bank"); return v; }
   }
   return null;
 }

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { buildLedger } from "@/lib/today/facts";
-import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
+import { firstRunTask, isFirstRun, strikeFirstTask } from "@/lib/todayFirstRun";
 import { guardRules } from "@/lib/today/rules";
 
 const input = { userType: "founders", problemDesc: "validating ideas", productName: "Nevrix", stage: "MVP" };
@@ -57,5 +57,32 @@ describe("curated first tasks", () => {
     const first = firstRunTask("MVP", input, "u:2026-10-30")!;
     const next = firstRunTask("MVP", input, "u:2026-10-30", undefined, first.action);
     expect(next === null || next.action !== first.action).toBe(true);
+  });
+});
+
+describe("strikeFirstTask", () => {
+  const now = Date.parse("2026-11-08T12:00:00Z");
+  const good = { task: "Message one barber you know and ask how they take bookings today.", why: "It shows if the problem is real.", at: "2026-11-08T10:00:00Z" };
+  it("uses a recent, real task", () => {
+    const t = strikeFirstTask(good, undefined, undefined, now)!;
+    expect(t.action).toBe(good.task);
+    expect(t.time).toBe("30 minutes");
+  });
+  it("rejects stale, future, short, swapped or missing saves", () => {
+    expect(strikeFirstTask({ ...good, at: "2026-11-01T10:00:00Z" }, undefined, undefined, now)).toBeNull();
+    expect(strikeFirstTask({ ...good, at: "2026-11-09T10:00:00Z" }, undefined, undefined, now)).toBeNull();
+    expect(strikeFirstTask({ ...good, task: "Do it" }, undefined, undefined, now)).toBeNull();
+    expect(strikeFirstTask(good, undefined, good.task, now)).toBeNull();
+    expect(strikeFirstTask(null, undefined, undefined, now)).toBeNull();
+  });
+  it("rejects a task that breaks the usual rules", () => {
+    expect(strikeFirstTask({ ...good, task: "Ask the founder to message one barber about bookings today." }, undefined, undefined, now)).toBeNull();
+  });
+  it("firstRunTask prefers it, and falls back to the bank without it", () => {
+    const input = { userType: "barbers", problemDesc: "bookings", productName: "Acme", stage: "Idea" };
+    vi.setSystemTime(now);
+    expect(firstRunTask("Idea", input, "s", undefined, undefined, good)?.action).toBe(good.task);
+    expect(firstRunTask("Idea", input, "s", undefined, undefined, null)?.action).not.toBe(good.task);
+    vi.useRealTimers();
   });
 });
