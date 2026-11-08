@@ -40,3 +40,22 @@ export function weeklyRecapMessage(f: { done: number; replies: number; waiting: 
   if (f.waiting > 0) parts.push(`${f.waiting} ${f.waiting === 1 ? "follow-up" : "follow-ups"} due`);
   return parts.length ? `This week: ${parts.join(", ")}.` : null;
 }
+
+export interface DueMilestone { title: string; target_date: string }
+
+/** Leads with the soonest date. Overdue milestones are named as overdue, never hidden. */
+export function milestoneDueMessage(list: DueMilestone[], now = Date.now()): string | null {
+  const rows = list.map((m) => ({ m, t: Date.parse(`${String(m.target_date).slice(0, 10)}T00:00:00Z`) })).filter((x) => Number.isFinite(x.t)).sort((a, b) => a.t - b.t);
+  if (!rows.length) return null;
+  const lead = rows[0];
+  const d = Math.ceil((lead.t - now) / DAY);
+  const when = d < 0 ? `was due ${-d} ${-d === 1 ? "day" : "days"} ago` : d === 0 ? "is due today" : d === 1 ? "is due tomorrow" : `is due in ${d} days`;
+  const rest = rows.length - 1;
+  return `Milestone: "${clip(lead.m.title, 80)}" ${when}.${rest > 0 ? ` ${rest} more ${rest === 1 ? "milestone is" : "milestones are"} close.` : ""}`;
+}
+
+/** Says how much evidence exists and what to look at next. Nothing when no sign has been measured at all. */
+export function pmfMessage(s: { observed: number; total: number; notMeasured: number }, next: string | null): string | null {
+  if (s.total - s.notMeasured <= 0) return null;
+  return `Fit evidence: ${s.observed} of ${s.total} signs observed.${next ? ` Next to check: ${next.toLowerCase()}.` : ""}`;
+}

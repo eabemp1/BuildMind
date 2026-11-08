@@ -13,7 +13,8 @@
  * the founder having to remember to open anything.
  */
 
-import { weeklyRecapMessage } from "@/lib/notifyCopy";
+import { weeklyRecapMessage, milestoneDueMessage, pmfMessage, type DueMilestone } from "@/lib/notifyCopy";
+import { loadPmfVisual } from "@/lib/server/pmfLadder";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
@@ -155,6 +156,34 @@ export async function GET(request: Request) {
           const message = weeklyRecapMessage({ done: done.get(id) ?? 0, replies: replies.get(id) ?? 0, waiting: waiting.get(id) ?? 0 });
           return message ? [{ user_id: id, type: "weekly_recap", message, is_read: false }] : [];
         });
+        if (rows.length) await supabase.from("notifications").insert(rows);
+      } catch { /* the push below still goes out */ }
+
+      // Two more plain lines in the same slot: milestones due soon or overdue, and the fit-evidence count.
+      try {
+        const ids = [...claimedBuilderIds].slice(0, 200);
+        const { data: projs } = await supabase.from("projects").select("id, user_id, created_at").in("user_id", ids).order("created_at", { ascending: false }).limit(2000);
+        const latest = new Map<string, string>();
+        const owner = new Map<string, string>();
+        for (const p of (projs ?? []) as Array<{ id: string; user_id: string }>) { owner.set(p.id, p.user_id); if (!latest.has(p.user_id)) latest.set(p.user_id, p.id); }
+        const from = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
+        const to = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+        const { data: ms } = await supabase.from("milestones").select("title, target_date, status, project_id").in("project_id", [...owner.keys()]).neq("status", "completed").gte("target_date", from).lte("target_date", to).limit(2000);
+        const due = new Map<string, DueMilestone[]>();
+        for (const m of (ms ?? []) as Array<{ title: string; target_date: string; project_id: string }>) {
+          const u = owner.get(m.project_id); if (!u) continue;
+          due.set(u, [...(due.get(u) ?? []), { title: m.title, target_date: m.target_date }]);
+        }
+        const rows: Array<{ user_id: string; type: string; message: string; is_read: boolean }> = [];
+        for (const [u, list] of due) { const message = milestoneDueMessage(list); if (message) rows.push({ user_id: u, type: "milestone_due", message, is_read: false }); }
+        for (const [u, projectId] of latest) {
+          try {
+            const { summary, rungs } = await loadPmfVisual(supabase, u, projectId);
+            const next = rungs.find((r) => r.state === "not_yet")?.label ?? null;
+            const message = pmfMessage(summary, next);
+            if (message) rows.push({ user_id: u, type: "pmf_evidence", message, is_read: false });
+          } catch { /* skip this founder */ }
+        }
         if (rows.length) await supabase.from("notifications").insert(rows);
       } catch { /* the push below still goes out */ }
 
