@@ -3,19 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { computeStartupScore } from "@/lib/buildmind";
 import { getActiveProjectId, setActiveProjectId } from "@/lib/api";
 import {
   useDeleteProjectMutation,
   useProjectSummariesQuery,
   useFounderStandingBatchQuery,
-  useFounderScorecardQuery,
 } from "@/lib/queries";
 import { getLimits } from "@/lib/plan";
 import { usePlan } from "@/lib/usePlan";
 import { useLimitModal } from "@/components/LimitModal";
 import {
-  Plus, Trash2, ChevronRight, Check, FolderKanban, Loader2,
+  Plus, Trash2, ArrowRight, Check, FolderKanban, Loader2, MoreHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,6 +23,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 import { VisualBoard } from "@/components/visuals/VisualBoard";
+import { nextStepFor } from "@/lib/projects/nextStep";
 import { buildPortfolioVisual } from "@/lib/visuals/portfolioVisual";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -95,41 +94,24 @@ function deriveProjectHealth(
   return engagement ?? "healthy"; // "healthy" only as a pre-load fallback, never a real verdict
 }
 
-// ── Progress bar ──────────────────────────────────────────────────────────────
-function ProgressBar({
-  value, max, i = 0,
-}: { value: number; max: number; i?: number }) {
+function ProgressBar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
-    <div className="w-full h-1.5 rounded-full" style={{ background: "var(--bm-bg4)" }}>
-      <motion.div
-        className="h-full rounded-full"
-        style={{ background: "var(--grad-primary)" }}
-        initial={{ width: 0 }}
-        animate={{ width: `${pct}%` }}
-        transition={{ duration: 0.75, ease: "easeOut", delay: 0.25 + i * 0.05 }}
-      />
+    <div className="h-1.5 w-full rounded-full" style={{ background: "var(--bm-bg4)" }} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
+      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--grad-primary)", transition: "width 0.5s ease" }} />
     </div>
   );
 }
 
-// ── Loading state — Figma shows a centered spinner + status copy here
-//    rather than a skeleton list; matches that per-state arrangement. ──────
 function LoadingState() {
   return (
-    <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 text-center">
+    <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 text-center">
       <Loader2 size={22} className="animate-spin text-[var(--bm-accent)]" />
-      <div>
-        <p className="text-[13px] font-semibold text-[var(--bm-text2)]">Loading your projects…</p>
-        <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--bm-text4)]">
-          Syncing project data
-        </p>
-      </div>
+      <p className="text-[13px] font-semibold text-[var(--bm-text2)]">Loading your projects…</p>
     </div>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function ProjectsPage() {
   const { plan } = usePlan();
   const { showLimitModal } = useLimitModal();
@@ -138,11 +120,9 @@ export default function ProjectsPage() {
 
   const [activeId, setActiveId] = useState<string>("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState<string>("all");
-  // Fix #1: server-authoritative streak + xp so score is consistent across pages/devices
-  const [serverStreak, setServerStreak] = useState(0);
-  const [serverXP, setServerXP] = useState(0);
-  const { data: founderScorecard } = useFounderScorecardQuery();
+  const [showPortfolio, setShowPortfolio] = useState(false);
 
   const limits = getLimits(plan);
   const hasUnlimitedProjects = limits.maxProjects === -1 || limits.maxProjects === Infinity;
@@ -151,21 +131,6 @@ export default function ProjectsPage() {
   useEffect(() => {
     const id = getActiveProjectId();
     if (id) setActiveId(id);
-
-    // Fix #1: Load streak from server (not localStorage) so score matches dashboard/today
-    fetch("/api/founder-context/streak", { cache: "no-store" })
-      .then(r => r.json())
-      .then((d: { streak?: number }) => { if (typeof d.streak === "number") setServerStreak(d.streak); })
-      .catch(() => {});
-
-    // Fix #1: Load XP from server founder_context
-    fetch("/api/founder-context", { cache: "no-store" })
-      .then(r => r.json())
-      .then((d: { xp?: number; data?: { xp?: number } }) => {
-        const xp = d.xp ?? d.data?.xp ?? 0;
-        if (typeof xp === "number") setServerXP(xp);
-      })
-      .catch(() => {});
   }, []);
 
   async function handleDelete(id: string) {
@@ -177,30 +142,22 @@ export default function ProjectsPage() {
   async function handleSetActive(id: string) {
     await setActiveProjectId(id);
     setActiveId(id);
+    setMenuOpen(null);
   }
 
-  // Quick filters — only offer stages actually present in the founder's
-  // projects, so "Growth" never shows up as a filter option for someone
-  // with zero Growth-stage projects.
   const stagesPresent = useMemo(() => {
     const set = new Set<string>();
     summaries.forEach((s) => set.add(normalizeStage(s.startup_stage ?? "")));
-    return STAGE_OPTIONS.filter((s) => set.has(s));
+    return STAGE_OPTIONS.filter((st) => set.has(st));
   }, [summaries]);
 
   const filteredSummaries = useMemo(() => {
-    if (stageFilter === "all") return summaries;
-    return summaries.filter((s) => normalizeStage(s.startup_stage ?? "") === stageFilter);
-  }, [summaries, stageFilter]);
+    const list = stageFilter === "all" ? summaries : summaries.filter((s) => normalizeStage(s.startup_stage ?? "") === stageFilter);
+    // Active project first, so the one you are working on is always at the top.
+    return [...list].sort((a, b) => Number(b.id === activeId) - Number(a.id === activeId));
+  }, [summaries, stageFilter, activeId]);
 
-  // FIX (checklist item): batch-fetched once for every project on the
-  // page, not recomputed per-card locally — see deriveProjectHealth's
-  // updated header for why. useFounderStandingBatchQuery is the
-  // useQueries-based tool for this specifically because a plain
-  // useFounderStandingQuery(id) call can't live inside the .map() below
-  // (hooks can't be called in a loop).
   const standingByProject = useFounderStandingBatchQuery(summaries.map((s) => s.id));
-  const [showPortfolio, setShowPortfolio] = useState(false);
   const portfolio = useMemo(() => buildPortfolioVisual(summaries.map((s) => ({
     name: s.name ?? s.title ?? "Untitled", stage: normalizeStage(s.startup_stage ?? ""),
     tasksTotal: s.tasksTotal ?? 0, tasksCompleted: s.tasksCompleted ?? 0,
@@ -209,7 +166,6 @@ export default function ProjectsPage() {
   })), summaries.find((s) => s.id === activeId)?.name ?? undefined), [summaries, standingByProject, activeId]);
 
   const createHref = canCreateProject ? "/projects/new" : undefined;
-
   function handleCreateClick(e: React.MouseEvent) {
     if (!canCreateProject) {
       e.preventDefault();
@@ -218,365 +174,170 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1120px] px-3 py-5 sm:px-6 sm:py-7">
-
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
-      >
-        <PageHeader
-          eyebrow="Your contexts"
-          title="Your Projects"
-          subtitle="The hypotheses and workstreams BuildMind is tracking."
-          action={
-            <Link href={createHref ?? "#"} onClick={handleCreateClick}>
-              <Button size="sm" disabled={!canCreateProject}>
-                <Plus size={14} />
-                Create project
-              </Button>
-            </Link>
-          }
-        />
-      </motion.div>
-
-      {/* Plan limit reached banner */}
-      {!isLoading && !hasUnlimitedProjects && !canCreateProject && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, delay: 0.05 }}
-          className="mt-5 rounded-[var(--r-lg)] border-l-2 p-4"
-          style={{ borderLeftColor: "var(--bm-accent)", background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}
-        >
-          <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--bm-accent)]">
-            Free plan limit reached
-          </p>
-          <p className="mt-1.5 text-[13px] font-semibold text-[var(--bm-text)]">
-            You&apos;ve reached your project limit ({summaries.length}/{limits.maxProjects})
-          </p>
-          <p className="mt-1 text-[12px] leading-relaxed text-[var(--bm-text3)]">
-            Upgrade to add more projects and unlock advanced validation intelligence loops.
-          </p>
-          <div className="mt-3 flex items-center gap-4">
-            <Button size="sm" onClick={() => showLimitModal("projects")}>
-              Upgrade plan
+    <div className="mx-auto max-w-[760px] px-4 py-6 sm:px-6 sm:py-8">
+      <PageHeader
+        title="Your projects"
+        subtitle={summaries.length > 0
+          ? `${summaries.length} ${summaries.length === 1 ? "project" : "projects"}${hasUnlimitedProjects ? "" : ` of ${limits.maxProjects} on your plan`}. Open one to see what to do next.`
+          : "Each project holds one startup idea and the steps to test it."}
+        action={
+          <Link href={createHref ?? "#"} onClick={handleCreateClick} className="block w-full sm:w-auto">
+            <Button size="sm" disabled={!canCreateProject} className="w-full sm:w-auto">
+              <Plus size={14} />
+              New project
             </Button>
-            <a href="/upgrade" className="text-[12px] font-medium text-[var(--bm-text2)] hover:text-[var(--bm-text)]">
-              Learn more
-            </a>
-          </div>
-        </motion.div>
+          </Link>
+        }
+      />
+
+      {!isLoading && !hasUnlimitedProjects && !canCreateProject && (
+        <div className="mt-5 rounded-[var(--r-lg)] p-4" style={{ background: "var(--bm-accent-dim)", border: "1px solid var(--bm-accent-bd)" }}>
+          <p className="text-[13px] font-semibold text-[var(--bm-text)]">
+            You have used all {limits.maxProjects} projects on your plan
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-[var(--bm-text3)]">Upgrade to add more projects.</p>
+          <Button size="sm" className="mt-3" onClick={() => showLimitModal("projects")}>Upgrade plan</Button>
+        </div>
       )}
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-start">
-        <main className="min-w-0">
-          {/* Loading */}
-          {isLoading && <LoadingState />}
+      {isLoading && <LoadingState />}
 
-          {/* Empty state */}
-          {!isLoading && summaries.length === 0 && (
-            <EmptyState
-              icon={FolderKanban}
-              title="No projects yet"
-              body="Create your first project to give BuildMind context for better recommendations."
-              action={
-                <Link href={createHref ?? "#"} onClick={handleCreateClick}>
-                  <Button disabled={!canCreateProject}>
-                    <Plus size={14} />
-                    Create your first project
-                  </Button>
-                </Link>
-              }
-            />
-          )}
-
-          {!isLoading && summaries.length > 0 && (
-            <div className="mb-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <button type="button" onClick={() => setShowPortfolio((v) => !v)} aria-expanded={showPortfolio}
-                  className="cursor-pointer rounded-[10px] border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3.5 py-2 text-[13px] font-semibold text-[var(--bm-text)]">
-                  {showPortfolio ? "Hide" : "Draw"} my portfolio
-                </button>
-                {showPortfolio && <OpenBesideButton label="Discuss beside" request={{ kind: "coach", title: "Coach", prompt: "Chart my progress" }} />}
-              </div>
-              {showPortfolio && <div className="mt-3"><VisualBoard spec={portfolio} showHeader={false} /></div>}
-            </div>
-          )}
-
-          {/* Project list */}
-          {!isLoading && summaries.length > 0 && (
-            <div className="flex flex-col gap-2">
-          {filteredSummaries.map((s, i) => {
-            const score = computeStartupScore({
-              ...s,
-              momentum_score: founderScorecard?.momentum ?? s.momentum_score,
-              streak: serverStreak,
-              xp: serverXP,
-            });
-            const stageNorm = normalizeStage(s.startup_stage ?? "");
-            const stageVariant = STAGE_BADGE_VARIANT[stageNorm] ?? "neutral";
-            const isActive = s.id === activeId;
-            const completion = s.tasksTotal > 0
-              ? Math.round((s.tasksCompleted / s.tasksTotal) * 100)
-              : 0;
-            const health = deriveProjectHealth(s, standingByProject[s.id]?.engagement);
-            const healthMeta = HEALTH_META[health];
-            const activeTasks = Math.max(0, (s.tasksTotal ?? 0) - (s.tasksCompleted ?? 0));
-
-            return (
-              <motion.div
-                key={s.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.06 }}
-              >
-                <Card
-                  className="overflow-hidden"
-                  style={
-                    isActive
-                      ? {
-                          borderColor: "var(--bm-border2)",
-                        }
-                      : undefined
-                  }
-                >
-                  <div className="p-4 sm:p-4.5">
-                    <div className="flex gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-2 flex-wrap">
-                            <span className="text-[13px] font-semibold text-[var(--bm-text)]">
-                              {s.name ?? s.title}
-                            </span>
-                            <Badge variant={stageVariant} size="sm">{stageNorm}</Badge>
-                            <Badge variant={healthMeta.variant} size="sm" dot>{healthMeta.label}</Badge>
-                            {isActive ? <Badge variant="success" size="sm" dot>Active</Badge> : null}
-                          </div>
-                          <span className="shrink-0 font-mono text-[10px] text-[var(--bm-text4)]">
-                            {activeTasks} active task{activeTasks === 1 ? "" : "s"}
-                          </span>
-                        </div>
-
-                        {s.problem && (
-                          <p className="mt-2 text-[11px] leading-relaxed text-[var(--bm-text3)] line-clamp-1">
-                            Problem: {s.problem}
-                          </p>
-                        )}
-
-                        {s.target_users && (
-                          <p className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.06em] text-[var(--bm-text4)] line-clamp-1">
-                            Targets: <span className="normal-case tracking-normal text-[var(--bm-text3)]">{s.target_users}</span>
-                          </p>
-                        )}
-
-                        <div className="mt-3 flex items-center gap-3">
-                          <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--bm-text4)]">
-                            Progress ({completion}%)
-                          </span>
-                          <div className="max-w-[110px] flex-1">
-                            <ProgressBar value={s.tasksCompleted ?? 0} max={s.tasksTotal ?? 0} i={i} />
-                          </div>
-                          <span className="font-mono text-[9px] text-[var(--bm-text4)]">
-                            {s.tasksCompleted ?? 0}/{s.tasksTotal ?? 0}
-                          </span>
-                        </div>
-
-                        {/* Real, stage-scoped completion — separate from the
-                            lifetime "Progress" line above on purpose. That
-                            line covers every task across the whole project's
-                            history; this one answers "am I done with THIS
-                            stage" using the same lib/server/stageProgress.ts
-                            numbers Today's stage-complete banner reads, so
-                            the two surfaces never disagree. Only shown once
-                            the current stage actually has milestones to count. */}
-                        {(s.stageMilestonesTotal ?? 0) > 0 && (
-                          <div className="mt-1.5 flex items-center gap-3">
-                            <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--bm-text4)]">
-                              {stageNorm} stage ({s.stageProgressPercent ?? 0}%)
-                            </span>
-                            <div className="max-w-[110px] flex-1">
-                              <div className="w-full h-1.5 rounded-full" style={{ background: "var(--bm-bg4)" }}>
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{
-                                    width: `${s.stageProgressPercent ?? 0}%`,
-                                    background: s.stageComplete ? "var(--bm-green)" : "var(--grad-primary)",
-                                    transition: "width 0.5s ease",
-                                  }}
-                                />
-                              </div>
-                            </div>
-                            <span className="font-mono text-[9px] text-[var(--bm-text4)]">
-                              {s.stageMilestonesCompleted ?? 0}/{s.stageMilestonesTotal ?? 0}
-                              {s.stageComplete ? " ✓" : ""}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex shrink-0 items-start gap-1">
-                        {!isActive && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSetActive(s.id)}
-                            title="Set as active"
-                            className="px-2"
-                          >
-                            <Check size={12} />
-                          </Button>
-                        )}
-                        <OpenBesideButton compact label={`Peek at ${s.name ?? s.title} beside this page`} request={{ kind: "project", projectId: s.id, title: s.name ?? s.title }} style={{ border: "none", padding: "6px 8px" }} />
-                        <Link href={`/projects/${s.id}`}>
-                          <Button variant="ghost" size="sm" className="px-2" title={`Open ${s.name ?? s.title}`}>
-                            <ChevronRight size={14} />
-                          </Button>
-                        </Link>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteConfirm(s.id)}
-                          className="border-transparent px-2 text-[var(--bm-text4)] hover:bg-[rgba(224,85,85,0.08)] hover:text-[var(--bm-red)]"
-                          title={`Delete ${s.name ?? s.title}`}
-                        >
-                          <Trash2 size={12} />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Delete confirm */}
-                  <AnimatePresence>
-                    {deleteConfirm === s.id && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        style={{ overflow: "hidden", borderTop: "1px solid var(--bm-border)" }}
-                      >
-                        <div
-                          className="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
-                          style={{ background: "rgba(224,85,85,0.04)" }}
-                        >
-                          <span className="text-xs" style={{ color: "var(--bm-red)" }}>
-                            Delete "{s.title}"? This cannot be undone.
-                          </span>
-                          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setDeleteConfirm(null)}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              loading={deleteMut.isPending}
-                              onClick={() => handleDelete(s.id)}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </Card>
-              </motion.div>
-            );
-          })}
-
-          {filteredSummaries.length === 0 && (
-            <p className="py-8 text-center text-[12px] text-[var(--bm-text3)]">
-              No {stageFilter === "all" ? "" : `${stageFilter} `}projects match this filter.
-            </p>
-          )}
-
-          {/* Add more nudge */}
-          {canCreateProject && (
-            <Link href="/projects/new">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
-                className="w-full rounded-[var(--r-lg)] py-4 text-xs flex items-center justify-center gap-2 transition-all duration-150"
-                style={{
-                  border: "2px dashed var(--bm-border)",
-                  background: "transparent",
-                  color: "var(--bm-text3)",
-                  cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--bm-accent-bd)";
-                  e.currentTarget.style.color = "var(--bm-accent)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "var(--bm-border)";
-                  e.currentTarget.style.color = "var(--bm-text3)";
-                }}
-              >
-                <Plus size={14} /> Create another project
-              </motion.div>
-            </Link>
-          )}
+      {!isLoading && summaries.length === 0 && (
+        <div className="mt-6">
+          <EmptyState
+            icon={FolderKanban}
+            title="No projects yet"
+            body="Describe your idea and BuildMind will give you the first steps to test it."
+            action={
+              <Link href={createHref ?? "#"} onClick={handleCreateClick}>
+                <Button disabled={!canCreateProject}><Plus size={14} />Create your first project</Button>
+              </Link>
+            }
+          />
         </div>
-          )}
-        </main>
+      )}
 
-        <aside className="order-first flex flex-col gap-3 lg:order-none">
-          <Card variant="data" className="p-4">
-            <p className="font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--bm-text4)]">
-              Project overview
-            </p>
-            <div className="mt-3 flex items-end justify-between gap-3">
-              <div>
-                <p className="font-mono text-[11px] text-[var(--bm-text2)]">
-                  {summaries.length} of {hasUnlimitedProjects ? "unlimited" : limits.maxProjects} projects used
-                </p>
-                <p className="mt-1 text-[10px] leading-relaxed text-[var(--bm-text4)]">
-                  Your free plan allocation is fully visible here.
-                </p>
-              </div>
-              <span className="font-mono text-[10px] text-[var(--bm-accent)]">{summaries.length}</span>
-            </div>
-            <div className="mt-3 h-[2px] overflow-hidden bg-[var(--bm-bg4)]">
-              <div
-                className="h-full bg-[var(--bm-accent)]"
-                style={{ width: `${hasUnlimitedProjects ? 0 : Math.min(100, (summaries.length / limits.maxProjects) * 100)}%` }}
-              />
-            </div>
-            {!hasUnlimitedProjects && !canCreateProject ? (
-              <button
-                onClick={() => showLimitModal("projects")}
-                className="mt-3 bg-transparent p-0 text-[10px] font-medium text-[var(--bm-accent)] hover:underline"
-              >
-                Upgrade plan
-              </button>
-            ) : null}
-          </Card>
-
-          {/* Quick filters — only shown once there's more than one stage to filter between */}
-          {summaries.length > 0 && stagesPresent.length > 1 && (
-            <Card variant="data" className="p-4">
-              <p className="font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--bm-text4)]">
-                Quick filters
-              </p>
-              <Tabs value={stageFilter} onValueChange={setStageFilter} variant="pill" className="mt-3">
-                <TabsList className="flex-wrap">
+      {!isLoading && summaries.length > 0 && (
+        <>
+          {stagesPresent.length > 1 && (
+            <div className="-mx-4 mt-5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+              <Tabs value={stageFilter} onValueChange={setStageFilter} variant="pill">
+                <TabsList className="flex-nowrap">
                   <TabsTrigger value="all">All</TabsTrigger>
-                  {stagesPresent.map((s) => (
-                    <TabsTrigger key={s} value={s}>{s}</TabsTrigger>
-                  ))}
+                  {stagesPresent.map((st) => <TabsTrigger key={st} value={st}>{st}</TabsTrigger>)}
                 </TabsList>
               </Tabs>
-            </Card>
+            </div>
           )}
-        </aside>
-      </div>
+
+          <ul className="mt-5 flex flex-col gap-3">
+            {filteredSummaries.map((s) => {
+              const name = s.name ?? s.title ?? "Untitled project";
+              const stageNorm = normalizeStage(s.startup_stage ?? "");
+              const isActive = s.id === activeId;
+              const done = s.tasksCompleted ?? 0;
+              const total = s.tasksTotal ?? 0;
+              const health = deriveProjectHealth(s, standingByProject[s.id]?.engagement);
+              const healthMeta = HEALTH_META[health];
+              const next = nextStepFor(s);
+              const confirming = deleteConfirm === s.id;
+
+              return (
+                <li key={s.id}>
+                  <Card className="overflow-hidden" style={isActive ? { borderColor: "var(--bm-accent-bd)" } : undefined}>
+                    <div className="p-4 sm:p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h2 className="break-words text-[16px] font-semibold leading-snug text-[var(--bm-text)]">{name}</h2>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <Badge variant={STAGE_BADGE_VARIANT[stageNorm] ?? "neutral"} size="sm">{stageNorm}</Badge>
+                            <Badge variant={healthMeta.variant} size="sm" dot>{healthMeta.label}</Badge>
+                            {isActive && <Badge variant="success" size="sm">Current</Badge>}
+                          </div>
+                        </div>
+                        <div className="relative shrink-0">
+                          <button
+                            type="button"
+                            aria-label={`More options for ${name}`}
+                            aria-expanded={menuOpen === s.id}
+                            onClick={() => setMenuOpen(menuOpen === s.id ? null : s.id)}
+                            className="flex h-10 w-10 items-center justify-center rounded-lg text-[var(--bm-text3)] hover:bg-[var(--bm-bg3)]"
+                          >
+                            <MoreHorizontal size={18} />
+                          </button>
+                          {menuOpen === s.id && (
+                            <div className="absolute right-0 top-11 z-20 w-48 overflow-hidden rounded-[10px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] py-1 shadow-lg">
+                              {!isActive && (
+                                <button type="button" onClick={() => void handleSetActive(s.id)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)]">
+                                  <Check size={14} /> Make this the current project
+                                </button>
+                              )}
+                              <button type="button" onClick={() => { setMenuOpen(null); setDeleteConfirm(s.id); }} className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-[var(--bm-red)] hover:bg-[rgba(224,85,85,0.08)]">
+                                <Trash2 size={14} /> Delete project
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-[10px] p-3.5" style={{ background: "var(--bm-bg3)" }}>
+                        <p className="text-[12px] font-medium text-[var(--bm-text3)]">
+                          {next.kind === "task" ? "Next step" : next.kind === "done" ? "All done" : "Get started"}
+                        </p>
+                        <p className="mt-1 break-words text-[14px] leading-relaxed text-[var(--bm-text)] line-clamp-3">{next.text}</p>
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-3">
+                        <div className="flex-1"><ProgressBar value={done} max={total} /></div>
+                        <span className="shrink-0 text-[12px] text-[var(--bm-text3)]">
+                          {total > 0 ? `${done} of ${total} tasks done` : "No tasks yet"}
+                        </span>
+                      </div>
+
+                      <Link href={`/projects/${s.id}`} className="mt-4 block">
+                        <Button className="w-full sm:w-auto">
+                          Open project <ArrowRight size={14} />
+                        </Button>
+                      </Link>
+                    </div>
+
+                    <AnimatePresence>
+                      {confirming && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: "hidden", borderTop: "1px solid var(--bm-border)" }}>
+                          <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" style={{ background: "rgba(224,85,85,0.04)" }}>
+                            <span className="text-[13px]" style={{ color: "var(--bm-red)" }}>Delete &quot;{name}&quot;? This cannot be undone.</span>
+                            <div className="flex w-full gap-2 sm:w-auto">
+                              <Button variant="secondary" size="sm" className="flex-1 sm:flex-none" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+                              <Button variant="danger" size="sm" className="flex-1 sm:flex-none" loading={deleteMut.isPending} onClick={() => void handleDelete(s.id)}>Delete</Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+
+          {filteredSummaries.length === 0 && (
+            <p className="py-8 text-center text-[13px] text-[var(--bm-text3)]">No {stageFilter} projects.</p>
+          )}
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowPortfolio((v) => !v)}
+              aria-expanded={showPortfolio}
+              className="rounded-[10px] border border-[var(--bm-border2)] bg-transparent px-3.5 py-2.5 text-[13px] font-medium text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)]"
+            >
+              {showPortfolio ? "Hide" : "Show"} progress chart
+            </button>
+            {showPortfolio && <OpenBesideButton label="Discuss beside" request={{ kind: "coach", title: "Coach", prompt: "Chart my progress" }} />}
+          </div>
+          {showPortfolio && <div className="mt-3"><VisualBoard spec={portfolio} showHeader={false} /></div>}
+        </>
+      )}
     </div>
   );
-          }
+}

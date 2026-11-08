@@ -1172,23 +1172,17 @@ export default function ProjectDetailPage() {
 
       <div className="mb-5 border-b border-[var(--bm-border)] pb-[18px]">
         <button onClick={() => router.push("/projects")}
-          className="mb-3.5 border-none bg-transparent p-0 font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--bm-text4)] hover:text-[var(--bm-text3)]">
-          Projects / {String(project.title ?? "Untitled project")}
+          className="mb-2 flex min-h-[44px] items-center border-none bg-transparent p-0 text-[13px] font-medium text-[var(--bm-text3)] hover:text-[var(--bm-text)]">
+          ← All projects
         </button>
         <PageHeader
           title={String(project.title ?? "Untitled project")}
           subtitle={narrativeSentence ?? `${completedCount}/${tasks.length} tasks · ${progress}% complete`}
           action={
-            <div className="flex w-full items-center gap-2 sm:w-auto">
-              <button onClick={() => setShowEditProject(true)}
-                className="rounded-lg border border-[var(--bm-border2)] bg-transparent px-3.5 py-2 text-[12px] font-medium text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)]">
-                Edit project
-              </button>
-              <button onClick={() => router.push("/today")}
-                className="w-full rounded-lg border-none bg-[var(--bm-text)] px-3.5 py-2 text-[12px] font-bold text-[var(--bm-bg)] sm:w-auto">
-                Today&apos;s action
-              </button>
-            </div>
+            <button onClick={() => setShowEditProject(true)}
+              className="min-h-[44px] w-full rounded-lg border border-[var(--bm-border2)] bg-transparent px-4 py-2 text-[13px] font-medium text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)] sm:w-auto">
+              Edit project
+            </button>
           }
         />
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1304,24 +1298,66 @@ export default function ProjectDetailPage() {
           >
             {score}pts →
           </a>
-          <span className="text-[11px] text-[var(--bm-text3)]">{completedCount}/{tasks.length} tasks</span>
-          <span className="text-[11px]" style={{ color: progress >= 60 ? "#4ade80" : progress >= 30 ? "#fbbf24" : "var(--bm-text3)" }}>{progress}% complete</span>
         </div>
       </div>
+
+      {/* Next step: the one thing to do on this project */}
+      {(() => {
+        const orderOf = new Map(milestones.map((m, i) => [m.id, i]));
+        const next = [...tasks]
+          .filter((t) => !t.is_completed)
+          .sort((a, b) => (orderOf.get(a.milestone_id) ?? 999) - (orderOf.get(b.milestone_id) ?? 999))[0];
+        const nextMilestone = next ? milestones.find((m) => m.id === next.milestone_id) : undefined;
+        const allDone = tasks.length > 0 && !next;
+        return (
+          <section aria-label="Next step" className="mb-5 rounded-[14px] border border-[var(--bm-accent-bd)] p-4 sm:p-5" style={{ background: "var(--bm-accent-dim)" }}>
+            <p className="text-[12px] font-semibold text-[var(--bm-accent)]">{next ? "Your next step" : allDone ? "All tasks done" : "Get started"}</p>
+            <p className="mt-1.5 break-words text-[17px] font-semibold leading-snug text-[var(--bm-text)]">
+              {next ? next.title : allDone ? "Every task is done. Check whether you are ready for the next stage." : "No tasks yet. Generate your first steps from the project idea."}
+            </p>
+            {nextMilestone ? <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Part of: {nextMilestone.title}</p> : null}
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              {next ? (
+                <>
+                  <button onClick={() => router.push("/today")}
+                    className="min-h-[44px] rounded-lg border-none bg-[var(--bm-text)] px-4 py-2 text-[13px] font-semibold text-[var(--bm-bg)]">
+                    Work on it in Today
+                  </button>
+                  <button onClick={() => toggleTask(next)}
+                    className="min-h-[44px] rounded-lg border border-[var(--bm-border2)] bg-transparent px-4 py-2 text-[13px] font-medium text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)]">
+                    Mark as done
+                  </button>
+                </>
+              ) : allDone ? (
+                <button onClick={() => void checkStageReadiness()} disabled={readinessChecking}
+                  className="min-h-[44px] rounded-lg border-none bg-[var(--bm-text)] px-4 py-2 text-[13px] font-semibold text-[var(--bm-bg)]">
+                  {readinessChecking ? "Checking…" : "Check stage readiness"}
+                </button>
+              ) : (
+                <button onClick={handleRegenerateMilestones} disabled={regenerating}
+                  className="min-h-[44px] rounded-lg border-none bg-[var(--bm-text)] px-4 py-2 text-[13px] font-semibold text-[var(--bm-bg)]">
+                  {regenerating ? "Generating…" : "Generate milestones and tasks"}
+                </button>
+              )}
+            </div>
+          </section>
+        );
+      })()}
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <main style={{ minWidth: 0 }}>
 
       {/* Progress bar */}
-      <div style={{ height: 4, background: "var(--bm-bg3)", borderRadius: 99, overflow: "hidden", marginBottom: 16 }}>
-        <div style={{ height: "100%", width: `${progress}%`, background: progressColor, borderRadius: 99 }} />
+      <div style={{ marginBottom: 16 }}>
+        <div className="mb-1.5 flex items-center justify-between text-[12px] text-[var(--bm-text3)]">
+          <span>{completedCount} of {tasks.length} tasks done</span>
+          <span>{progress}%</span>
+        </div>
+        <div style={{ height: 6, background: "var(--bm-bg3)", borderRadius: 99, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${progress}%`, background: progressColor, borderRadius: 99 }} />
+        </div>
       </div>
 
-      {narrativeSentence ? (
-        <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.55, marginBottom: 16, borderLeft: "2px solid var(--bm-border)", paddingLeft: 12 }}>
-          {narrativeSentence}
-        </div>
-      ) : null}
 
       {/* REC 3.5: Avoidance pattern surface — BuildMind does what a to-do list cannot */}
       {Boolean((project as Record<string, unknown>).avoidance_pattern) ? (
@@ -1348,7 +1384,7 @@ export default function ProjectDetailPage() {
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bm-border)", marginBottom: 24, overflowX: "auto" }}>
         {(["milestones", "tasks", "roadmap", "validation"] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            style={{ padding: "9px 18px", fontSize: 12, fontWeight: tab === t ? 700 : 400, color: tab === t ? "var(--bm-accent)" : "var(--bm-text3)", background: "none", border: "none", borderBottom: tab === t ? "2px solid var(--bm-accent)" : "2px solid transparent", cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize", transition: "color 0.15s", marginBottom: -1 }}>
+            style={{ padding: "12px 16px", minHeight: 44, textTransform: "capitalize", whiteSpace: "nowrap", fontSize: 13, fontWeight: tab === t ? 700 : 500, color: tab === t ? "var(--bm-accent)" : "var(--bm-text3)", background: "none", border: "none", borderBottom: tab === t ? "2px solid var(--bm-accent)" : "2px solid transparent", cursor: "pointer", fontFamily: "inherit", transition: "color 0.15s", marginBottom: -1 }}>
             {t}
           </button>
         ))}
@@ -1477,7 +1513,7 @@ export default function ProjectDetailPage() {
       )}
       </main>
 
-      <aside className="order-first lg:order-none" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <aside className="lg:order-none" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 10, padding: "14px 16px" }}>
           <div style={{ fontSize: 9, color: "var(--bm-text4)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'DM Mono', monospace", marginBottom: 10 }}>
             Project health
