@@ -18,6 +18,11 @@ export function cleanInput(i: Partial<LeadInput>): LeadInput {
   return { country: clean(i.country ?? "", 60), city: clean(i.city ?? "", 60), customer: clean(i.customer ?? "", 160), problem: clean(i.problem ?? "", 240) };
 }
 
+/** True when the founder sells to other founders, so founder communities are legitimate leads. */
+export function targetsFounders(customer: string): boolean {
+  return /\b(founders?|startups?|entrepreneurs?|solopreneurs?|indie hackers?|makers?)\b/i.test(customer);
+}
+
 export function fallbackQueries(i: LeadInput): string[] {
   const place = [i.city, i.country].filter(Boolean).join(" ");
   const c = i.customer || "small business owners";
@@ -39,7 +44,7 @@ export function cleanQueries(raw: unknown, i: LeadInput, max = 7): string[] {
     if (typeof q !== "string") continue;
     const t = clean(q, 140);
     if (t.length < 8 || out.some((x) => x.toLowerCase() === t.toLowerCase())) continue;
-    if (/\bstartups?\b|\bfounders?\b|\bsaas\b/i.test(t)) continue; // that finds founders, not customers
+    if (!targetsFounders(i.customer) && /\bstartups?\b|\bfounders?\b|\bsaas\b/i.test(t)) continue; // that finds founders, not customers
     // Every query must be about the founder's place, or it returns the same global pages for everyone.
     const words = place.split(/\s+/).filter((w) => w.length > 2);
     if (words.length && !words.some((w) => t.toLowerCase().includes(w))) continue;

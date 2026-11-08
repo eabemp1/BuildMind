@@ -8,15 +8,17 @@ import { callModelJSON } from "@/lib/ai-providers";
 import { webSearch, discussionSearch, type SearchResult } from "@/lib/search";
 import { readPage, isAllowedUrl } from "@/lib/leads/pageReader";
 import { findPlaces, type OsmPlace } from "@/lib/leads/osm";
-import { cleanInput, cleanQueries, cleanOsmTags, fallbackQueries, type LeadInput, type OsmTag } from "@/lib/leads/plan";
+import { cleanInput, cleanQueries, cleanOsmTags, fallbackQueries, targetsFounders, type LeadInput, type OsmTag } from "@/lib/leads/plan";
 import { validateLeads, type Lead } from "@/lib/leads/validate";
 import { isGenericLead } from "@/lib/leads/generic";
 
 export interface LeadRun {
   leads: Lead[];
   thin: boolean;
+  /** Why it came back thin, in plain words (null when it did not). */
+  reason: string | null;
   queries: string[];
-  stats: { searches: number; pagesRead: number; places: number; rounds: number };
+  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number };
 }
 
 const MAX_PAGES = 10;
@@ -26,12 +28,12 @@ function domainOf(u: string): string {
   try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; }
 }
 
-export function pickPages(results: SearchResult[], max = MAX_PAGES): SearchResult[] {
+export function pickPages(results: SearchResult[], max = MAX_PAGES, allowGeneric = false): SearchResult[] {
   const perDomain = new Map<string, number>();
   const seen = new Set<string>();
   const out: SearchResult[] = [];
   for (const r of results) {
-    if (!r.url || seen.has(r.url) || !isAllowedUrl(r.url) || isGenericLead(r.title, r.url)) continue;
+    if (!r.url || seen.has(r.url) || !isAllowedUrl(r.url) || isGenericLead(r.title, r.url, allowGeneric)) continue;
     const d = domainOf(r.url);
     if ((perDomain.get(d) ?? 0) >= MAX_PER_DOMAIN) continue;
     perDomain.set(d, (perDomain.get(d) ?? 0) + 1);
@@ -65,13 +67,13 @@ async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[]) {
     // AI-made "results" are guesses, not evidence: never use them to find people.
     if (s.status === "fulfilled" && s.value.provider !== "ai_synthesised" && s.value.provider !== "none") results.push(...s.value.results);
   }
-  const chosen = pickPages(results);
+  const chosen = pickPages(results, MAX_PAGES, targetsFounders(i.customer));
   const [texts, places] = await Promise.all([
     Promise.all(chosen.map((r) => readPage(r.url))),
     findPlaces(i.city, i.country, osmTags),
   ]);
   const pages = chosen.map((r, n) => ({ ...r, text: texts[n] || r.snippet || "" })).filter((p) => p.text.length > 40);
-  return { pages, places, searches: queries.length, snippets: results };
+  return { pages, places, searches: queries.length, snippets: results, resultsFound: results.length };
 }
 
 async function extract(i: LeadInput, pages: Array<SearchResult & { text: string }>, places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[] }> {
@@ -95,15 +97,21 @@ Rules:
 - Fewer good leads beat many weak ones. If the material holds nothing real, return {"leads": []}.` },
       { role: "user", content: `Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
     ], { role: "reasoning", temperature: 0.2, maxTokens: 3500 });
-    return { leads: validateLeads(out?.leads, allowed) };
+    return { leads: validateLeads(out?.leads, allowed, 12, targetsFounders(i.customer)) };
   } catch {
     return { leads: [] };
   }
 }
 
+export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number }): string {
+  if (st.resultsFound === 0 && st.places === 0) return "The search services returned nothing, so there was nothing to read. This usually means a search key is missing or out of quota, or the place name was not recognised.";
+  if (st.pagesRead === 0 && st.places === 0) return "Searches found pages, but none of them could be opened and read.";
+  return `I read ${st.pagesRead} pages${st.places ? ` and ${st.places} map listings` : ""}, but only ${found} held a real customer I could check. Try a bigger city, or describe your customers by what they sell or where they work.`;
+}
+
 export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 200_000): Promise<LeadRun> {
   const i = cleanInput(input);
-  const stats = { searches: 0, pagesRead: 0, places: 0, rounds: 0 };
+  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0 };
   const allQueries: string[] = [];
   let leads: Lead[] = [];
   let avoid: string[] = [];
@@ -112,12 +120,13 @@ export async function findLeads(input: Partial<LeadInput>, deadline = Date.now()
     const plan = await planSearch(i, avoid);
     allQueries.push(...plan.queries);
     const got = await pass(i, plan.queries, plan.osm);
-    stats.searches += got.searches; stats.pagesRead += got.pages.length; stats.places += got.places.length; stats.rounds = round;
+    stats.searches += got.searches; stats.resultsFound += got.resultsFound; stats.pagesRead += got.pages.length; stats.places += got.places.length; stats.rounds = round;
     const { leads: found } = await extract(i, got.pages, got.places, got.snippets);
     const have = new Set(leads.map((l) => l.url));
     leads = [...leads, ...found.filter((l) => !have.has(l.url))].slice(0, 12);
     if (leads.length >= 6) break;
     avoid = plan.queries;
   }
-  return { leads, thin: leads.length < 3, queries: allQueries, stats };
+  const thin = leads.length < 3;
+  return { leads, thin, reason: thin ? thinReason(leads.length, stats) : null, queries: allQueries, stats };
 }

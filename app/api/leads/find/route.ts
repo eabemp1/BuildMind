@@ -2,7 +2,7 @@
  * POST /api/leads/find — run the Lead Finder for one founder and save what it found.
  * Builder plan; counts against the AI allowance like every agent run.
  */
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
@@ -40,21 +40,39 @@ export async function POST(req: NextRequest) {
     if (!problem) problem = sanitizePromptInput(String(proj.problem ?? proj.description ?? ""), 240);
   }
 
-  const run = await findLeads({
+  const input = {
     country: sanitizePromptInput(body.country, 60),
     city: sanitizePromptInput(body.city, 60),
     customer: sanitizePromptInput(body.customer, 160),
     problem,
-  });
+  };
 
-  const saved: Array<Record<string, unknown>> = [];
-  for (const l of run.leads) {
-    const { data } = await admin.from("lead_results").upsert({
-      user_id: auth.userId, project_id: body.projectId ?? null,
-      country: body.country.trim(), city: body.city.trim(),
-      lead_name: l.name, lead_kind: l.kind, lead_url: l.url, payload: l, updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id,project_id,lead_url", ignoreDuplicates: false }).select("id,status,channel,note").maybeSingle();
-    saved.push({ ...l, id: data?.id ?? null, status: data?.status ?? "saved", channel: data?.channel ?? null });
-  }
-  return NextResponse.json({ ok: true, leads: saved, thin: run.thin, stats: run.stats });
+  // One search at a time per founder: if one started in the last 6 minutes, hand back that one.
+  const since = new Date(Date.now() - 6 * 60_000).toISOString();
+  const { data: live } = await admin.from("lead_runs").select("id").eq("user_id", auth.userId).eq("status", "running").gte("created_at", since).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (live?.id) return NextResponse.json({ ok: true, runId: live.id, status: "running" });
+
+  const { data: row, error: insErr } = await admin.from("lead_runs").insert({ user_id: auth.userId, project_id: body.projectId ?? null, status: "running", input }).select("id").single();
+  if (insErr || !row) return NextResponse.json({ ok: false, error: "Could not start the search. Has the lead_runs table been created?" }, { status: 500 });
+
+  const userId = auth.userId;
+  const projectId = body.projectId ?? null;
+  const country = body.country.trim();
+  const city = body.city.trim();
+  // Keep working after the response is sent, so the founder can leave this page.
+  after(async () => {
+    try {
+      const run = await findLeads(input);
+      for (const l of run.leads) {
+        await admin.from("lead_results").upsert({
+          user_id: userId, project_id: projectId, country, city,
+          lead_name: l.name, lead_kind: l.kind, lead_url: l.url, payload: l, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id,project_id,lead_url", ignoreDuplicates: false });
+      }
+      await admin.from("lead_runs").update({ status: "done", stats: run.stats, lead_count: run.leads.length, reason: run.reason, finished_at: new Date().toISOString() }).eq("id", row.id);
+    } catch (e) {
+      await admin.from("lead_runs").update({ status: "failed", error: String((e as Error)?.message ?? e).slice(0, 300), finished_at: new Date().toISOString() }).eq("id", row.id);
+    }
+  });
+  return NextResponse.json({ ok: true, runId: row.id, status: "running" });
 }
