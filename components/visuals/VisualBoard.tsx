@@ -66,7 +66,7 @@ function Head({ title, caption }: { title?: string; caption?: string }) {
   return <div>{title && <p className="vb-h">{title}</p>}{caption && <p className="vb-c">{caption}</p>}</div>;
 }
 
-const fmt = (n: number, unit = "") => `${Math.round(n * 10) / 10}${unit}`;
+const fmt = (n: number, unit = "") => `${Math.round(n * 10) / 10}${/^[a-z]{3,}/i.test(unit) ? " " : ""}${unit}`;
 
 function Stats({ p }: { p: Extract<VisualPanel, { type: "stats" }> }) {
   return (
@@ -272,7 +272,7 @@ export function VisualBoard({ spec, showHeader = true }: { spec: VisualSpec; sho
       {showHeader && (
         <div>
           <h2 style={{ margin: 0, fontFamily: display, fontSize: 16, fontWeight: 600, color: C.text }}>{spec.title}</h2>
-          {(spec.subtitle || spec.generatedAt) && <p style={{ margin: "3px 0 0", fontSize: 11.5, color: C.text3 }}>{[spec.subtitle, spec.generatedAt && `Generated ${new Date(spec.generatedAt).toUTCString().replace(" GMT", " UTC")}`].filter(Boolean).join(" · ")}</p>}
+          {(spec.subtitle || spec.generatedAt) && <p style={{ margin: "3px 0 0", fontSize: 11.5, color: C.text3 }}>{[spec.subtitle, spec.generatedAt && `Generated ${new Date(spec.generatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}`].filter(Boolean).join(" · ")}</p>}
         </div>
       )}
       <div className="vb">
