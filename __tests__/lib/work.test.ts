@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { WORK_SPECS, EXISTING, catalog, searchCatalog, SPEC_BY_ID, VISUALS, TOOLS } from "@/lib/work/registry";
 import { cleanInputs, sanitizeText, buildPrompt, normalizeWork, readRefined, figuresToCheck, JARGON, REFINE_PRESETS, refinePrompt } from "@/lib/work/shape";
-import { cleanVoice } from "@/lib/work/voice";
+import { cleanVoice, founderFirstName } from "@/lib/work/voice";
 import { prepKindFor } from "@/lib/prep/kinds";
 
 const project = { name: "Acme", description: "d", problem: "p", targetUsers: "u", stage: "Validation" };
@@ -146,5 +146,20 @@ describe("voice sample", () => {
     expect(p).toMatch(/take no facts/);
     expect(buildPrompt(WORK_SPECS[0], {}, project, "Hi")).not.toContain("OWN WRITING");
     expect(buildPrompt(WORK_SPECS[0], {}, project)).not.toContain("OWN WRITING");
+  });
+});
+
+describe("founder name and product wording", () => {
+  it("takes a clean first name only", () => {
+    expect(founderFirstName("Emmanuel Apau")).toBe("Emmanuel");
+    expect(founderFirstName("  ")).toBe("");
+    expect(founderFirstName("A")).toBe("");
+    expect(founderFirstName("Ama<script>")).toBe("Amascript");
+    expect(founderFirstName(7)).toBe("");
+  });
+  it("is in the prompt only when known, and the product rule is always there", () => {
+    expect(buildPrompt(WORK_SPECS[0], {}, project, "", "Emmanuel")).toContain("THE FOUNDER'S NAME: Emmanuel");
+    expect(buildPrompt(WORK_SPECS[0], {}, project)).not.toContain("THE FOUNDER'S NAME");
+    expect(buildPrompt(WORK_SPECS[0], {}, project)).toMatch(/who it is for and what they get/);
   });
 });
