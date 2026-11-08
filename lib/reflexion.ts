@@ -1394,7 +1394,7 @@ export async function generateMorningBriefing(
 Rules:
 - win: One SPECIFIC win referencing what they actually tried recently — not generic praise
 - risk: The single biggest risk TODAY — if gaps detected below, use those directly, not generic startup advice
-- action: One concrete action for the next 2 hours — specific to their current blocker or next step
+- action: One concrete action that takes 30 minutes or less — specific to their current blocker or next step
 Each line: max 20 words. No emojis. No fluff. Must reference their actual situation, not a template.
 
 If you cannot find specific context to reference, say so honestly rather than generating generic output.
@@ -1412,12 +1412,12 @@ ${context.completedYesterday !== undefined ? `Completed yesterday: ${context.com
   // If AI didn't use the gap, surface it directly as the risk
   const fallbackRisk = gaps.length > 0
     ? gaps[0].question
-    : "Inertia: every hour without action makes the next action harder.";
+    : "The biggest risk today is not starting. A small start beats waiting for a perfect plan.";
 
   return {
-    win: parsed.win ?? "You're still here — that already puts you ahead of 90% of founders.",
+    win: parsed.win ?? "You are still working on this, and that counts.",
     risk: parsed.risk ?? fallbackRisk,
-    action: parsed.action ?? "Open your task list and do the first thing before checking anything else.",
+    action: parsed.action ?? "Open today's task in BuildMind and do its first step.",
     gaps,
   };
 }
