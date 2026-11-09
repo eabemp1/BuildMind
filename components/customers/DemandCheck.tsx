@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -11,6 +11,63 @@ interface Run { id: string; status: "running" | "done" | "failed"; result: Resul
 
 const KIND: Record<Signal["kind"], string> = { ask: "Looking for it", complaint: "Unhappy with what exists", workaround: "Doing it by hand", wish: "Wishes it existed" };
 const inputCls = "min-h-[44px] w-full rounded-lg border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-2 text-[14px] text-[var(--bm-text)] outline-none focus:border-[var(--bm-accent-bd)]";
+
+interface Page { code: string; headline: string | null; path: string; signups: number; pending: number }
+
+function SignupPage({ projectId, problem }: { projectId: string; problem: string }) {
+  const [headline, setHeadline] = useState(`Get early access: ${problem}`.slice(0, 120));
+  const [pitch, setPitch] = useState("");
+  const [pages, setPages] = useState<Page[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    const r = await fetch("/api/signal-links", { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+    if (r?.ok) setPages((r.links as Array<Page & { kind: string }>).filter((l) => l.kind === "interest"));
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function create() {
+    setBusy(true); setMsg("");
+    try {
+      const res = await fetch("/api/signal-links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "interest", headline, pitch: pitch || undefined, projectId }) });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.ok) { setMsg(j?.error ?? "Could not create the page."); return; }
+      setMsg("Page created. Share the link below."); await load();
+    } catch { setMsg("Could not reach the server."); } finally { setBusy(false); }
+  }
+  async function copy(path: string) {
+    try { await navigator.clipboard.writeText(`${window.location.origin}${path}`); setMsg("Link copied."); } catch { setMsg(`${window.location.origin}${path}`); }
+  }
+
+  return (
+    <div className="mt-5 border-t border-[var(--bm-border)] pt-4">
+      <h3 className="text-[15px] font-semibold text-[var(--bm-text)]">Turn this into a sign-up page</h3>
+      <p className="mt-1 text-[13px] leading-relaxed text-[var(--bm-text3)]">A simple page where people leave their email to hear when it is ready. Nobody is asked to pay. Share the link where you found these posts.</p>
+      <label className="mt-3 block text-[13px] text-[var(--bm-text3)]">Headline
+        <input className={`${inputCls} mt-1`} value={headline} onChange={(e) => setHeadline(e.target.value)} maxLength={120} />
+      </label>
+      <label className="mt-3 block text-[13px] text-[var(--bm-text3)]">One line about it (optional)
+        <input className={`${inputCls} mt-1`} value={pitch} onChange={(e) => setPitch(e.target.value)} maxLength={300} />
+      </label>
+      <Button className="mt-3 w-full sm:w-auto" disabled={busy || headline.trim().length < 5} onClick={() => void create()}>{busy ? "Creating…" : "Create sign-up page"}</Button>
+      {msg && <p className="mt-2 text-[13px] text-[var(--bm-text2)]">{msg}</p>}
+      {pages.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-2">
+          {pages.map((p) => (
+            <li key={p.code} className="flex flex-col gap-2 rounded-[10px] p-3 sm:flex-row sm:items-center sm:justify-between" style={{ background: "var(--bm-bg3)" }}>
+              <div className="min-w-0">
+                <p className="break-words text-[14px] text-[var(--bm-text)]">{p.headline ?? "Sign-up page"}</p>
+                <p className="text-[12px] text-[var(--bm-text3)]">{p.signups} {p.signups === 1 ? "sign-up" : "sign-ups"}{p.pending ? `, ${p.pending} not yet confirmed` : ""}</p>
+              </div>
+              <Button variant="secondary" size="sm" className="min-h-[44px] w-full sm:w-auto" onClick={() => void copy(p.path)}><Copy size={14} /> Copy link</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function DemandCheck({ projectId, country, city, customer, defaultProblem }: { projectId: string; country: string; city: string; customer: string; defaultProblem: string }) {
   const [problem, setProblem] = useState(defaultProblem);
@@ -79,6 +136,7 @@ export function DemandCheck({ projectId, country, city, customer, defaultProblem
               </li>
             ))}
           </ul>
+          <SignupPage projectId={projectId} problem={problem} />
         </div>
       )}
     </Card>
