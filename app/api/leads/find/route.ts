@@ -63,11 +63,21 @@ export async function POST(req: NextRequest) {
   after(async () => {
     try {
       const run = await findLeads(input);
+      let saveFailed = 0;
       for (const l of run.leads) {
-        await admin.from("lead_results").upsert({
-          user_id: userId, project_id: projectId, country, city,
-          lead_name: l.name, lead_kind: l.kind, lead_url: l.url, payload: l, updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id,project_id,lead_url", ignoreDuplicates: false });
+        // Select-then-write: the unique index is on an expression, so ON CONFLICT cannot target it.
+        let q = admin.from("lead_results").select("id").eq("user_id", userId).eq("lead_url", l.url);
+        q = projectId ? q.eq("project_id", projectId) : q.is("project_id", null);
+        const { data: existing } = await q.limit(1).maybeSingle();
+        const row2 = { country, city, lead_name: l.name, lead_kind: l.kind, payload: l, updated_at: new Date().toISOString() };
+        const { error } = existing?.id
+          ? await admin.from("lead_results").update(row2).eq("id", existing.id)
+          : await admin.from("lead_results").insert({ user_id: userId, project_id: projectId, lead_url: l.url, ...row2 });
+        if (error) { saveFailed++; console.error("[leads] save failed:", error.message); }
+      }
+      if (run.leads.length > 0 && saveFailed === run.leads.length) {
+        await admin.from("lead_runs").update({ status: "failed", error: "Leads were found but could not be saved. Has the lead_results table been created?", stats: run.stats, finished_at: new Date().toISOString() }).eq("id", row.id);
+        return;
       }
       await admin.from("lead_runs").update({ status: "done", stats: run.stats, lead_count: run.leads.length, reason: run.reason, finished_at: new Date().toISOString() }).eq("id", row.id);
     } catch (e) {

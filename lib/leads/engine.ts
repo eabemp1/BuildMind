@@ -81,6 +81,7 @@ async function extract(i: LeadInput, pages: Array<SearchResult & { text: string 
   if (!pages.length && !places.length) return { leads: [], proposed: 0, failed: false };
   const material = [
     ...pages.map((p, n) => `[PAGE ${n + 1}] ${p.title}\nURL: ${p.url}\n${p.text}`),
+    snippets.length ? `[OTHER SEARCH RESULTS, snippets only]\n${snippets.filter((x) => !pages.some((p) => p.url === x.url) && isAllowedUrl(x.url) && !isGenericLead(x.title, x.url, targetsFounders(i.customer))).slice(0, 40).map((x) => `- ${x.title} URL: ${x.url} ${x.snippet}`.slice(0, 380)).join("\n")}` : "",
     places.length ? `[OPENSTREETMAP PLACES]\n${places.map((p) => `- ${p.name} (${p.type}) URL: ${p.url}${p.phone ? ` phone: ${p.phone}` : ""}${p.website ? ` site: ${p.website}` : ""}`).join("\n")}` : "",
   ].filter(Boolean).join("\n\n");
   try {
@@ -94,7 +95,7 @@ Rules:
 - how_to_reach: one concrete way to contact them in public (page message, listed phone, visit, comment, email on the page). Do not guess private contact details.
 - Businesses, public pages, associations, events and public communities only. No private individuals. No startup or founder communities, no big global subreddits.
 - first_message: 2 to 4 short plain sentences the founder can send. Say who they are, the specific thing they want to learn or offer, and ask one easy question. No hype, no invented facts or numbers. Write it in the language the founder wrote their customers and problem in.
-- Fewer good leads beat many weak ones. If the material holds nothing real, return {"leads": []}.` },
+- List every real fit you can support with evidence, up to 12. Weak leads are still dropped, but do not stop at two or three when the material holds more. If the material holds nothing real, return {"leads": []}.` },
       { role: "user", content: `Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
     ], { role: "reasoning", temperature: 0.2, maxTokens: 3500 });
     const proposed = Array.isArray(out?.leads) ? out.leads.length : 0;
