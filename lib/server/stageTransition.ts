@@ -142,6 +142,14 @@ export async function evaluateAndCacheStageTransition(
     readinessTier: readiness.tier,
   };
 
+  // pending_stage_transition is ONE slot per founder. Checking a project that is not ready must not erase another
+  // project's pending prompt, so only clear the slot when it belongs to this project.
+  if (!evaluation.shouldPrompt) {
+    const { data: ctx } = await supabase.from("founder_context").select("pending_stage_transition").eq("user_id", userId).maybeSingle();
+    const pending = (ctx?.pending_stage_transition ?? null) as { project_id?: string } | null;
+    if (pending && pending.project_id && pending.project_id !== projectId) return evaluation;
+  }
+
   // Single write target — same field name as the old cache-based detector
   // used, so no schema change and no change needed to how it's read.
   await supabase.from("founder_context").upsert(
