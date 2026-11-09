@@ -18,7 +18,7 @@ export interface LeadRun {
   /** Why it came back thin, in plain words (null when it did not). */
   reason: string | null;
   queries: string[];
-  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number };
+  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number; proposed: number; modelFailed: number };
 }
 
 const MAX_PAGES = 10;
@@ -76,9 +76,9 @@ async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[]) {
   return { pages, places, searches: queries.length, snippets: results, resultsFound: results.length };
 }
 
-async function extract(i: LeadInput, pages: Array<SearchResult & { text: string }>, places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[] }> {
+async function extract(i: LeadInput, pages: Array<SearchResult & { text: string }>, places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[]; proposed: number; failed: boolean }> {
   const allowed = [...pages.map((p) => p.url), ...snippets.map((s) => s.url), ...places.map((p) => p.url)];
-  if (!pages.length && !places.length) return { leads: [] };
+  if (!pages.length && !places.length) return { leads: [], proposed: 0, failed: false };
   const material = [
     ...pages.map((p, n) => `[PAGE ${n + 1}] ${p.title}\nURL: ${p.url}\n${p.text}`),
     places.length ? `[OPENSTREETMAP PLACES]\n${places.map((p) => `- ${p.name} (${p.type}) URL: ${p.url}${p.phone ? ` phone: ${p.phone}` : ""}${p.website ? ` site: ${p.website}` : ""}`).join("\n")}` : "",
@@ -97,21 +97,25 @@ Rules:
 - Fewer good leads beat many weak ones. If the material holds nothing real, return {"leads": []}.` },
       { role: "user", content: `Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
     ], { role: "reasoning", temperature: 0.2, maxTokens: 3500 });
-    return { leads: validateLeads(out?.leads, allowed, 12, targetsFounders(i.customer)) };
-  } catch {
-    return { leads: [] };
+    const proposed = Array.isArray(out?.leads) ? out.leads.length : 0;
+    return { leads: validateLeads(out?.leads, allowed, 12, targetsFounders(i.customer)), proposed, failed: false };
+  } catch (e) {
+    console.error("[leads] extract failed:", (e as Error)?.message ?? e);
+    return { leads: [], proposed: 0, failed: true };
   }
 }
 
-export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number }): string {
+export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; modelFailed?: number }): string {
+  if ((st.modelFailed ?? 0) > 0 && found === 0) return "I found pages to read, but the AI step failed, so nothing could be turned into leads. This is usually a model quota or outage. Try again in a few minutes.";
   if (st.resultsFound === 0 && st.places === 0) return "The search services returned nothing, so there was nothing to read. This usually means a search key is missing or out of quota, or the place name was not recognised.";
   if (st.pagesRead === 0 && st.places === 0) return "Searches found pages, but none of them could be opened and read.";
+  if ((st.proposed ?? 0) > 0 && found === 0) return `I read ${st.pagesRead} pages and the AI suggested ${st.proposed} leads, but none had a link and a quoted fact I could check, so I dropped them rather than show you guesses. Try describing your customers differently.`;
   return `I read ${st.pagesRead} pages${st.places ? ` and ${st.places} map listings` : ""}, but only ${found} held a real customer I could check. Try a bigger city, or describe your customers by what they sell or where they work.`;
 }
 
 export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 200_000): Promise<LeadRun> {
   const i = cleanInput(input);
-  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0 };
+  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, modelFailed: 0 };
   const allQueries: string[] = [];
   let leads: Lead[] = [];
   let avoid: string[] = [];
@@ -121,7 +125,9 @@ export async function findLeads(input: Partial<LeadInput>, deadline = Date.now()
     allQueries.push(...plan.queries);
     const got = await pass(i, plan.queries, plan.osm);
     stats.searches += got.searches; stats.resultsFound += got.resultsFound; stats.pagesRead += got.pages.length; stats.places += got.places.length; stats.rounds = round;
-    const { leads: found } = await extract(i, got.pages, got.places, got.snippets);
+    const { leads: found, proposed, failed } = await extract(i, got.pages, got.places, got.snippets);
+    stats.proposed += proposed; stats.modelFailed += failed ? 1 : 0;
+    console.log(`[leads] round=${round} results=${got.resultsFound} pages=${got.pages.length} places=${got.places.length} proposed=${proposed} kept=${found.length} modelFailed=${failed}`);
     const have = new Set(leads.map((l) => l.url));
     leads = [...leads, ...found.filter((l) => !have.has(l.url))].slice(0, 12);
     if (leads.length >= 6) break;

@@ -109,3 +109,10 @@ describe("thinReason", () => {
     expect(thinReason(1, { resultsFound: 20, pagesRead: 8, places: 3 })).toMatch(/8 pages and 3 map listings/);
   });
 });
+
+describe("thinReason diagnostics", () => {
+  it("names a failed model and dropped suggestions", () => {
+    expect(thinReason(0, { resultsFound: 9, pagesRead: 5, places: 0, modelFailed: 1 })).toMatch(/AI step failed/);
+    expect(thinReason(0, { resultsFound: 9, pagesRead: 5, places: 0, proposed: 4 })).toMatch(/suggested 4 leads/);
+  });
+});

@@ -45,7 +45,7 @@ export default function CustomersPage() {
     if (project && !customer) setCustomer(project.target_users ?? "");
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  type RunInfo = { id: string; status: "running" | "done" | "failed"; lead_count: number; reason: string | null; error: string | null };
+  type RunInfo = { id: string; status: "running" | "done" | "failed"; lead_count: number; reason: string | null; error: string | null; stats?: { searches?: number; resultsFound?: number; pagesRead?: number; places?: number; proposed?: number } };
   const [run, setRun] = useState<RunInfo | null>(null);
 
   async function loadSaved(replace = false) {
@@ -145,7 +145,12 @@ export default function CustomersPage() {
       )}
 
       {run?.status === "failed" && <p role="alert" className="mt-5 text-[13px] text-[var(--bm-red)]">{run.error ?? "The search failed."} Try again.</p>}
-      {run?.status === "done" && run.reason && <p className="mt-5 text-[13px] leading-relaxed text-[var(--bm-text2)]">{run.reason}</p>}
+      {run?.status === "done" && run.reason && (
+        <div className="mt-5">
+          <p className="text-[13px] leading-relaxed text-[var(--bm-text2)]">{run.reason}</p>
+          {run.stats && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Searches {run.stats.searches ?? 0}, results {run.stats.resultsFound ?? 0}, pages read {run.stats.pagesRead ?? 0}, map listings {run.stats.places ?? 0}, leads suggested {run.stats.proposed ?? 0}.</p>}
+        </div>
+      )}
 
       <ul className="mt-5 flex flex-col gap-3">
         {leads.map((l) => (
