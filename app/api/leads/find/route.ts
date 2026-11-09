@@ -9,6 +9,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findLeads } from "@/lib/leads/engine";
 import { sanitizePromptInput } from "@/lib/agents";
+import { admitHeavyRun } from "@/lib/server/heavyRuns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,9 @@ export async function POST(req: NextRequest) {
   const { data: live } = await admin.from("lead_runs").select("id").eq("user_id", auth.userId).eq("status", "running").gte("created_at", since).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (live?.id) return NextResponse.json({ ok: true, runId: live.id, status: "running" });
 
+  const admit = await admitHeavyRun(auth.userId);
+  if (!admit.allowed) return NextResponse.json({ ok: false, error: admit.reason, retryAfterMinutes: admit.retryAfterMinutes }, { status: 429 });
+
   const { data: row, error: insErr } = await admin.from("lead_runs").insert({ user_id: auth.userId, project_id: body.projectId ?? null, status: "running", input }).select("id").single();
   if (insErr || !row) return NextResponse.json({ ok: false, error: "Could not start the search. Has the lead_runs table been created?" }, { status: 500 });
 
@@ -62,7 +66,7 @@ export async function POST(req: NextRequest) {
   // Keep working after the response is sent, so the founder can leave this page.
   after(async () => {
     try {
-      const run = await findLeads(input);
+      const run = await findLeads(input, undefined, admit.light);
       let saveFailed = 0;
       for (const l of run.leads) {
         // Select-then-write: the unique index is on an expression, so ON CONFLICT cannot target it.
