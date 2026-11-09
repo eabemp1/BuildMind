@@ -39,3 +39,14 @@ describe("demand signals", () => {
     expect(demandHeadline(12, "Accra")).toMatch(/12 public posts/);
   });
 });
+
+import { buildMaterial } from "@/lib/demand/engine";
+describe("buildMaterial", () => {
+  it("caps sources and text per source", () => {
+    const m = new Map([["https://a.com/1", "x".repeat(5000)], ["https://b.com/2", "y".repeat(5000)], ["https://c.com/3", "z"]]);
+    const out = buildMaterial(m, 2, 100);
+    expect(out).toContain("[SOURCE 2]");
+    expect(out).not.toContain("[SOURCE 3]");
+    expect(out.length).toBeLessThan(400);
+  });
+});

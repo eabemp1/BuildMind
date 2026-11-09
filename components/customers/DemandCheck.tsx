@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 interface Signal { quote: string; url: string; kind: "ask" | "complaint" | "workaround" | "wish"; theme: string; place: string }
-interface Result { signals: Signal[]; themes: Array<{ name: string; count: number }>; headline: string }
+interface Result { signals: Signal[]; themes: Array<{ name: string; count: number }>; headline: string; stats?: { modelError?: string; resultsFound?: number; pagesRead?: number; proposed?: number } }
 interface Run { id: string; status: "running" | "done" | "failed"; result: Result | null; error: string | null }
 
 const KIND: Record<Signal["kind"], string> = { ask: "Looking for it", complaint: "Unhappy with what exists", workaround: "Doing it by hand", wish: "Wishes it existed" };
@@ -63,6 +63,8 @@ export function DemandCheck({ projectId, country, city, customer, defaultProblem
       {result && (
         <div className="mt-4">
           <p className="text-[14px] leading-relaxed text-[var(--bm-text)]">{result.headline}</p>
+          {result.stats?.modelError && <p className="mt-1 break-words text-[12px] text-[var(--bm-text3)]">Reason: {result.stats.modelError}</p>}
+          {result.stats && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Results {result.stats.resultsFound ?? 0}, pages read {result.stats.pagesRead ?? 0}, quotes suggested {result.stats.proposed ?? 0}.</p>}
           {result.themes.length > 0 && (
             <ul className="mt-3 flex flex-wrap gap-2">
               {result.themes.map((t) => <li key={t.name} className="rounded-full bg-[var(--bm-bg3)] px-3 py-1 text-[12px] text-[var(--bm-text2)]">{t.name} · {t.count}</li>)}
