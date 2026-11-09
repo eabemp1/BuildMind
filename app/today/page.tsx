@@ -531,6 +531,46 @@ function TodayContent() {
     reason: string;
   } | null>(null);
 
+  // Level-up check, shared by the check-in and by "mark the roadmap task done".
+  const refreshLevelUp = (projectId: string) => {
+    fetch("/api/project/level-up", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId }),
+    }).then(r => r.ok ? r.json() : null)
+      .then((d: {
+        eligible?: boolean; tier?: string; current_stage?: string; next_stage?: string;
+        stage_progress?: { completedMilestones: number; totalMilestones: number };
+        readiness?: { evidence?: { filledSlots: number; totalSlots: number } | null; headline?: string; detail?: string };
+      } | null) => {
+        if (d?.eligible && d.current_stage && d.next_stage) {
+          setTransitionEligible({
+            current_stage: d.current_stage,
+            next_stage: d.next_stage,
+            completed: d.stage_progress?.completedMilestones ?? 0,
+            total: d.stage_progress?.totalMilestones ?? 0,
+            tier: d.tier === "ready" ? "ready" : "checklist_only",
+            evidenceFilled: d.readiness?.evidence?.filledSlots ?? null,
+            evidenceTotal: d.readiness?.evidence?.totalSlots ?? null,
+            reason: [d.readiness?.headline, d.readiness?.detail].filter(Boolean).join(" "),
+          });
+        }
+      }).catch(() => {});
+  };
+
+  // After finishing Today's action: is it one of the open roadmap tasks? Only ever a question, never ticked silently.
+  const [roadmapMatch, setRoadmapMatch] = useState<{ id: string; title: string; milestone: string } | null>(null);
+  const [roadmapTicked, setRoadmapTicked] = useState(false);
+  async function confirmRoadmapTask() {
+    if (!roadmapMatch || !project) return;
+    const r = await fetch("/api/today/roadmap-task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskId: roadmapMatch.id }) }).then((x) => x.json()).catch(() => null);
+    if (r?.ok) {
+      setRoadmapTicked(true);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projectSummaries });
+      refreshLevelUp(project.id);
+    }
+  }
+
   // Editable draft — pre-filled with real project values
   const [draftMessage, setDraftMessage] = useState<string | null>(null);
 
@@ -1677,29 +1717,16 @@ function TodayContent() {
           void queryClient.invalidateQueries({ queryKey: queryKeys.overviewRoot });
 
           // ── Stage-transition eligibility ────────────────────────────────────
-          fetch("/api/project/level-up", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ project_id: project.id }),
-          }).then(r => r.ok ? r.json() : null)
-            .then((d: {
-              eligible?: boolean; tier?: string; current_stage?: string; next_stage?: string;
-              stage_progress?: { completedMilestones: number; totalMilestones: number };
-              readiness?: { evidence?: { filledSlots: number; totalSlots: number } | null; headline?: string; detail?: string };
-            } | null) => {
-              if (d?.eligible && d.current_stage && d.next_stage) {
-                setTransitionEligible({
-                  current_stage: d.current_stage,
-                  next_stage: d.next_stage,
-                  completed: d.stage_progress?.completedMilestones ?? 0,
-                  total: d.stage_progress?.totalMilestones ?? 0,
-                  tier: d.tier === "ready" ? "ready" : "checklist_only",
-                  evidenceFilled: d.readiness?.evidence?.filledSlots ?? null,
-                  evidenceTotal: d.readiness?.evidence?.totalSlots ?? null,
-                  reason: [d.readiness?.headline, d.readiness?.detail].filter(Boolean).join(" "),
-                });
-              }
-            }).catch(() => {});
+          refreshLevelUp(project.id);
+
+          // Is this action one of the open roadmap tasks? Ask the founder; never tick it silently.
+          if (selectedOutcome === "completed" && actionData?.action) {
+            setRoadmapTicked(false);
+            fetch(`/api/today/roadmap-task?projectId=${encodeURIComponent(project.id)}&action=${encodeURIComponent(actionData.action.slice(0, 600))}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((d: { match?: { id: string; title: string; milestone: string } | null } | null) => setRoadmapMatch(d?.match ?? null))
+              .catch(() => {});
+          }
 
           // ── Update ghost goal progress ──────────────────────────────────────
           // FIX: this call previously sent only current_score. The route's
@@ -2857,6 +2884,24 @@ function TodayContent() {
           </a>
         );
       })()}
+
+      {roadmapMatch && (
+        <div style={{ padding: "16px 18px", marginBottom: 14, borderRadius: 14, border: "1px solid var(--bm-border2)", background: "var(--bm-bg3)" }}>
+          {roadmapTicked ? (
+            <p style={{ margin: 0, fontSize: 14, color: "var(--bm-text)" }}>Done. &ldquo;{roadmapMatch.title}&rdquo; is ticked off your roadmap.</p>
+          ) : (
+            <>
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: "var(--bm-text)" }}>
+                That looks like your roadmap task &ldquo;{roadmapMatch.title}&rdquo;{roadmapMatch.milestone ? ` (${roadmapMatch.milestone})` : ""}. Mark it done too?
+              </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                <button onClick={() => void confirmRoadmapTask()} style={{ minHeight: 44, padding: "0 16px", borderRadius: 10, border: "none", background: "var(--bm-text)", color: "var(--bm-bg)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Yes, mark it done</button>
+                <button onClick={() => setRoadmapMatch(null)} style={{ minHeight: 44, padding: "0 16px", borderRadius: 10, border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer" }}>Not that one</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Stage-transition nudge — one line, links to the full prompt on
           the project page rather than duplicating it here. See
