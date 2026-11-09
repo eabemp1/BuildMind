@@ -1419,7 +1419,8 @@ export function summarizeFounderIntelligenceForClient(state: FounderIntelligence
       basis: state.decision.decision_basis,
     },
     cofounder_judgment: cofounderJudgment,
-    capacity: state.capacity ? { level: state.capacity.level, note: stateNote(state.capacity), hold_big_decisions: state.capacity.holdBigDecisions, max_minutes: state.capacity.maxMinutes } : null,
+    capacity: state.capacity ? { level: state.capacity.level, // The 'it's late' line depends on the clock, and this result is cached for the day, so the page works it out live instead.
+      note: stateNote({ ...state.capacity, lateNight: false }), hold_big_decisions: state.capacity.holdBigDecisions, max_minutes: state.capacity.maxMinutes } : null,
     source_summary: state.source_summary,
   };
 }
