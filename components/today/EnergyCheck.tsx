@@ -17,7 +17,7 @@ const CHOICES: Array<{ key: EnergyChoice; label: string }> = [
   { key: "wiped", label: "Wiped" },
 ];
 
-const SIX_HOURS = 6 * 3_600_000;
+const WINDOW = 12 * 3_600_000;
 const DISMISS_KEY = "bm_energy_dismissed_at";
 const LOCAL_KEY = "bm_energy_state";
 
@@ -25,7 +25,7 @@ const LOCAL_KEY = "bm_energy_state";
 function readLocal(): { level: EnergyChoice; at: string } | null {
   try {
     const v = JSON.parse(window.localStorage.getItem(LOCAL_KEY) ?? "null") as { level?: EnergyChoice; at?: string } | null;
-    return v?.level && v.at && Date.now() - Date.parse(v.at) <= SIX_HOURS ? { level: v.level, at: v.at } : null;
+    return v?.level && v.at && Date.now() - Date.parse(v.at) <= WINDOW ? { level: v.level, at: v.at } : null;
   } catch { return null; }
 }
 function writeLocal(level: EnergyChoice, at: string) {
@@ -54,7 +54,7 @@ export default function EnergyCheck({ inferredNote, onLighten }: { inferredNote?
       if (!live) return;
       const e = v.founder_energy;
       // The newer of the server answer and this device's answer wins.
-      if (e?.level && e.at && Date.now() - Date.parse(e.at) <= SIX_HOURS && (!local || Date.parse(e.at) >= Date.parse(local.at))) {
+      if (e?.level && e.at && Date.now() - Date.parse(e.at) <= WINDOW && (!local || Date.parse(e.at) >= Date.parse(local.at))) {
         setLevel(e.level); writeLocal(e.level, e.at);
       }
       setLoaded(true);

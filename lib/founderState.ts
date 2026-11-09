@@ -124,8 +124,8 @@ export function deriveFounderState(input: StateInput = {}): FounderState {
   let source: FounderState["source"] = "inferred";
   const sr = input.selfReport;
   const srAge = sr ? now - Date.parse(sr.at) : Infinity;
-  if (sr && Number.isFinite(srAge) && srAge >= 0 && srAge <= 14 * HOUR) {
-    const fresh = srAge <= 6 * HOUR;
+  if (sr && Number.isFinite(srAge) && srAge >= 0 && srAge <= 18 * HOUR) {
+    const fresh = srAge <= 12 * HOUR;
     const base = { fresh: 12, ok: 32, low: 62, wiped: 88 }[sr.level];
     if (fresh) {
       score = sr.level === "fresh" ? Math.min(score, 24) : sr.level === "ok" ? Math.max(Math.min(score, 45), 28) : Math.max(score, base);
