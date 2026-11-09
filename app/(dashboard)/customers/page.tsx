@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, Copy, Check, ExternalLink } from "lucide-react";
+import { DemandCheck } from "@/components/customers/DemandCheck";
 
 type Status = "saved" | "contacted" | "replied" | "converted" | "no_reply" | "not_a_fit";
 type Channel = "whatsapp" | "facebook" | "phone" | "visit" | "email" | "other";
@@ -134,6 +135,12 @@ export default function CustomersPage() {
           {running && <p className="mt-2 text-[13px] leading-relaxed text-[var(--bm-text2)]">Searching and reading real pages. This takes a few minutes. You can use other pages and come back; the results will be here.</p>}
           {error && <p role="alert" className="mt-3 text-[13px] text-[var(--bm-red)]">{error}</p>}
         </Card>
+      )}
+
+      {project && (
+        <div className="mt-5">
+          <DemandCheck projectId={project.id} country={country} city={city} customer={customer} defaultProblem={String(project.problem ?? project.description ?? "").slice(0, 200)} />
+        </div>
       )}
 
       {working.length > 0 && (
