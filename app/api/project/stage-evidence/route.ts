@@ -297,6 +297,14 @@ export async function PATCH(request: Request) {
       logError("stage-evidence/PATCH", updateError, { userId: user.id, projectId });
       return NextResponse.json({ ok: false, error: updateError.message }, { status: 500 });
     }
+    // The "ready for the next stage" prompt is now out of date: clear it if it was about this project.
+    try {
+      const { data: ctx } = await admin.from("founder_context").select("pending_stage_transition").eq("user_id", user.id).maybeSingle();
+      const pending = (ctx?.pending_stage_transition ?? null) as { project_id?: string } | null;
+      if (pending?.project_id === projectId) {
+        await admin.from("founder_context").update({ pending_stage_transition: null, updated_at: new Date().toISOString() }).eq("user_id", user.id);
+      }
+    } catch { /* the next check-in recomputes it anyway */ }
     return NextResponse.json({ ok: true, stage: toStage, from: fromStage });
   } catch (err) {
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Failed" }, { status: 500 });

@@ -100,6 +100,17 @@ export function resolveMilestoneStage(milestone: StageProgressMilestoneInput): s
 }
 
 /**
+ * A milestone is done when all of its tasks are done. The stored `status` column is only a cache: several server paths
+ * (reflecting on a task, a coach action, an undo) change a task without updating it, so trusting it alone left stages
+ * "never complete" after real work, or "complete" after a task was reopened. With no tasks to look at, fall back to status.
+ */
+export function isMilestoneDone(m: StageProgressMilestoneInput, tasks: StageProgressTaskInput[]): boolean {
+  const own = tasks.filter(t => t.milestone_id === m.id);
+  if (own.length > 0) return own.every(t => !!t.is_completed);
+  return m.status === "completed";
+}
+
+/**
  * Pure function — takes milestones already fetched by the caller (no DB
  * access here) so it can be reused both against a fresh query
  * (stageTransition.ts, level-up) and against milestones a caller already
@@ -112,7 +123,7 @@ export function computeStageProgress(
   tasks: StageProgressTaskInput[] = [],
 ): StageProgress {
   const stageMilestones = milestones.filter(m => resolveMilestoneStage(m) === currentStage);
-  const completed = stageMilestones.filter(m => m.status === "completed");
+  const completed = stageMilestones.filter(m => isMilestoneDone(m, tasks));
   const total = stageMilestones.length;
 
   const stageMilestoneIds = new Set(stageMilestones.map(m => m.id));
@@ -125,7 +136,7 @@ export function computeStageProgress(
     completedMilestones: completed.length,
     percent: total > 0 ? Math.round((completed.length / total) * 100) : 0,
     isComplete: total > 0 && completed.length === total,
-    remainingTitles: stageMilestones.filter(m => m.status !== "completed").map(m => m.title),
+    remainingTitles: stageMilestones.filter(m => !isMilestoneDone(m, tasks)).map(m => m.title),
     totalTasks: stageTasks.length,
     completedTasks: completedTasks.length,
     taskPercent: stageTasks.length > 0 ? Math.round((completedTasks.length / stageTasks.length) * 100) : 0,

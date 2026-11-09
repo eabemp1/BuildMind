@@ -1,3 +1,4 @@
+import { syncMilestoneForTask } from "@/lib/server/milestoneSync";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { fetchBacklog } from "@/lib/coachActions/backlog";
@@ -92,6 +93,7 @@ export async function undoWrite(admin: Admin, userId: string, input: unknown): P
   }
   if (u.kind === "reopen_task") {
     const { error } = await admin.from("tasks").update({ is_completed: false, status: u.status, completed_at: null, updated_at: new Date().toISOString() }).eq("id", u.taskId).eq("user_id", userId);
+    if (!error) await syncMilestoneForTask(admin, u.taskId, userId);
     return error ? { ok: false, message: "Couldn't undo that." } : { ok: true, message: "Undone. The task is back as it was." };
   }
   const { error } = await admin.from("today_loops").delete().eq("id", u.loopId).eq("user_id", userId).eq("status", "open");
@@ -146,6 +148,7 @@ export async function applyWrite(admin: Admin, userId: string, projectId: string
       : { is_completed: false, status: "blocked", updated_at: now };
     const { error } = await admin.from("tasks").update(patch).eq("id", task.id).eq("user_id", userId);
     if (error) return { ok: false, status: 500, error: "Couldn't update the task." };
+    await syncMilestoneForTask(admin, task.id, userId);
     await note(admin, userId, `${p.outcome === "done" ? "Completed" : "Blocked"} task via coach: ${task.title}`);
     return { ok: true, message: p.outcome === "done" ? `Marked "${task.title}" as done.` : `Marked "${task.title}" as blocked.`, undo: { kind: "reopen_task", taskId: task.id, status: String((task as { status?: string | null }).status ?? "pending") } };
   }

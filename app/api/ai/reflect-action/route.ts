@@ -1,3 +1,4 @@
+import { syncMilestoneForTask } from "@/lib/server/milestoneSync";
 import { sanitizeAvoidanceZones, sanitizeTopics } from "@/lib/avoidanceSanitize";
 import { NextResponse } from "next/server";
 import { logQualityEvent } from "@/lib/today/telemetry";
@@ -416,6 +417,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
               .eq("id", taskId)
               .eq("user_id", verifiedUserId)
               .then(() => {}, (err) => logError("reflect-action/task-status-update", err, { taskId, verifiedUserId }));
+            await syncMilestoneForTask(supabase, taskId, verifiedUserId);
           }
         }
 
