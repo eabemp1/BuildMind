@@ -50,3 +50,30 @@ describe("buildMaterial", () => {
     expect(out.length).toBeLessThan(400);
   });
 });
+
+import { locateQuote } from "@/lib/demand/signals";
+describe("locateQuote", () => {
+  const text = "Posted in Accra Moms group: Does anyone know where I can find cheap rice that is not 20 cedis more at the mall? I am tired of driving to three shops.";
+  it("returns the page's own words when the model changed a word or the punctuation", () => {
+    const got = locateQuote("Does anyone know where i can find cheap rice that isnt 20 cedis more at the mall", text);
+    expect(got).toBe("Does anyone know where I can find cheap rice that is not 20 cedis more at the mall?");
+  });
+  it("rejects invented text", () => {
+    expect(locateQuote("Accra needs a platform comparing every grocery price across all markets now", text)).toBeNull();
+  });
+  it("is used by validateSignals, which then shows the page's words", () => {
+    const m = new Map([["https://a.com/p", text]]);
+    const got = validateSignals([{ quote: "Does anyone know where I can find cheap rice that is not 20 cedis more at the mall?!", url: "https://a.com/p", kind: "ask", theme: "rice", place: "" }], m);
+    expect(got[0].quote).toBe("Does anyone know where I can find cheap rice that is not 20 cedis more at the mall?");
+  });
+});
+describe("buildLeadMaterial", () => {
+  it("caps pages, characters and snippets", async () => {
+    const { buildLeadMaterial } = await import("@/lib/leads/engine");
+    const pages = Array.from({ length: 5 }, (_, n) => ({ title: `p${n}`, url: `https://a.com/${n}`, text: "x".repeat(3000) }));
+    const out = buildLeadMaterial(pages, [], [], { pages: 2, chars: 100, snippets: 5 });
+    expect(out).toContain("[PAGE 2]");
+    expect(out).not.toContain("[PAGE 3]");
+    expect(out.length).toBeLessThan(400);
+  });
+});
