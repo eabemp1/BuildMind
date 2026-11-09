@@ -97,12 +97,17 @@ export async function checkBudget(tier: BudgetTier, now = new Date()): Promise<B
   return decideBudget(tier, total, ceiling);
 }
 
-/** Count one AI call. Refreshes the cache from the returned total. Never throws. */
-export async function recordCall(tier: BudgetTier, now = new Date()): Promise<void> {
-  if (dailyCeiling() <= 0) return;
+/** Count `n` AI calls at once (a heavy run). Refreshes the cache from the returned total. Never throws. */
+export async function recordCalls(tier: BudgetTier, n: number, now = new Date()): Promise<void> {
+  if (dailyCeiling() <= 0 || n <= 0) return;
   const day = utcDay(now);
-  const r = await rpc(day, tier, 1);
+  const r = await rpc(day, tier, n);
   if (r) cache = { day, total: r.total, at: Date.now() };
+}
+
+/** Count one AI call. */
+export async function recordCall(tier: BudgetTier, now = new Date()): Promise<void> {
+  return recordCalls(tier, 1, now);
 }
 
 /** Test hook. */

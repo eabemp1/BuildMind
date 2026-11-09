@@ -116,3 +116,19 @@ describe("thinReason diagnostics", () => {
     expect(thinReason(0, { resultsFound: 9, pagesRead: 5, places: 0, proposed: 4 })).toMatch(/suggested 4 leads/);
   });
 });
+
+import { extractLinks } from "@/lib/leads/pageReader";
+import { pickFollowLinks } from "@/lib/leads/engine";
+
+describe("following links", () => {
+  const html = `<a href="/members">Member directory</a><a href="https://other.com.gh/shops">Shops list</a><a href="/login">Log in</a><a href="https://facebook.com/sharer/x">Share</a><a href="/logo.png"><img></a><a href="http://localhost/x">bad</a><a href="/members">Member directory</a><a href="mailto:a@b.com">mail</a>`;
+  it("keeps useful absolute links and drops login, share, assets, unsafe and repeats", () => {
+    expect(extractLinks(html, "https://site.com.gh/home").map((l) => l.url)).toEqual(["https://site.com.gh/members", "https://other.com.gh/shops"]);
+  });
+  it("only follows links that were really on the page, unseen, spread over domains", () => {
+    const c = [{ url: "https://a.com/1", text: "x" }, { url: "https://a.com/2", text: "y" }, { url: "https://a.com/3", text: "z" }, { url: "https://b.com/1", text: "w" }, { url: "https://reddit.com/r/startups", text: "r/Startups" }];
+    expect(pickFollowLinks(["https://a.com/1", "https://a.com/2", "https://a.com/3", "https://invented.com/x", "https://b.com/1", "https://reddit.com/r/startups"], c, new Set(), false)).toEqual(["https://a.com/1", "https://a.com/2", "https://b.com/1"]);
+    expect(pickFollowLinks(["https://a.com/1"], c, new Set(["https://a.com/1"]), false)).toEqual([]);
+    expect(pickFollowLinks("nope", c, new Set(), false)).toEqual([]);
+  });
+});

@@ -9,6 +9,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkDemand } from "@/lib/demand/engine";
 import { sanitizePromptInput } from "@/lib/agents";
+import { admitHeavyRun } from "@/lib/server/heavyRuns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,9 @@ export async function POST(req: NextRequest) {
   const since = new Date(Date.now() - 6 * 60_000).toISOString();
   const { data: live } = await admin.from("demand_runs").select("id").eq("user_id", auth.userId).eq("status", "running").gte("created_at", since).limit(1).maybeSingle();
   if (live?.id) return NextResponse.json({ ok: true, runId: live.id });
+
+  const admit = await admitHeavyRun(auth.userId);
+  if (!admit.allowed) return NextResponse.json({ ok: false, error: admit.reason, retryAfterMinutes: admit.retryAfterMinutes }, { status: 429 });
 
   const { data: row, error } = await admin.from("demand_runs").insert({ user_id: auth.userId, project_id: body.projectId ?? null, status: "running", input }).select("id").single();
   if (error || !row) return NextResponse.json({ ok: false, error: "Could not start the check. Has the demand_runs table been created?" }, { status: 500 });

@@ -38,26 +38,54 @@ export function htmlToText(html: string): string {
     .replace(/[ \t]+/g, " ").split("\n").map((l) => l.trim()).filter(Boolean).join("\n");
 }
 
-export async function readPage(url: string, maxChars = 3500, timeoutMs = 6000): Promise<string> {
-  if (!isAllowedUrl(url)) return "";
+const SKIP_LINK_RE = /\.(jpe?g|png|gif|webp|svg|ico|css|js|zip|mp4|mp3)(\?|$)|\/(login|signin|sign-in|signup|register|privacy|terms|cookie|cart|checkout|account)(\/|$|\?)|^(mailto|tel|javascript):/i;
+const SHARE_RE = /(facebook\.com\/sharer|twitter\.com\/intent|wa\.me\/\?text|linkedin\.com\/share|pinterest\.com\/pin)/i;
+
+export interface PageLink { url: string; text: string }
+
+/** Outbound links worth considering: absolute http(s), safe, not assets/login/share links, one per URL. */
+export function extractLinks(html: string, base: string, max = 40): PageLink[] {
+  const out: PageLink[] = [];
+  const seen = new Set<string>();
+  let baseHost = "";
+  try { baseHost = new URL(base).hostname; } catch { return out; }
+  const re = /<a\b[^>]*?href\s*=\s*["']([^"'#][^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && out.length < max) {
+    let abs: string;
+    try { abs = new URL(m[1].trim(), base).toString(); } catch { continue; }
+    if (SKIP_LINK_RE.test(abs) || SHARE_RE.test(abs) || !isAllowedUrl(abs)) continue;
+    const key = abs.replace(/#.*$/, "").replace(/\/$/, "");
+    if (seen.has(key) || key === base.replace(/\/$/, "")) continue;
+    const text = htmlToText(m[2]).slice(0, 80);
+    // Links with no words and pointing back to the same site's root are navigation noise.
+    if (!text && new URL(abs).hostname === baseHost) continue;
+    seen.add(key);
+    out.push({ url: abs, text });
+  }
+  return out;
+}
+
+async function fetchHtml(url: string, timeoutMs: number): Promise<{ html: string; finalUrl: string } | null> {
+  if (!isAllowedUrl(url)) return null;
   try {
     const host = new URL(url).hostname;
     if (!isIP(host)) {
       const addrs = await lookup(host, { all: true });
-      if (!addrs.length || addrs.some((a) => isPrivateAddress(a.address))) return "";
+      if (!addrs.length || addrs.some((a) => isPrivateAddress(a.address))) return null;
     }
     const res = await fetch(url, {
       signal: AbortSignal.timeout(timeoutMs),
       redirect: "follow",
       headers: { "User-Agent": "BuildMindLeadFinder/1.0 (+https://buildmind.live)", Accept: "text/html,text/plain" },
     });
-    if (!res.ok) return "";
+    if (!res.ok) return null;
     // A redirect may have landed somewhere internal.
-    if (!isAllowedUrl(res.url)) return "";
+    if (!isAllowedUrl(res.url)) return null;
     const type = res.headers.get("content-type") ?? "";
-    if (!/text\/html|text\/plain|application\/xhtml/i.test(type)) return "";
+    if (!/text\/html|text\/plain|application\/xhtml/i.test(type)) return null;
     const reader = res.body?.getReader();
-    if (!reader) return "";
+    if (!reader) return null;
     let received = 0;
     const chunks: Uint8Array[] = [];
     while (received < MAX_BYTES) {
@@ -67,9 +95,20 @@ export async function readPage(url: string, maxChars = 3500, timeoutMs = 6000): 
       received += value.length;
     }
     reader.cancel().catch(() => {});
-    const html = new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks));
-    return htmlToText(html).slice(0, maxChars);
+    return { html: new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks)), finalUrl: res.url };
   } catch {
-    return "";
+    return null;
   }
+}
+
+export async function readPage(url: string, maxChars = 3500, timeoutMs = 6000): Promise<string> {
+  const got = await fetchHtml(url, timeoutMs);
+  return got ? htmlToText(got.html).slice(0, maxChars) : "";
+}
+
+/** Text plus the links on the page, so a later round can follow the promising ones. */
+export async function readPageWithLinks(url: string, maxChars = 3500, timeoutMs = 6000): Promise<{ text: string; links: PageLink[] }> {
+  const got = await fetchHtml(url, timeoutMs);
+  if (!got) return { text: "", links: [] };
+  return { text: htmlToText(got.html).slice(0, maxChars), links: extractLinks(got.html, got.finalUrl) };
 }
