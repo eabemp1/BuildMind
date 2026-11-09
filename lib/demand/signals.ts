@@ -38,6 +38,53 @@ export function quoteInMaterial(quote: string, texts: string[]): boolean {
   return texts.some((t) => norm(t).includes(q));
 }
 
+/**
+ * Find where a quote really sits in a page. Models often change a word, a spelling or the punctuation when they
+ * "copy", so exact matching threw away real posts. This accepts a quote when at least 80% of its words (and at least
+ * 5) appear as one unbroken run on the page, and returns the page's OWN words for that run, so what is shown is
+ * always real text from the page, never the model's rewording.
+ */
+export function locateQuote(quote: string, text: string): string | null {
+  const q = norm(quote).split(" ").filter(Boolean);
+  if (q.length < 5) return norm(quote).length >= 25 && norm(text).includes(norm(quote)) ? quote : null;
+  const words: Array<{ n: string; start: number; end: number }> = [];
+  for (const m of text.matchAll(/\S+/g)) {
+    const n = norm(m[0]);
+    if (n) words.push({ n, start: m.index ?? 0, end: (m.index ?? 0) + m[0].length });
+  }
+  // Slide a window about the quote's length over the page and keep the one that shares the most of the quote's
+  // words in order (a longest common subsequence). A changed or merged word then costs one word, not the whole match.
+  const qset = new Set(q);
+  const span = q.length + 3;
+  let best = 0, bestStart = -1;
+  for (let st = 0; st + 1 <= words.length; st++) {
+    if (!qset.has(words[st].n)) continue; // a good window starts on one of the quote's words
+    const win = words.slice(st, st + span);
+    let prev = new Array<number>(win.length + 1).fill(0);
+    for (let i = 1; i <= q.length; i++) {
+      const cur = new Array<number>(win.length + 1).fill(0);
+      for (let j = 1; j <= win.length; j++) cur[j] = q[i - 1] === win[j - 1].n ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+      prev = cur;
+    }
+    const lcs = prev[win.length];
+    if (lcs > best) { best = lcs; bestStart = st; }
+  }
+  if (best < Math.max(5, Math.ceil(q.length * 0.8))) return null;
+  // Re-run the best window keeping the whole table, then walk back to find which page words really matched.
+  const win = words.slice(bestStart, bestStart + span);
+  const t: number[][] = Array.from({ length: q.length + 1 }, () => new Array<number>(win.length + 1).fill(0));
+  for (let i = 1; i <= q.length; i++) for (let j = 1; j <= win.length; j++) t[i][j] = q[i - 1] === win[j - 1].n ? t[i - 1][j - 1] + 1 : Math.max(t[i - 1][j], t[i][j - 1]);
+  let i = q.length, j = win.length, firstJ = -1, lastJ = -1;
+  while (i > 0 && j > 0) {
+    if (q[i - 1] === win[j - 1].n && t[i][j] === t[i - 1][j - 1] + 1) { if (lastJ < 0) lastJ = j - 1; firstJ = j - 1; i--; j--; }
+    else if (t[i - 1][j] >= t[i][j - 1]) i--;
+    else j--;
+  }
+  if (firstJ < 0) return null;
+  const excerpt = text.slice(win[firstJ].start, win[lastJ].end).trim().slice(0, 300);
+  return excerpt.length >= 25 ? excerpt : null;
+}
+
 export function validateSignals(raw: unknown, textByUrl: Map<string, string>, max = 30): Signal[] {
   const list = Array.isArray(raw) ? raw : [];
   const texts = new Map<string, string>();
@@ -52,14 +99,15 @@ export function validateSignals(raw: unknown, textByUrl: Map<string, string>, ma
     const url = clean(r.url, 400);
     const text = texts.get(urlKey(url));
     if (!quote || !text) continue;                       // the URL must be one we really read
-    if (!quoteInMaterial(quote, [text])) continue;       // the words must be on that page
-    const qk = norm(quote);
+    const real = locateQuote(quote, text);               // the words must be on that page
+    if (!real) continue;
+    const qk = norm(real);
     if (seenQuote.has(qk)) continue;
     const k = urlKey(url);
     if ((perUrl.get(k) ?? 0) >= 3) continue;             // one busy page must not look like many people
     seenQuote.add(qk); perUrl.set(k, (perUrl.get(k) ?? 0) + 1);
     out.push({
-      quote, url,
+      quote: real, url,
       kind: KINDS.includes(r.kind as SignalKind) ? (r.kind as SignalKind) : "ask",
       theme: clean(r.theme, 50).toLowerCase() || "other",
       place: clean(r.place, 80),

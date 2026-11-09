@@ -18,7 +18,7 @@ export interface LeadRun {
   /** Why it came back thin, in plain words (null when it did not). */
   reason: string | null;
   queries: string[];
-  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number; proposed: number; modelFailed: number; followed: number };
+  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number; proposed: number; modelFailed: number; followed: number; modelError?: string };
 }
 
 const MAX_PAGES = 10;
@@ -127,17 +127,10 @@ ${shortlist.map((l) => `- ${l.text || "(no text)"} | ${l.url}`).join("\n")}` },
     .filter((p) => p.text.length > 40) as Page[];
 }
 
-async function extract(i: LeadInput, pages: Page[], places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[]; proposed: number; failed: boolean }> {
+async function extract(i: LeadInput, pages: Page[], places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[]; proposed: number; failed: boolean; error?: string }> {
   const allowed = [...pages.map((p) => p.url), ...snippets.map((s) => s.url), ...places.map((p) => p.url)];
   if (!pages.length && !places.length) return { leads: [], proposed: 0, failed: false };
-  const material = [
-    ...pages.map((p, n) => `[PAGE ${n + 1}] ${p.title}\nURL: ${p.url}\n${p.text}`),
-    snippets.length ? `[OTHER SEARCH RESULTS, snippets only]\n${snippets.filter((x) => !pages.some((p) => p.url === x.url) && isAllowedUrl(x.url) && !isGenericLead(x.title, x.url, targetsFounders(i.customer))).slice(0, 40).map((x) => `- ${x.title} URL: ${x.url} ${x.snippet}`.slice(0, 380)).join("\n")}` : "",
-    places.length ? `[OPENSTREETMAP PLACES]\n${places.map((p) => `- ${p.name} (${p.type}) URL: ${p.url}${p.phone ? ` phone: ${p.phone}` : ""}${p.website ? ` site: ${p.website}` : ""}`).join("\n")}` : "",
-  ].filter(Boolean).join("\n\n");
-  try {
-    const out = await callModelJSON<{ leads?: unknown }>([
-      { role: "system", content: `You find real places a founder can reach their first customers. Use ONLY the material given. Return JSON: {"leads": [up to 12 of {"name","kind","where","url","why_fit","evidence","how_to_reach","first_message"}]}.
+  const system = `You find real places a founder can reach their first customers. Use ONLY the material given. Return JSON: {"leads": [up to 12 of {"name","kind","where","url","why_fit","evidence","how_to_reach","first_message"}]}.
 Rules:
 - kind is one of: business, public_community, page, association, event, listing.
 - url MUST be copied exactly from a URL in the material. Never invent one.
@@ -146,19 +139,51 @@ Rules:
 - how_to_reach: one concrete way to contact them in public (page message, listed phone, visit, comment, email on the page). Do not guess private contact details.
 - Businesses, public pages, associations, events and public communities only. No private individuals. No startup or founder communities, no big global subreddits.
 - first_message: 2 to 4 short plain sentences the founder can send. Say who they are, the specific thing they want to learn or offer, and ask one easy question. No hype, no invented facts or numbers. Write it in the language the founder wrote their customers and problem in.
-- List every real fit you can support with evidence, up to 12. Weak leads are still dropped, but do not stop at two or three when the material holds more. If the material holds nothing real, return {"leads": []}.` },
-      { role: "user", content: `Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
-    ], { role: "reasoning", temperature: 0.2, maxTokens: 3500 });
-    const proposed = Array.isArray(out?.leads) ? out.leads.length : 0;
-    return { leads: validateLeads(out?.leads, allowed, 12, targetsFounders(i.customer)), proposed, failed: false };
-  } catch (e) {
-    console.error("[leads] extract failed:", (e as Error)?.message ?? e);
-    return { leads: [], proposed: 0, failed: true };
+- List every real fit you can support with evidence, up to 12. Weak leads are still dropped, but do not stop at two or three when the material holds more. If the material holds nothing real, return {"leads": []}.`;
+  const allowFounders = targetsFounders(i.customer);
+  // Too much text in one request is the usual reason a model call is refused (token limits). Try a moderate amount,
+  // then once more with far less on the fast model, before reporting failure.
+  const attempts: Array<{ pages: number; chars: number; snippets: number; role: "reasoning" | "fast" }> = [
+    { pages: 12, chars: 2000, snippets: 25, role: "reasoning" },
+    { pages: 6, chars: 1100, snippets: 10, role: "fast" },
+  ];
+  let lastError = "";
+  for (const [n, att] of attempts.entries()) {
+    try {
+      const material = buildLeadMaterial(pages, snippets, places, att, (x) => isAllowedUrl(x.url) && !isGenericLead(x.title, x.url, allowFounders));
+      const out = await callModelJSON<{ leads?: unknown }>([
+        { role: "system", content: system },
+        { role: "user", content: `Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
+      ], { role: att.role, temperature: 0.2, maxTokens: 3000 });
+      const proposed = Array.isArray(out?.leads) ? out.leads.length : 0;
+      return { leads: validateLeads(out?.leads, allowed, 12, allowFounders), proposed, failed: false };
+    } catch (e) {
+      lastError = String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 200);
+      console.error(`[leads] extract attempt=${n + 1} failed:`, lastError);
+    }
   }
+  return { leads: [], proposed: 0, failed: true, error: lastError };
 }
 
-export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; modelFailed?: number }): string {
-  if ((st.modelFailed ?? 0) > 0 && found === 0) return "I found pages to read, but the AI step failed, so nothing could be turned into leads. This is usually a model quota or outage. Try again in a few minutes.";
+/** The text sent to the model: capped pages, each cut short, a few snippets, and the map listings. Pure. */
+export function buildLeadMaterial(
+  pages: Array<{ title: string; url: string; text: string }>,
+  snippets: SearchResult[],
+  places: OsmPlace[],
+  lim: { pages: number; chars: number; snippets: number },
+  keepSnippet: (s: SearchResult) => boolean = () => true,
+): string {
+  const readUrls = new Set(pages.map((p) => p.url));
+  const other = snippets.filter((x) => !readUrls.has(x.url) && keepSnippet(x)).slice(0, lim.snippets);
+  return [
+    ...pages.slice(0, lim.pages).map((p, n) => `[PAGE ${n + 1}] ${p.title}\nURL: ${p.url}\n${p.text.slice(0, lim.chars)}`),
+    other.length ? `[OTHER SEARCH RESULTS, snippets only]\n${other.map((x) => `- ${x.title} URL: ${x.url} ${x.snippet}`.slice(0, 300)).join("\n")}` : "",
+    places.length ? `[OPENSTREETMAP PLACES]\n${places.slice(0, 25).map((p) => `- ${p.name} (${p.type}) URL: ${p.url}${p.phone ? ` phone: ${p.phone}` : ""}${p.website ? ` site: ${p.website}` : ""}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; modelFailed?: number; modelError?: string }): string {
+  if ((st.modelFailed ?? 0) > 0 && found === 0) return `I found pages to read, but the AI step failed twice, so nothing could be turned into leads.${st.modelError ? ` Reason: ${st.modelError}` : ""} This is usually a model quota or outage. Try again in a few minutes.`;
   if (st.resultsFound === 0 && st.places === 0) return "The search services returned nothing, so there was nothing to read. This usually means a search key is missing or out of quota, or the place name was not recognised.";
   if (st.pagesRead === 0 && st.places === 0) return "Searches found pages, but none of them could be opened and read.";
   if ((st.proposed ?? 0) > 0 && found === 0) return `I read ${st.pagesRead} pages and the AI suggested ${st.proposed} leads, but none had a link and a quoted fact I could check, so I dropped them rather than show you guesses. Try describing your customers differently.`;
@@ -167,7 +192,7 @@ export function thinReason(found: number, st: { resultsFound: number; pagesRead:
 
 export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false): Promise<LeadRun> {
   const i = cleanInput(input);
-  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, modelFailed: 0, followed: 0 };
+  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, modelFailed: 0, followed: 0, modelError: undefined as string | undefined };
   const maxRounds = light ? 1 : 3;
   const maxPages = light ? 6 : MAX_PAGES;
   const allQueries: string[] = [];
@@ -184,8 +209,8 @@ export async function findLeads(input: Partial<LeadInput>, deadline = Date.now()
     followed.forEach((p) => seen.add(p.url));
     const pages = [...got.pages, ...followed];
     stats.searches += got.searches; stats.resultsFound += got.resultsFound; stats.pagesRead += pages.length; stats.places += got.places.length; stats.followed += followed.length; stats.rounds = round;
-    const { leads: found, proposed, failed } = await extract(i, pages, got.places, got.snippets);
-    stats.proposed += proposed; stats.modelFailed += failed ? 1 : 0;
+    const { leads: found, proposed, failed, error } = await extract(i, pages, got.places, got.snippets);
+    stats.proposed += proposed; stats.modelFailed += failed ? 1 : 0; if (error) stats.modelError = error;
     console.log(`[leads] round=${round} light=${light} results=${got.resultsFound} pages=${got.pages.length} followed=${followed.length} places=${got.places.length} proposed=${proposed} kept=${found.length} modelFailed=${failed}`);
     const have = new Set(leads.map((l) => l.url));
     const haveName = new Set(leads.map((l) => l.name.toLowerCase()));
