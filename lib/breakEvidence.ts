@@ -465,7 +465,7 @@ export function buildFalsifiers(input: EvidenceInput): Falsifier[] {
     out.push({
       assumption: `This risk is manageable: ${clip(worst.title, 80)}`,
       test: worst.mitigation && worst.mitigation.trim() ? clip(worst.mitigation, 160) : "Run the cheapest possible test that would show whether this risk materialises.",
-      provenWrongIf: "The cheapest test fails, or you cannot design one that costs less than two weeks of work.",
+      provenWrongIf: `The test comes back negative, or you cannot find a way to test "${clip(worst.title, 60)}" in under two weeks.`,
       component: "risk", predictedHold: riskHold(worst.severity),
     });
   }
