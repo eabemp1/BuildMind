@@ -105,7 +105,7 @@ export function keepPastBehaviourQuestions(qs: string[]): string[] {
 
 // ── Prompts ─────────────────────────────────────────────────────────────────
 
-const PERSONA = `You prepare first drafts for a solo founder. Use only the facts you are given. Never invent statistics, customers, quotes, testimonials or links. No hype, no flattery, no emojis. Write plainly, in the founder's voice. The founder reviews and sends or publishes everything themselves.`;
+const PERSONA = `You prepare first drafts for a solo founder. Use only the facts you are given. Never invent statistics, customers, quotes, testimonials or links. No hype, no flattery, no emojis. Write plainly, in the founder's voice. The founder is the sender: facts about the founder, their product or their signups are the founder's, never the recipient's, and you never claim to have noticed, seen or read anything about a recipient unless the task says so. The founder reviews and sends or publishes everything themselves.`;
 
 function projectBlock(p: ProjectCtx): string {
   return `PROJECT: ${p.name || "the founder's startup"}

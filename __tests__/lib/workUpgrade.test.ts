@@ -58,3 +58,19 @@ describe("draftProblems", () => {
     expect(p).toMatch(/Do not add facts/);
   });
 });
+
+describe("who is who", () => {
+  const spec = SPEC_BY_ID.whatsapp_message;
+  const make = (texts: string[]) => normalizeWork({ title: "t", summary: "s", variants: texts.map((t, i) => ({ label: `v${i}`, text: t })) }, spec, "", () => [])!;
+  it("flags 'I noticed you just signed up two users' when the brief never says it about the reader", () => {
+    const r = make(["Hey, I noticed you just signed up two real users - congrats! What is the hardest part now?", "Kwame, how many bookings did you lose to no-shows last week?"]);
+    expect(draftProblems(r, spec, "Who: a founder. Goal: a chat. Context: I just got my first two users").join(" ")).toMatch(/noticed, saw or read/);
+  });
+  it("allows 'I saw you at the hub' when the brief says so", () => {
+    const r = make(["Hi Ama, I saw you at the hub on Friday. How do you handle missed bookings?", "Ama, how many bookings did you lose last week?"]);
+    expect(draftProblems(r, spec, "Context: we both were at the hub on Friday, I saw you there").join(" ")).not.toMatch(/noticed, saw or read/);
+  });
+  it("the prompt states that founder facts are the sender's", () => {
+    expect(buildPrompt(spec, { who: "a", goal: "b" }, project)).toMatch(/The founder is the SENDER/);
+  });
+});

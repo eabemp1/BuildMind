@@ -48,6 +48,8 @@ RULES
 - Where a needed fact is missing, write [add: exactly what is needed] instead of guessing.
 - Plain, specific language. No buzzwords, no flattery, no hype. No emojis unless the text is a WhatsApp message.
 - Write for the founder's real audience in their real market. Do not assume US conventions, currency or channels.
+- The founder is the SENDER. Anything about the founder, their product, their signups or their milestones belongs to the founder. Never turn it into a fact about the reader (wrong: "I noticed you just signed up two users"; right: "I just got my first two users"). The reader is usually someone the founder has not met.
+- Never say you saw, noticed, read or heard something about the reader unless the BRIEF states exactly that.
 - Do exactly the job below and nothing else.
 
 QUALITY BAR (check your draft against every line before you answer)
@@ -158,11 +160,18 @@ export function readRefined(raw: unknown): string | null {
 // ── Second pass ─────────────────────────────────────────────────────────────
 
 const OPENS_ABOUT_FOUNDER = /^\s*(?:(?:subject:[^\n]*\n+)?\s*)?(?:hi[^,\n]*,?\s*)?(?:i['’]?m (?:building|working|the founder)|i am (?:building|working|the founder)|my name is|we are (?:building|a)|we['’]re (?:building|a)|at \w+, we)/i;
+const CLAIMS_TO_HAVE_SEEN = /\bI (?:just )?(?:noticed|saw|read|heard|came across|spotted)\b([^.?!\n]{0,80})/gi;
 const words = (t: string) => new Set((t.toLowerCase().match(/[a-z0-9']+/g) ?? []).filter((w) => w.length > 3));
 
 /** Problems a second pass can fix: marketing words, near-identical versions, an opening about the founder. */
-export function draftProblems(result: WorkResult, spec: WorkSpec): string[] {
+export function draftProblems(result: WorkResult, spec: WorkSpec, allowed = ""): string[] {
   const out: string[] = [];
+  const known = words(allowed);
+  const invented = result.variants.some((v) => Array.from(v.text.matchAll(CLAIMS_TO_HAVE_SEEN)).some((m) => {
+    const w = Array.from(words(m[1]));
+    return w.length > 0 && w.filter((x) => known.has(x)).length / w.length < 0.5;
+  }));
+  if (invented) out.push("it says the sender noticed, saw or read something about the reader that the brief never states; remove that claim and open with a question instead. Facts about the founder stay the founder's (\"I just got...\"), never the reader's");
   if (result.needs.some((n) => n.label.startsWith("Swap a few words"))) out.push("it uses marketing words; say it in plain everyday words");
   if (spec.shape === "variants" && result.variants.length > 1) {
     for (let i = 0; i < result.variants.length; i++) for (let j = i + 1; j < result.variants.length; j++) {
