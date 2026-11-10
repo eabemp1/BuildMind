@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planTodayMission, parseRecentTasks } from "@/lib/todayMission";
-import { DELEGATION_RE } from "@/lib/agentToToday";
+import { planTodayMission, parseRecentTasks, DELEGATION_RE } from "@/lib/todayMission";
 
 const base = { stage: "Idea", recentTasks: [], avoidance: [], blockers: [], activeGoals: [], noUsers: true };
 

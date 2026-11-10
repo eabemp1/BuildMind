@@ -261,7 +261,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
 
       <div style={{ marginTop: narrow ? 26 : 38, display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
         <span style={{ ...mono, fontSize: 12, color: ink }}>{done ? "Done" : lowConfidence ? "Finding out first" : kicker ?? "Today"}</span>
-        {timeText ? <span style={{ ...mono, fontSize: 12, color: "var(--bm-text3)" }}>Whole task: {timeText}</span> : null}
+        {timeText ? <span style={{ ...mono, fontSize: 12, color: "var(--bm-text3)" }}>Your time today: {timeText}</span> : null}
       </div>
 
       <h2

@@ -158,6 +158,107 @@ const BANK: Record<MissionKind, Variant[]> = {
   ],
 };
 
+// More variants per kind, so a founder who lands on a fallback does not see the same task every few days.
+// Channels are not assumed: each says where, or leaves the choice to the founder.
+const MORE: Partial<Record<MissionKind, Variant[]>> = {
+  outreach: [
+    ({ userType, problemDesc }) => ({
+      action: `Message 5 ${userType} you can reach today, on whichever app you already use with them, and ask for one story about the last time ${problemDesc} cost them something.`,
+      platform: "WhatsApp or the app you already use",
+      message: `Hi, quick question. When did ${problemDesc} last cause you a problem, and what did you do about it? A one-line answer is enough.`,
+      why: `People answer a question about their own week faster than a pitch, and the answers show who has the problem.`,
+      time: "25 minutes",
+      done_when: `Five messages are sent, and each names a specific person.`,
+      first_step: `List the 5 closest ${userType} you can reach today.`,
+    }),
+  ],
+  follow_up: [
+    ({ productName }) => ({
+      action: `Pick the one person who showed the most interest in ${productName} and send them a message that names the next step and a day to do it.`,
+      platform: "Whatever channel you spoke on",
+      message: `Thanks for your time earlier. Would Thursday work to show you a first version? If not, tell me what would make it useful.`,
+      why: `Interest fades in days. A named next step with a date turns it into a yes or a clear no.`,
+      time: "15 minutes",
+      done_when: `One message with a next step and a day is sent.`,
+      first_step: `Scroll your chats and pick the most interested person.`,
+    }),
+    ({ userType }) => ({
+      action: `Send a thank-you and one new question to the ${userType} you talked to most recently, built on something they said.`,
+      platform: "Whatever channel you spoke on",
+      message: `You mentioned something I keep thinking about. One more question: what would have to be true for you to try a tool for this?`,
+      why: `A second question from the same person shows how serious the problem is, at almost no cost.`,
+      time: "15 minutes",
+      done_when: `The message is sent and refers to something they said.`,
+      first_step: `Re-read your notes from that conversation and pick one thing they said.`,
+    }),
+  ],
+  publish: [
+    ({ problemDesc, userType }) => ({
+      action: `Write one short post about ${problemDesc} from the point of view of ${userType}, publish it in a group where they already talk, and answer every reply.`,
+      platform: "A WhatsApp or Facebook group where they already talk",
+      message: `For people dealing with ${problemDesc}: what is the part nobody warns you about? I'm collecting stories.`,
+      why: `Posting where the customers already talk costs nothing, and replies are research.`,
+      time: "30 minutes",
+      done_when: `The post is live and you have replied to every comment.`,
+      first_step: `Pick the one group where your customers are most active.`,
+    }),
+    ({ productName }) => ({
+      action: `Post a 30-second screen recording of ${productName} doing one thing, with a single sentence on what it replaces.`,
+      platform: "WhatsApp status, Facebook or LinkedIn",
+      message: `This is ${productName} doing one thing. It replaces the way you probably do it today. Does this look useful?`,
+      why: `Showing it beats describing it, and the reactions tell you if the point lands.`,
+      time: "30 minutes",
+      done_when: `The recording is posted and you have the link.`,
+      first_step: `Record yourself doing the one thing, once, without editing.`,
+    }),
+  ],
+  pricing: [
+    ({ productName, userType }) => ({
+      action: `Ask 2 ${userType} what they pay today for the thing ${productName} replaces, and what price would feel fair for something better.`,
+      platform: "",
+      message: `What do you pay now to handle this, in money or time? And what would feel fair for something that does it for you?`,
+      why: `What people already pay is a stronger guide than any number you invent.`,
+      time: "30 minutes",
+      done_when: `Two people have named what they pay now and a fair price.`,
+      first_step: `Pick the 2 people you know who deal with this most.`,
+    }),
+  ],
+  analyze: [
+    ({ userType }) => ({
+      action: `Put every conversation with ${userType} in one list and mark the pain each one named. Circle the pain that came up most.`,
+      platform: "",
+      message: "",
+      why: `One pain mentioned by several people is your first real signal. Seeing it on one page stops you guessing.`,
+      time: "30 minutes",
+      done_when: `The list exists and one pain is circled with the number of people who named it.`,
+      first_step: `Open your notes and copy the pain from each conversation into one list.`,
+    }),
+  ],
+  unblock: [
+    () => ({
+      action: `Name the one task you keep moving to tomorrow, write the first sentence or step of it, and send that to one person to hold you to it.`,
+      platform: "",
+      message: "",
+      why: `Saying it to someone makes the first step real, and the first step is the hard part.`,
+      time: "15 minutes",
+      done_when: `The first step is written and one person has been told.`,
+      first_step: `Write the task's name, then the very first thing you would do.`,
+    }),
+  ],
+  reset: [
+    ({ productName }) => ({
+      action: `Close the oldest unfinished small thing on ${productName} (a reply, a bug, a note) and mark it done.`,
+      platform: "",
+      message: "",
+      why: `Finishing one old thing clears the weight and makes the next task easier to start.`,
+      time: "15 minutes",
+      done_when: `One old item is finished and crossed off.`,
+      first_step: `Pick the oldest item on your list that takes under 15 minutes.`,
+    }),
+  ],
+};
+(Object.keys(MORE) as MissionKind[]).forEach((k) => { BANK[k] = [...(BANK[k] ?? []), ...(MORE[k] ?? [])]; });
+
 function hash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
