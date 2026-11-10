@@ -17,6 +17,7 @@
  */
 
 import type { EvidenceTier } from "@/lib/evidence";
+import { DELEGATION_RE } from "@/lib/todayMission";
 
 export interface AgentFindingRow {
   id: string;
@@ -185,8 +186,6 @@ export function tierPhrase(item: Pick<AgentEvidenceItem, "tier" | "source_count"
   const n = item.source_count;
   return `${label}, ${n === 0 ? "no external source" : n === 1 ? "1 source" : `${n} sources`}`;
 }
-
-export const DELEGATION_RE = /\b(hire|hiring|post a (contract|job)|freelanc\w*|upwork|fiverr|outsourc\w*|delegat\w*|contractor|virtual assistant)\b/i;
 
 function sentence(s: string): string {
   const t = s.trim();

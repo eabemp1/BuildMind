@@ -141,27 +141,31 @@ export function missionMeta(kind: MissionKind) { return KIND_META[kind]; }
 
 // ── Mapping a task's text back to a kind ────────────────────────────────────
 
-const FOLLOW_UP_RE = /\b(follow[\s-]?up|follow up with|reply to|respond to|circle back|chase|nudge|go back to the \w+ (people|users|founders|customers)|people who (replied|responded|tried))\b/i;
-const PRICING_RE = /\b(pric(e|es|ing)|charge|invoice|payment link|paywall|paid plan|ask .{0,20}(to pay|for money)|stripe|paystack|polar)\b/i;
+const FOLLOW_UP_RE = /\b(follow[\s-]?up|follow up with|reply to|respond to|circle back|chase|nudge|go back to the \w+ (people|users|founders|customers)|people who (replied|responded|tried)|(person|people) who (showed|replied|responded)|thank[\s-]you)\b/i;
+const PRICING_RE = /\b((set|write|test|show|name|raise|change|decide|put|add)\b[^.]{0,20}\b(price|prices|pricing)\b|pricing (page|test|experiment)|what (they|people|you) (pay|would pay)|charge|invoice a|payment link|paywall|paid plan|ask .{0,20}(to pay|for money)|stripe|paystack|polar)\b/i;
 const PUBLISH_RE = /\b(publish|post(ing)? (a|one|your|the)|write (a|one) (post|thread|article)|thread|changelog|demo (video|clip)|record a (demo|video)|launch (on|post))\b/i;
 const INTERVIEW_RE = /\b(interview|jump on a call|call with|talk to|speak (to|with)|15[\s-]?minute call|user call|conversations? with|walk you through|book or hold)\b/i;
 /** Sending a number of messages is outreach, even when the message asks a research question. */
 const OUTREACH_RE = /\b(send (\d+|one|two|three|four|five|ten)\b[^.]{0,40}\b(messages?|dms?|emails?|invites?)|(dm|message|email|whatsapp) (\d+|two|three|five|ten)\b|cold (email|dm|message)s?|personal messages? to)/i;
-const RESET_RE = /\b(small,? visible (improvement|win)|one small (win|improvement)|15[\s-]minute win)\b/i;
-const UNBLOCK_RE = /\b(finally|stop avoiding|the thing you|the one you|putting off|keep(s)? avoiding|first 20 minutes)\b/i;
+const RESET_RE = /\b(oldest unfinished|close the oldest|small,? visible (improvement|win)|one small (win|improvement)|15[\s-]minute win)\b/i;
+const ANALYZE_RE = /\b(re-read|put every .{0,40} in one (list|page)|write a \d[\s-]line decision|mark the pain|circle the)\b/i;
+const UNBLOCK_RE = /\b(keeps? (moving|putting|pushing)|finally|stop avoiding|the thing you|the one you|putting off|keep(s)? avoiding|first 20 minutes)\b/i;
 
 /** The part of a task that says what to do. What it is about (the founder's own problem, which may mention prices or payments) comes after. */
 function taskHead(t: string): string {
   return t.split(/\b(about|asking|because|so that|and ask|to learn|to see|on how|who |whose |that )/i)[0].trim() || t;
 }
 
+const BUILD_HEAD_RE = /^\s*(ship|build|implement|deploy|refactor|integrate|fix|code|add|create)\b/i;
+
 function kindByVerb(t: string): MissionKind | null {
   if (FOLLOW_UP_RE.test(t)) return "follow_up";
-  if (PRICING_RE.test(t)) return "pricing";
+  if (ANALYZE_RE.test(t)) return "analyze";
   if (OUTREACH_RE.test(t)) return "outreach";
   if (INTERVIEW_RE.test(t)) return "interview";
   if (UNBLOCK_RE.test(t)) return "unblock";
   if (RESET_RE.test(t)) return "reset";
+  if (PRICING_RE.test(t)) return "pricing";
   if (PUBLISH_RE.test(t)) return "publish";
   return null;
 }
@@ -170,8 +174,10 @@ export function kindOfTask(text: string): MissionKind | null {
   const t = String(text ?? "");
   if (!t.trim()) return null;
   // The head decides first, so a founder whose problem is about pricing or invoices does not have every task read as a pricing task.
-  const byHead = kindByVerb(taskHead(t));
+  const head = taskHead(t);
+  const byHead = kindByVerb(head);
   if (byHead) return byHead;
+  if (BUILD_HEAD_RE.test(head)) return "build";
   const byText = kindByVerb(t);
   if (byText) return byText;
   const c = classifyTask(t);
@@ -327,7 +333,7 @@ export function planTodayMission(s: MissionSignals): Mission {
 
   // 5. Energy.
   if (s.cognitiveLoad === "drained") {
-    bump("reset", 2.5); bump("follow_up", 1); bump("unblock", -1.5); bump("build", -1.5); bump("interview", -1.5); bump("analyze", -0.5);
+    bump("reset", 2.5); bump("follow_up", 1); bump("unblock", -1.5); bump("build", -2.5); bump("interview", -3); bump("analyze", -0.5);
     reasons.push("Energy is low today, so the task is short and low-judgment.");
   } else if (s.cognitiveLoad === "autopilot") {
     bump("outreach", 1); bump("follow_up", 1); bump("analyze", -1);
@@ -452,6 +458,9 @@ export function similarity(a: string, b: string): number {
   return inter / (A.size + B.size - inter);
 }
 
+/** Hiring or outsourcing someone to do the founder's own outreach is a way around talking to customers. */
+export const DELEGATION_RE = /\b(hire (a|an|someone|somebody)|hiring (a|an|someone|somebody)|post a (contract|job)|upwork|fiverr|(freelance|job) (platforms?|boards?|marketplaces?)|outsourc\w* (your|the|cold|outreach)|delegat\w* (your|the|cold|outreach)|virtual assistant)\b/i;
+
 /** Words in a customer description that say nothing about who they are. */
 const USER_FILLER = new Set(["independent", "small", "local", "new", "young", "early", "solo", "freelance", "first", "time", "full", "part", "average", "typical", "busy", "individual", "private", "professional"]);
 
@@ -474,6 +483,7 @@ export function assessTaskQuality(c: CandidateTask, mission: Mission, ctx: Quali
   if (task.length < 25) hard.push("too_short");
   if (task.length > 320) hard.push("too_long");
   if (GENERIC_RE.test(task)) hard.push("generic");
+  if (DELEGATION_RE.test(task)) hard.push("hands_off_the_work");
   if (PLACEHOLDER_RE.test(task) || PLACEHOLDER_RE.test(c.draft ?? "")) hard.push("placeholder");
   if (!c.done_when || c.done_when.trim().length < 8) hard.push("no_done_when");
   for (const rule of guardRules(task, ctx.ledger, c.draft, ctx.stalled)) hard.push(rule);
@@ -530,6 +540,7 @@ const REASON_TEXT: Record<string, string> = {
   missing_number: "Needs a specific number for this kind of task.",
   missing_platform: "Needs a named platform or channel for this kind of task.",
   missing_user_type: "Needs to name the target user type.",
+  hands_off_the_work: "Hires or outsources work the founder should do themselves first.",
   not_grounded: "Does not use any of the founder's own product, user or blocker language.",
   no_first_step: "Missing a literal first step to start in the next 2 minutes.",
   bad_time_box: "Time box is outside 5-90 minutes.",
