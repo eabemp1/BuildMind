@@ -36,7 +36,7 @@ export function cleanInputs(spec: WorkSpec, raw: unknown): { values: Record<stri
   return { values };
 }
 
-export function buildPrompt(spec: WorkSpec, values: Record<string, string>, project: WorkProject, voice = "", founderName = ""): string {
+export function buildPrompt(spec: WorkSpec, values: Record<string, string>, project: WorkProject, voice = "", founderName = "", context = ""): string {
   const brief = spec.fields.map((f) => `${f.label}: ${values[f.key] ?? "(not given)"}`).join("\n");
   const shape = spec.shape === "variants"
     ? `Fill "variants" with exactly ${spec.count ?? 3} items. Use "sections" only for at most 2 short sections such as "Before you send". Leave nothing else.`
@@ -62,7 +62,7 @@ QUALITY BAR (check your draft against every line before you answer)
 
 JOB: ${spec.label}
 ${spec.instruction}
-${voiceBlock(voice)}${founderBlock(founderName)}
+${spec.craft ? `\nHOW THE BEST ONES ARE WRITTEN (follow this)\n${spec.craft}\n` : ""}${voiceBlock(voice)}${founderBlock(founderName)}
 PROJECT
 Name: ${project.name || "(not given)"}
 What it is: ${project.description || "(not given)"}
@@ -70,6 +70,7 @@ Problem: ${project.problem || "(not given)"}
 Who it is for: ${project.targetUsers || "(not given)"}
 Stage: ${project.stage || "(not given)"}
 
+${context ? `${context}\n` : ""}
 BRIEF
 ${brief}
 
@@ -152,4 +153,36 @@ Return JSON only: {"text":"the rewritten text"}`;
 export function readRefined(raw: unknown): string | null {
   const t = cleanBody(str((raw as { text?: unknown } | null)?.text, 6000));
   return t.length >= 5 ? t : null;
+}
+
+// ── Second pass ─────────────────────────────────────────────────────────────
+
+const OPENS_ABOUT_FOUNDER = /^\s*(?:(?:subject:[^\n]*\n+)?\s*)?(?:hi[^,\n]*,?\s*)?(?:i['’]?m (?:building|working|the founder)|i am (?:building|working|the founder)|my name is|we are (?:building|a)|we['’]re (?:building|a)|at \w+, we)/i;
+const words = (t: string) => new Set((t.toLowerCase().match(/[a-z0-9']+/g) ?? []).filter((w) => w.length > 3));
+
+/** Problems a second pass can fix: marketing words, near-identical versions, an opening about the founder. */
+export function draftProblems(result: WorkResult, spec: WorkSpec): string[] {
+  const out: string[] = [];
+  if (result.needs.some((n) => n.label.startsWith("Swap a few words"))) out.push("it uses marketing words; say it in plain everyday words");
+  if (spec.shape === "variants" && result.variants.length > 1) {
+    for (let i = 0; i < result.variants.length; i++) for (let j = i + 1; j < result.variants.length; j++) {
+      const a = words(result.variants[i].text), b = words(result.variants[j].text);
+      let inter = 0; a.forEach((w) => { if (b.has(w)) inter++; });
+      if (a.size && b.size && inter / (a.size + b.size - inter) >= 0.6) { out.push(`versions ${i + 1} and ${j + 1} are nearly the same text; make them differ in angle, length or ask`); i = result.variants.length; break; }
+    }
+    if (result.variants.some((v) => OPENS_ABOUT_FOUNDER.test(v.text))) out.push("a version opens with the founder or the product; open with the reader's situation or a question for them");
+  }
+  return out;
+}
+
+export function revisePrompt(original: string, spec: WorkSpec, problems: string[]): string {
+  return `You are editing a first draft for a solo founder. Fix ONLY these problems and keep everything else, including every fact and every [add: ...] marker:
+${problems.map((p) => `- ${p}`).join("\n")}
+
+Do not add facts, numbers, names or claims. Keep the same JSON shape and the same number of versions or sections.
+${spec.craft ? `\nHOW THE BEST ONES ARE WRITTEN\n${spec.craft}\n` : ""}
+DRAFT (JSON)
+${original}
+
+Return the corrected JSON only.`;
 }

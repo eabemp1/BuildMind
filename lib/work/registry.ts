@@ -45,6 +45,8 @@ export interface WorkSpec {
   count?: number;
   /** What to write and how, in the writer's terms. */
   instruction: string;
+  /** How the best ones are written: the craft that separates a good draft from a generic one. */
+  craft?: string;
   /** The part that stays with the founder. */
   you: string;
   /** Result contains figures the founder gave or must supply, so every number is checked. */
@@ -61,6 +63,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "variants", count: 3,
     instruction: "Write 3 WhatsApp messages: (1) a short first message, (2) a first message that uses the context, (3) a gentle follow-up for when they have not replied after two days. Each under 70 words, conversational, no formal letter style, no greetings like 'Dear', one clear and easy ask. Do not include links unless the founder gave one.",
     you: "Send it yourself, from your own number.",
+    craft: "First line says how they know the person or why them. Ask ONE small question answerable in a sentence or a voice note. No links, attachments or product pitch in the first message. Give an easy way out ('no worries if you are busy'). Sound like a person texting, never a brochure. The follow-up adds something new (a result, a sharper question), never 'just checking in'.",
   },
   {
     id: "email_sequence", group: "reach", label: "Email sequence", blurb: "Three emails: first touch, a follow-up and a last nudge",
@@ -68,6 +71,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "variants", count: 3,
     instruction: "Write a 3-email sequence. Email 1: first touch. Email 2: follow-up for day 3, adds one new useful point. Email 3: last nudge for day 7, short and easy to say no to. Each starts with 'Subject: ...' on its own line, then the body. Under 120 words each. One ask per email. No fake urgency, no claims about results the founder has not stated.",
     you: "Send them from your own email, on the days suggested.",
+    craft: "Subject lines under 7 words, specific, no clickbait. First line shows you know their situation. Email 1 has one idea and one ask. Email 2 adds new evidence or a short story, not a reminder. Email 3 closes the loop kindly and gives permission to say no or stop. At most one link in the whole sequence.",
   },
   {
     id: "partner_pitch", group: "reach", label: "Partner or community message", blurb: "Ask a group admin, partner or influencer for a favour",
@@ -75,6 +79,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "variants", count: 2,
     instruction: "Write 2 versions of a message asking this person for a favour. Lead with what is in it for them or their members, then the ask, then make it easy to say no. Under 110 words. No flattery, no pressure, no invented facts about them.",
     you: "Send it, and respect their answer.",
+    craft: "Group admins protect their members, so say what you will NOT do (spam, sell, post without asking). Lead with what members get. Offer to show it to the admin first. Ask for the smallest favour (one post, one pinned message or a 10-minute chat). Offer something checkable as proof.",
   },
   {
     id: "survey", group: "validate", label: "Short survey", blurb: "Questions that reveal what people actually do",
@@ -100,6 +105,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "sections",
     instruction: "Write the 6 most likely objections this audience would raise, as sections. Each section's heading is the objection in the customer's own words; the body gives an honest reply that does not dodge, and one question to ask back to learn the real reason. Never promise results. If an objection is valid, say so and say what would change it.",
     you: "Practise the replies out loud, then use them in real conversations.",
+    craft: "For each objection give: what they really mean, a reply that first agrees with the true part, one question to ask back, and one thing never to say. Order by how likely the objection is for this customer.",
   },
   {
     id: "one_pager", group: "publish", label: "One-page overview", blurb: "A clear page that says what it is, for whom and why",
@@ -107,6 +113,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "sections", claims: true,
     instruction: "Write a one-page overview as sections: 'Headline' (one sentence a stranger understands), 'The problem', 'What it does', 'How it works' (3 steps), 'Proof' (only what the founder gave; otherwise write [add: your first real result]), and 'Call to action'. Plain words, no buzzwords, no invented numbers or customers.",
     you: "Put it on a page or share it as a document.",
+    craft: "Problem in the customer's own words, who it is for, what it does in one sentence, the evidence that really exists (only from PROJECT and BRIEF), and what you need from the reader. No market-size claims unless given.",
   },
   {
     id: "faq", group: "publish", label: "FAQ", blurb: "The questions people will ask, answered plainly",
@@ -114,6 +121,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "sections",
     instruction: "Write an FAQ of 8 questions as sections; each heading is the question, each body a 1-3 sentence plain answer. Cover what it is, who it is for, how it works, what it costs (write [add: price] if unknown), how to get started, what data it uses, what it cannot do, and how to get help. Do not invent features, prices or policies.",
     you: "Check each answer is true, then publish it.",
+    craft: "Write the questions as the customer would ask them: price, trust, how long, what if it does not work. Answer in the first sentence, then two plain sentences more at most. Admit limits honestly. Put the question people are afraid to ask near the top.",
   },
   {
     id: "pricing_page", group: "publish", label: "Pricing page copy", blurb: "Plans, headline and the questions people have about paying",
@@ -121,6 +129,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "sections", claims: true,
     instruction: "Write pricing page copy as sections: 'Headline', one section per plan (name, who it is for, what is included, price exactly as the founder gave it or [add: price]), 'Questions about paying' (refunds, how to pay, cancelling; mark anything the founder has not decided with [add: ...]), and 'Reassurance' (one honest line). Never invent a price, a discount or a guarantee.",
     you: "Decide the real prices and publish the page.",
+    craft: "Lead with the outcome, not the features. Compare the price with what the problem costs today, using only facts given. Start with one plan. Say what is included and what is not. Offer a guarantee only if the founder states one. Name payment methods people in their market actually use.",
   },
   {
     id: "onboarding_email", group: "publish", label: "Welcome emails", blurb: "A welcome message and a nudge that get people to a first win",
@@ -128,6 +137,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "variants", count: 2,
     instruction: "Write 2 emails: (1) a welcome email sent right after signup and (2) a nudge sent on day 2 to people who have not reached the first win. Each starts with 'Subject: ...', under 110 words, one clear next step, plain and warm. Do not promise features the founder did not mention.",
     you: "Set them up in your email tool or send them by hand.",
+    craft: "Sent within minutes of signup. One thing to do now, how long it takes, and what they will have afterwards. No feature tour. End with a line inviting them to reply to you personally.",
   },
   {
     id: "announcement", group: "publish", label: "Announcement", blurb: "Tell people what is new, as a short post and a longer one",
@@ -135,6 +145,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "variants", count: 3,
     instruction: "Write 3 versions of an announcement: a short post (under 60 words), a longer post (under 150 words) and an email (with 'Subject: ...' first line, under 150 words). Lead with what changes for the reader. No hype words, no claims beyond what the founder said.",
     you: "Post or send it where your audience already is.",
+    craft: "Lead with what changed for the reader, then why it matters now, then how to try it in one step. Never 'excited to announce'. The versions differ by channel: a WhatsApp status is two lines, a LinkedIn post tells a short story, an email gives the detail.",
   },
   {
     id: "pitch_outline", group: "raise", label: "Pitch outline", blurb: "A 10-slide outline with what to say on each",
@@ -163,6 +174,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "sections",
     instruction: "Write a one-page product spec as sections: 'Problem', 'Who it is for', 'User stories' (3-5, 'As a ..., I want ..., so that ...'), 'In scope', 'Not now' (things to leave out on purpose), 'How we will know it works' (a measurable check the founder can run; no invented targets), and 'Open questions'. Keep it small enough to build in days.",
     you: "Build it in your own tools.",
+    craft: "Problem with the source of the evidence, one primary user, success measured by one behaviour, the smallest slice that tests it, explicit non-goals, open questions, and how you will know within two weeks.",
   },
   {
     id: "job_post", group: "build", label: "Freelancer or hire brief", blurb: "A clear brief for the first person who helps you",
@@ -170,6 +182,7 @@ export const WORK_SPECS: WorkSpec[] = [
     shape: "variants", count: 2,
     instruction: "Write 2 versions: a full brief (what the project is, what the person will do, what a good result looks like, how to apply, pay as given or [add: pay]) and a short DM version (under 70 words) to send to someone directly. No invented company facts, no inflated requirements.",
     you: "Post it or send it, and choose who to work with.",
+    craft: "State the outcome wanted before the tasks. Include a small paid test task for applicants, who decides, what the founder provides, pay and time (or [add: pay]), and how to apply. No 'rockstar' or 'ninja' language.",
   },
   {
     id: "content_calendar", group: "build", label: "Two-week content plan", blurb: "What to post and when, tied to one goal",
