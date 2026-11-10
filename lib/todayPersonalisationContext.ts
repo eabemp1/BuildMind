@@ -143,7 +143,9 @@ export async function buildTodayPersonalisationContext(
             "RECENT TASKS SHOWN (do NOT repeat any of these - no semantic equivalents):",
             ...actions.map((a, i) => {
               const date = new Date(a.created_at).toLocaleDateString();
-              const outcomeTag = a.outcome && a.outcome !== "pending" ? ` [${a.outcome}]` : "";
+              // Skipped / swapped-out tasks are tagged too: the planner must tell "did it" from "kept swapping it".
+              const tag = a.outcome && a.outcome !== "pending" ? a.outcome : a.replaced_by ? "replaced" : a.skipped_at ? "skipped" : "";
+              const outcomeTag = tag ? ` [${tag}]` : "";
               return `${i + 1}. ${date}: "${a.action_shown}"${outcomeTag}`;
             }),
             "-> A task is a repeat if it involves the same verb+object as any item above (e.g. 'post on LinkedIn' after 'share on LinkedIn' is a repeat). Generate something categorically different.",

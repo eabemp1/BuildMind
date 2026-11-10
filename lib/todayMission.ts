@@ -238,13 +238,25 @@ export function planTodayMission(s: MissionSignals): Mission {
   const recentKinds = recent.map((t) => kindOfTask(t.text));
 
   // 1. Fatigue: the same kind several days running loses weight, most recent hardest.
+  // Only tasks the founder actually did count. A task that was skipped or swapped out was never done,
+  // so it must not push that kind of work away (that made repeated swaps of outreach tasks end in "something different").
+  const wasSwapped = (t: RecentTask) => t.outcome === "skipped" || t.outcome === "replaced";
   const fatigueKinds = new Set<MissionKind>();
   recentKinds.slice(0, 4).forEach((k, i) => {
-    if (!k) return;
+    if (!k || wasSwapped(recent[i])) return;
     bump(k, -(2.6 - i * 0.55));
     if (i < 2) fatigueKinds.add(k);
   });
   if (fatigueKinds.size > 0) reasons.push(`Last tasks were mostly ${[...fatigueKinds].map((k) => KIND_META[k].label.toLowerCase()).join(" / ")}, so something different is due.`);
+
+  // 1b. Avoidance: people tasks keep being skipped or swapped. Do not hand over a way around them.
+  // Keep people work on the table, but make it the smallest possible step and name the block first.
+  const peopleKindsAll: MissionKind[] = ["interview", "outreach", "follow_up"];
+  const swappedPeople = recent.slice(0, 6).filter((t, i) => wasSwapped(t) && recentKinds[i] && peopleKindsAll.includes(recentKinds[i] as MissionKind)).length;
+  if (swappedPeople >= 2) {
+    bump("unblock", 3.5); bump("outreach", 2); bump("interview", 1);
+    reasons.push(`You have swapped out ${swappedPeople} tasks that meant talking to people, so today is one small step toward them, not a way around them.`);
+  }
 
   // 2. Evidence drought: nothing that touches real people in the last 5 tasks.
   const peopleKinds: MissionKind[] = ["interview", "outreach", "follow_up"];
