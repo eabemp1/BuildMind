@@ -59,9 +59,9 @@ const long = (key: string, label: string, placeholder?: string, optional = false
 export const WORK_SPECS: WorkSpec[] = [
   {
     id: "whatsapp_message", group: "reach", label: "WhatsApp message", blurb: "A natural first message, and a follow-up if they go quiet",
-    fields: [short("who", "Who is it for?", "e.g. a final-year student I met at the hub"), short("goal", "What do you want them to do?", "e.g. try it for 5 minutes and tell me what confused them"), long("context", "What do they already know about you?", "Optional", true)],
+    fields: [short("who", "Who is it for?", "e.g. a final-year student I met at the hub"), short("goal", "What do you want them to do?", "e.g. try it for 5 minutes and tell me what confused them"), long("context", "What do they already know about you?", "Optional, e.g. we met at the hub", true)],
     shape: "variants", count: 3,
-    instruction: "Write 3 WhatsApp messages: (1) a short first message, (2) a first message that uses the context, (3) a gentle follow-up for when they have not replied after two days. Each under 70 words, conversational, no formal letter style, no greetings like 'Dear', one clear and easy ask. Do not include links unless the founder gave one.",
+    instruction: "Write 3 WhatsApp messages from the founder to the person above: (1) a short first message, (2) a first message that uses what they already know about the founder (shared history), written from the founder's side, (3) a gentle follow-up for when they have not replied after two days. Each under 70 words, conversational, no formal letter style, no greetings like 'Dear', one clear and easy ask. Do not include links unless the founder gave one.",
     you: "Send it yourself, from your own number.",
     craft: "First line says how they know the person or why them. Ask ONE small question answerable in a sentence or a voice note. No links, attachments or product pitch in the first message. Give an easy way out ('no worries if you are busy'). Sound like a person texting, never a brochure. The follow-up adds something new (a result, a sharper question), never 'just checking in'.",
   },

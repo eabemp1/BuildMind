@@ -27,7 +27,7 @@ export function evidenceBlock(rows: NoteRow[], now = Date.now()): string {
     lines.push(`- ${ago(r.created_at, now)}${r.outcome ? ` (${r.outcome})` : ""}: ${parts.join("; ")}`);
     if (lines.length >= 5) break;
   }
-  return lines.length ? `THE FOUNDER'S OWN NOTES (real things that happened to them, in their words). Use them so the draft fits where they are, and echo a real detail where it helps. Do not invent anything beyond them:\n${lines.join("\n")}` : "";
+  return lines.length ? `THE FOUNDER'S OWN NOTES (real things that happened to the FOUNDER, in their words; they are about the sender, never about the people being written to). Use them so the draft fits where the founder is. Never present them as facts about the reader. Do not invent anything beyond them:\n${lines.join("\n")}` : "";
 }
 
 export async function loadWorkContext(admin: SupabaseClient, userId: string, projectId?: string | null): Promise<string> {
