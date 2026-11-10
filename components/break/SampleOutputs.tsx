@@ -1,3 +1,5 @@
+import css from "@/app/break/break.module.css";
+
 /**
  * Three made-up examples of what a stress test says, so a visitor can see the shape of the answer before typing.
  * Each is labelled as an example. None is a real founder's run and none carries a score.
@@ -25,15 +27,15 @@ export const SAMPLES = [
 
 export default function SampleOutputs() {
   return (
-    <section aria-label="Example stress tests" style={{ marginTop: 40 }}>
-      <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 4px", color: "var(--bm-text)" }}>What an answer looks like</h2>
-      <p style={{ fontSize: 12, color: "var(--bm-text3)", margin: "0 0 14px", lineHeight: 1.5 }}>Three made-up ideas, written as examples. They are not real runs.</p>
-      <div style={{ display: "grid", gap: 10 }}>
+    <section aria-label="Example stress tests">
+      <h2 className={css.h2}>What an answer looks like</h2>
+      <p className={css.muted}>Three made-up ideas, written as examples. They are not real runs.</p>
+      <div className={css.samples}>
         {SAMPLES.map((s) => (
-          <article key={s.idea} style={{ border: "1px solid var(--bm-border2)", borderRadius: 12, padding: "14px 16px" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text)", marginBottom: 8 }}>{s.idea}</div>
-            <p style={{ fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55, margin: "0 0 6px" }}><strong>Weakest point: {s.weakest}</strong> {s.why}</p>
-            <p style={{ fontSize: 12.5, color: "var(--bm-text2)", lineHeight: 1.55, margin: 0 }}><strong>First test:</strong> {s.first}</p>
+          <article key={s.idea} className={css.sample}>
+            <h3>{s.idea}</h3>
+            <p><strong>Weakest check: {s.weakest}</strong> {s.why}</p>
+            <p><strong>First test:</strong> {s.first}</p>
           </article>
         ))}
       </div>

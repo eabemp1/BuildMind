@@ -16,8 +16,14 @@ export const DIMENSIONS = [
 export type Dimension = (typeof DIMENSIONS)[number];
 export type Signals = Record<Dimension, number>;
 
-const WEIGHTS: Record<Dimension, number> = {
+export const DIMENSION_WEIGHTS: Record<Dimension, number> = {
   problem_severity: 0.2, target_clarity: 0.15, demand_evidence: 0.15, differentiation: 0.15, reachability: 0.15, monetization: 0.1, feasibility: 0.1,
+};
+
+/** Plain names for the seven checks, shown on the result. */
+export const DIMENSION_LABELS: Record<Dimension, string> = {
+  problem_severity: "The problem is real", target_clarity: "Clear customer", demand_evidence: "Evidence of demand", differentiation: "Different from what exists",
+  reachability: "You can reach them", monetization: "A way to earn", feasibility: "You can build it",
 };
 
 /** Anchors shown to the model so the full 0-5 range gets used. */
@@ -45,7 +51,7 @@ export function normalizeSignals(raw: unknown): Signals | null {
 
 /** 5-92. Weighted dimensions, plus a small adjustment for how specific the description is. */
 export function computeSurvival(signals: Signals, text = ""): number {
-  const weighted = DIMENSIONS.reduce((sum, d) => sum + WEIGHTS[d] * (signals[d] / 5), 0);
+  const weighted = DIMENSIONS.reduce((sum, d) => sum + DIMENSION_WEIGHTS[d] * (signals[d] / 5), 0);
   const specificity = clamp(Math.round((specificityOf(text) - 0.5) * 12), -6, 6);
   return clamp(Math.round(6 + weighted * 84 + specificity), 5, 92);
 }

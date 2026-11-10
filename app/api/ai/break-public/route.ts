@@ -120,9 +120,10 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
       ],
     };
 
-    let result: typeof defaultResult & { first_task?: FirstTask; weakest?: ReturnType<typeof weakestTest>; competitor_links?: { title: string; url: string }[] } = defaultResult;
+    let result: typeof defaultResult & { signals?: Record<string, number>; first_task?: FirstTask; weakest?: ReturnType<typeof weakestTest>; competitor_links?: { title: string; url: string }[] } = defaultResult;
     let aiOk = false;
-    result = { ...defaultResult, weakest: weakestTest(previewSignals(idea, users, problem)) };
+    const pv = previewSignals(idea, users, problem);
+    result = { ...defaultResult, weakest: weakestTest(pv), signals: pv };
     if (live) try {
       await recordCall("public");
       const ai = await groqJSON<Omit<typeof defaultResult, "survival_probability"> & { signals?: unknown }>(systemPrompt, userPrompt, { temperature: 0.1 });
@@ -137,6 +138,7 @@ Analyze this startup idea ruthlessly. Be specific to what was described, not gen
           survival_probability: computeSurvival(signals, `${idea} ${users} ${problem}`),
           differentiation_plan: (ai.differentiation_plan ?? []).slice(0, 3),
           weakest: weakestTest(signals),
+          signals,
           first_task: readFirstTask((ai as { first_task?: unknown }).first_task) ?? undefined,
         };
       }
