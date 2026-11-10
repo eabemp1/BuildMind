@@ -141,20 +141,39 @@ export function missionMeta(kind: MissionKind) { return KIND_META[kind]; }
 
 // ── Mapping a task's text back to a kind ────────────────────────────────────
 
-const FOLLOW_UP_RE = /\b(follow[\s-]?up|follow up with|reply to|respond to|circle back|chase|nudge)\b/i;
+const FOLLOW_UP_RE = /\b(follow[\s-]?up|follow up with|reply to|respond to|circle back|chase|nudge|go back to the \w+ (people|users|founders|customers)|people who (replied|responded|tried))\b/i;
 const PRICING_RE = /\b(pric(e|es|ing)|charge|invoice|payment link|paywall|paid plan|ask .{0,20}(to pay|for money)|stripe|paystack|polar)\b/i;
 const PUBLISH_RE = /\b(publish|post(ing)? (a|one|your|the)|write (a|one) (post|thread|article)|thread|changelog|demo (video|clip)|record a (demo|video)|launch (on|post))\b/i;
-const INTERVIEW_RE = /\b(interview|jump on a call|call with|talk to|speak (to|with)|15[\s-]?minute call|user call)\b/i;
-const UNBLOCK_RE = /\b(finally|stop avoiding|the thing you|the one you)\b/i;
+const INTERVIEW_RE = /\b(interview|jump on a call|call with|talk to|speak (to|with)|15[\s-]?minute call|user call|conversations? with|walk you through|book or hold)\b/i;
+/** Sending a number of messages is outreach, even when the message asks a research question. */
+const OUTREACH_RE = /\b(send (\d+|one|two|three|four|five|ten)\b[^.]{0,40}\b(messages?|dms?|emails?|invites?)|(dm|message|email|whatsapp) (\d+|two|three|five|ten)\b|cold (email|dm|message)s?|personal messages? to)/i;
+const RESET_RE = /\b(small,? visible (improvement|win)|one small (win|improvement)|15[\s-]minute win)\b/i;
+const UNBLOCK_RE = /\b(finally|stop avoiding|the thing you|the one you|putting off|keep(s)? avoiding|first 20 minutes)\b/i;
+
+/** The part of a task that says what to do. What it is about (the founder's own problem, which may mention prices or payments) comes after. */
+function taskHead(t: string): string {
+  return t.split(/\b(about|asking|because|so that|and ask|to learn|to see|on how|who |whose |that )/i)[0].trim() || t;
+}
+
+function kindByVerb(t: string): MissionKind | null {
+  if (FOLLOW_UP_RE.test(t)) return "follow_up";
+  if (PRICING_RE.test(t)) return "pricing";
+  if (OUTREACH_RE.test(t)) return "outreach";
+  if (INTERVIEW_RE.test(t)) return "interview";
+  if (UNBLOCK_RE.test(t)) return "unblock";
+  if (RESET_RE.test(t)) return "reset";
+  if (PUBLISH_RE.test(t)) return "publish";
+  return null;
+}
 
 export function kindOfTask(text: string): MissionKind | null {
   const t = String(text ?? "");
   if (!t.trim()) return null;
-  if (FOLLOW_UP_RE.test(t)) return "follow_up";
-  if (PRICING_RE.test(t)) return "pricing";
-  if (INTERVIEW_RE.test(t)) return "interview";
-  if (PUBLISH_RE.test(t)) return "publish";
-  if (UNBLOCK_RE.test(t)) return "unblock";
+  // The head decides first, so a founder whose problem is about pricing or invoices does not have every task read as a pricing task.
+  const byHead = kindByVerb(taskHead(t));
+  if (byHead) return byHead;
+  const byText = kindByVerb(t);
+  if (byText) return byText;
   const c = classifyTask(t);
   if (!c.purpose) {
     if (/\b(ship|build|implement|deploy|refactor|integrate|fix (the|a|your)|code (the|a)|add (a|the) [\w\s-]{0,30}(screen|page|feature|flow|button|endpoint))\b/i.test(t)) return "build";
@@ -421,6 +440,20 @@ export function similarity(a: string, b: string): number {
   return inter / (A.size + B.size - inter);
 }
 
+/** Words in a customer description that say nothing about who they are. */
+const USER_FILLER = new Set(["independent", "small", "local", "new", "young", "early", "solo", "freelance", "first", "time", "full", "part", "average", "typical", "busy", "individual", "private", "professional"]);
+
+/** The task must name the founder's customers. Any real word of the description counts (not only the first), so
+ *  "independent barbers in Accra" is matched by "barbers" and "barbershops". */
+export function namesTargetUser(task: string, targetUsers?: string): boolean {
+  const desc = (targetUsers ?? "").split(/\b(?:in|at|who|that|from|across|around)\b|[,(]/i)[0] ?? "";
+  const words = tokenize(desc).filter((w) => w.length > 2 && !USER_FILLER.has(w));
+  const all = words.length > 0 ? words : tokenize(targetUsers ?? "").filter((w) => w.length > 2);
+  if (all.length === 0) return true;
+  const t = task.toLowerCase();
+  return all.some((w) => { const root = stem(w); return root.length >= 3 && t.includes(root); });
+}
+
 export function assessTaskQuality(c: CandidateTask, mission: Mission, ctx: QualityContext): QualityResult {
   const hard: string[] = [];
   const soft: string[] = [];
@@ -446,10 +479,7 @@ export function assessTaskQuality(c: CandidateTask, mission: Mission, ctx: Quali
   const req = mission.requires;
   if (req.number && !/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(task)) hard.push("missing_number");
   if (req.platform && !PLATFORM_RE.test(`${task} ${c.platform ?? ""}`)) hard.push("missing_platform");
-  if (req.userType) {
-    const first = ctx.targetUsers?.trim().split(/\s+/)[0]?.toLowerCase();
-    if (first && first.length > 2 && !task.toLowerCase().includes(first.replace(/s$/, ""))) hard.push("missing_user_type");
-  }
+  if (req.userType && !namesTargetUser(task, ctx.targetUsers)) hard.push("missing_user_type");
 
   // Grounded in this founder's own words?
   const own = [ctx.title, ctx.targetUsers, ctx.problem, ...(ctx.blockers ?? []), ...(ctx.avoidance ?? []), ...(ctx.activeGoals ?? [])].filter(Boolean).join(" ");
