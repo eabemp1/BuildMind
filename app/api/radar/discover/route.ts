@@ -6,9 +6,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
+import { gateFeature } from "@/lib/server/featureGate";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { rateLimitAsync } from "@/lib/server/rateLimit";
 import { runDiscovery } from "@/lib/radar/discoverRun";
 
 export const runtime = "nodejs";
@@ -23,8 +23,8 @@ export async function POST(request: Request) {
   const parsed = Body.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ ok: false, error: "Invalid request" }, { status: 400 });
   if (!hasAdminEnv()) return NextResponse.json({ ok: false, error: "Not available." }, { status: 503 });
-  const rl = await rateLimitAsync(`radar-discover:${user.userId}`, 4, 24 * 60 * 60 * 1000, { failClosed: true });
-  if (!rl.ok) return NextResponse.json({ ok: false, error: "You have searched enough for today. Try again tomorrow." }, { status: 429 });
+  const capped = await gateFeature(user.userId, "radar");
+  if (capped) return capped;
   const blocked = await gateAIUsage(user.userId, "general");
   if (blocked) return blocked;
 
