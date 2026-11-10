@@ -186,6 +186,8 @@ export function tierPhrase(item: Pick<AgentEvidenceItem, "tier" | "source_count"
   return `${label}, ${n === 0 ? "no external source" : n === 1 ? "1 source" : `${n} sources`}`;
 }
 
+export const DELEGATION_RE = /\b(hire|hiring|post a (contract|job)|freelanc\w*|upwork|fiverr|outsourc\w*|delegat\w*|contractor|virtual assistant)\b/i;
+
 function sentence(s: string): string {
   const t = s.trim();
   return /[.!?]$/.test(t) ? t : `${t}.`;
@@ -224,13 +226,15 @@ export function agentCandidateTemplates(ev: AgentTodayEvidence | null | undefine
     });
   }
   const b = ev?.breakTest as (AgentEvidenceItem & { predictedHold?: number; provenWrongIf?: string }) | null | undefined;
-  if (b) {
+  // Hiring or outsourcing someone to run outreach is a way around talking to customers, and it spends money before the message is tested.
+  // A teardown risk can suggest it as a mitigation; it is never a Today task.
+  if (b && !DELEGATION_RE.test(`${b.action_hint ?? ""} ${b.title ?? ""}`)) {
     const pct = typeof b.predictedHold === "number" ? Math.round(b.predictedHold * 100) : null;
     out.push({
       id: "break_test",
       action: sentence(b.action_hint),
       rationale: `Your Break My Startup teardown flagged this assumption${pct !== null ? ` (rated about ${pct}% likely to hold)` : ""}: "${b.title}". It is a prediction, not a fact, so the way to settle it is to run the test.`,
-      expected_evidence: b.provenWrongIf ? `A real result. It would be proven wrong if: ${b.provenWrongIf}` : "A real result that supports or contradicts the assumption.",
+      expected_evidence: b.provenWrongIf ? `The assumption is wrong if: ${b.provenWrongIf}` : "A real result that supports or contradicts the assumption.",
       supporting_signals: [],
       evidence: b,
     });
