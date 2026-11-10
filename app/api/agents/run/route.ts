@@ -13,6 +13,7 @@
  */
 
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
+import { gateFeature } from "@/lib/server/featureGate";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -48,6 +49,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Builder still spends AI usage: every agent run counts against the plan allowance.
+  const capped = await gateFeature(auth.userId, "agents");
+  if (capped) return capped;
   const blocked = await gateAIUsage(auth.userId, "general");
   if (blocked) return blocked;
 
