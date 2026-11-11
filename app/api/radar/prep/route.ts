@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { callModelJSON } from "@/lib/ai-providers";
 import { loadProject } from "@/lib/prep/engine";
 import { loadInferredContext } from "@/lib/prep/context";
+import { SENDER_RULE } from "@/lib/prep/senderRule";
 import { unsupportedNumbers } from "@/lib/distribution/engine";
 import { prepFallback, cleanPrep } from "@/lib/radar/prep";
 import type { RadarItem } from "@/lib/radar/types";
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
   try {
     const ai = await callModelJSON<Record<string, unknown>>([
       { role: "system", content: `You prepare a solo founder for one ${item.kind}. Return ONLY JSON: {"why_it_fits":"1-2 sentences tying it to the founder's product","questions":["3 specific questions the founder should ask or answer"],"intro":"a message of at most 60 words the founder could send or say, first person, no placeholders","ask":"the one thing to ask for"}.
-Use only the facts below. Never invent attendees, speakers, prices, dates or numbers. Never claim the founder has users unless the record says so. No filler, no flattery.` },
+Use only the facts below. Never invent attendees, speakers, prices, dates or numbers. Never claim the founder has users unless the record says so. ${SENDER_RULE} No filler, no flattery.` },
       { role: "user", content: `FOUNDER'S PRODUCT: ${project.name}. ${project.description} Problem: ${project.problem} Users: ${project.targetUsers} Stage: ${project.stage}\n\n${inferred}\n\nTHE ${item.kind.toUpperCase()}:\n${facts}` },
     ], { role: "fast", temperature: 0.3, maxTokens: 700 });
     const cleaned = cleanPrep(ai, `${facts}\n${project.description} ${project.problem} ${project.targetUsers} ${inferred}`, unsupportedNumbers);

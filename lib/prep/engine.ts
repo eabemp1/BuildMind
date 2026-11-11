@@ -17,6 +17,7 @@ import { draftContent, keepPastBehaviourQuestions, unsupportedNumbers, type Proj
 import { searchPromptBlock, searchSections } from "@/lib/integrations/searchConsole";
 import { fallbackPrep } from "@/lib/prep/fallback";
 import { loadInferredContext } from "@/lib/prep/context";
+import { SENDER_RULE } from "@/lib/prep/senderRule";
 import { learnedLessons, type LearnRow } from "@/lib/prep/learning";
 import { PREP_META, hasContent, inferPlatform, normalizePrepared, prepKindFor, type PrepFact, type PrepKind, type Prepared } from "@/lib/prep/kinds";
 
@@ -153,7 +154,7 @@ export function validationFallback(project: ProjectCtx): Prepared {
 
 export async function validationKit(project: ProjectCtx, task: string, inferred = ""): Promise<Prepared> {
   try {
-    const raw = await callModelJSON<Record<string, unknown>>([{ role: "user", content: `You are preparing an interview kit for a solo founder doing customer discovery. Ask about past behaviour, never about hypothetical future use of the product. No flattery.
+    const raw = await callModelJSON<Record<string, unknown>>([{ role: "user", content: `You are preparing an interview kit for a solo founder doing customer discovery. Ask about past behaviour, never about hypothetical future use of the product. No flattery. ${SENDER_RULE}
 
 PROJECT: ${project.name}: ${project.description}
 Problem: ${project.problem || "not stated"}
@@ -203,7 +204,7 @@ export async function pricingTest(project: ProjectCtx, task: string, inferred: s
   const src = hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url}): ${h.snippet.slice(0, 240)}`).join("\n");
   let raw: unknown;
   try {
-    raw = await callModelJSON<unknown>([{ role: "user", content: `You are preparing a pricing test for a solo founder. Never state a price unless it appears in the search results below. Suggest tests as relative positions (for example "a little under [name]'s paid plan") or as [add: your price]. Ask about past behaviour (what they pay now, what they tried), never about hypothetical future purchases. No flattery.
+    raw = await callModelJSON<unknown>([{ role: "user", content: `You are preparing a pricing test for a solo founder. ${SENDER_RULE} Never state a price unless it appears in the search results below. Suggest tests as relative positions (for example "a little under [name]'s paid plan") or as [add: your price]. Ask about past behaviour (what they pay now, what they tried), never about hypothetical future purchases. No flattery.
 
 PROJECT: ${project.name}: ${project.description}
 Who it is for: ${project.targetUsers || "not stated"}
