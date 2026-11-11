@@ -74,3 +74,12 @@ describe("who is who", () => {
     expect(buildPrompt(spec, { who: "a", goal: "b" }, project)).toMatch(/The founder is the SENDER/);
   });
 });
+
+import { readFileSync } from "node:fs";
+import { SENDER_RULE } from "@/lib/prep/senderRule";
+describe("the sender rule reaches every prompt that writes to a reader", () => {
+  it("states the rule plainly", () => { expect(SENDER_RULE).toMatch(/SENDER/); expect(SENDER_RULE).toMatch(/never as facts about the reader/); });
+  for (const f of ["lib/distribution/engine.ts", "lib/prep/engine.ts", "app/api/ai/prep/reply/route.ts", "app/api/radar/prep/route.ts"]) {
+    it(f, () => expect(readFileSync(f, "utf8")).toContain("${SENDER_RULE}"));
+  }
+});

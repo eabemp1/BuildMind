@@ -12,6 +12,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { callModelJSON } from "@/lib/ai-providers";
+import { SENDER_RULE } from "@/lib/prep/senderRule";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { guardReply, type ReplyAssist } from "@/lib/prep/reply";
 import type { Platform } from "@/lib/distribution/textSignals";
@@ -49,8 +50,8 @@ export async function POST(request: Request) {
   const platform = (["linkedin", "x", "reddit", "hn", "other"].includes((row?.platform ?? p.data.platform) as string) ? (row?.platform ?? p.data.platform) : "other") as Platform;
   const shape = `Return JSON: {"read":"interested|question|objection|decline|unclear","summary":"one sentence on what they actually said or want","quote":"the exact words from THEIR message that matter most, or empty","reply":"the draft, 60 words or fewer","nextStep":"one sentence: what the founder should do next"}`;
   const prompt = mode === "reply"
-    ? `You help a solo founder answer someone who replied to their outreach. Use only what is written below. Answer their actual question or objection first. Ask for at most one small next step. No flattery, no pitch paragraph, no emojis, no invented facts or numbers. If they declined, thank them, keep the door open in one line, and ask nothing.\n\nFOUNDER'S MESSAGE:\n"""${mine.slice(0, 1500)}"""\n\nTHEIR REPLY:\n"""${(theirReply ?? "").slice(0, 3000)}"""\n\n${shape}`
-    : `You help a solo founder follow up on a message nobody answered. Write ONE short follow-up (45 words or fewer) that adds something new for the reader, such as a sharper question or one concrete observation from the founder's message. Never write "just bumping", "circling back" or "following up". No emojis, no invented facts. Set "quote" to an empty string and "read" to "unclear".\n\nORIGINAL MESSAGE:\n"""${mine.slice(0, 1500)}"""\n\n${shape}`;
+    ? `You help a solo founder answer someone who replied to their outreach. Use only what is written below. ${SENDER_RULE} Answer their actual question or objection first. Ask for at most one small next step. No flattery, no pitch paragraph, no emojis, no invented facts or numbers. If they declined, thank them, keep the door open in one line, and ask nothing.\n\nFOUNDER'S MESSAGE:\n"""${mine.slice(0, 1500)}"""\n\nTHEIR REPLY:\n"""${(theirReply ?? "").slice(0, 3000)}"""\n\n${shape}`
+    : `You help a solo founder follow up on a message nobody answered. ${SENDER_RULE} Write ONE short follow-up (45 words or fewer) that adds something new for the reader, such as a sharper question or one concrete observation from the founder's message. Never write "just bumping", "circling back" or "following up". No emojis, no invented facts. Set "quote" to an empty string and "read" to "unclear".\n\nORIGINAL MESSAGE:\n"""${mine.slice(0, 1500)}"""\n\n${shape}`;
 
   let out: ReplyAssist;
   try { out = guardReply(await callModelJSON<unknown>([{ role: "user", content: prompt }], { maxTokens: 700 }), theirReply ?? "", platform); }
