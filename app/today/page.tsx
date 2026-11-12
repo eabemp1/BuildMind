@@ -1566,6 +1566,7 @@ function TodayContent() {
       }
       const todayKey = `bm_task_done_${localDayKey()}`;
       storage.set(todayKey, "1");
+      storage.set(`bm_task_outcome_${localDayKey()}`, selectedOutcome);
 
       let serverStreak: number | null = null;
       let firstFinished = false;

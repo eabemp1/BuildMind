@@ -11,6 +11,7 @@
  *     version was double-counting every completion.
  */
 import { NextResponse } from "next/server";
+import { countsAsDone } from "@/lib/taskOutcome";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dailyActivitySignal } from "@/lib/momentum";
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
 
   const { stage = "", projectId = "", taskTitle = "", outcome = "completed", log_row_id = "", recommendation_id = "", dayKey: rawDayKey } = await req.json().catch(() => ({}));
   const admin = createAdminClient();
+  const counts = countsAsDone(outcome);
 
   // Fetch context + founder_memory + recent task titles in parallel for pattern detection
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
@@ -107,16 +109,19 @@ export async function POST(req: Request) {
     consecutive: number;
   };
 
-  const { data: taskResult, error: taskRpcError } = await admin
-    .rpc("complete_task_atomic", {
-      p_user_id: user.id,
-      p_project_id: projectId || null,
-      p_signal: signal,
-      p_days_since_last_update: daysSinceLastUpdate,
-      p_today: today,
-      p_stage: stage || null,
-    })
-    .single<CompleteTaskAtomicResult>();
+  // A blocked or skipped check-in is recorded, but it earns no momentum, XP, streak day or completion.
+  const { data: taskResult, error: taskRpcError } = counts
+    ? await admin
+        .rpc("complete_task_atomic", {
+          p_user_id: user.id,
+          p_project_id: projectId || null,
+          p_signal: signal,
+          p_days_since_last_update: daysSinceLastUpdate,
+          p_today: today,
+          p_stage: stage || null,
+        })
+        .single<CompleteTaskAtomicResult>()
+    : { data: { momentum: ctx?.momentum_score ?? 0, streak: ctx?.streak ?? 0, xp: ctx?.xp ?? 0, xp_earned: 0, consecutive: 0 } as CompleteTaskAtomicResult, error: null };
 
   if (taskRpcError) throw new Error(`complete_task_atomic failed: ${taskRpcError.message}`);
 
@@ -162,7 +167,7 @@ export async function POST(req: Request) {
   // current_stage — was already written atomically by complete_task_atomic.
   await admin.from("founder_context").upsert({
     user_id: user.id,
-    tasks_accepted_this_week: previousTaskCount + 1,
+    tasks_accepted_this_week: counts ? previousTaskCount + 1 : previousTaskCount,
     ...(activePattern?.signal
       ? {
           active_pattern_signal: activePattern.signal,
@@ -189,7 +194,7 @@ export async function POST(req: Request) {
   // also why the Progress page's "real" sparkline line has never drawn.
   // Replaced with an explicit check-then-write so it never depends on
   // PostgREST resolving an expression index through onConflict.
-  if (typeof computedScore === "number") {
+  if (counts && typeof computedScore === "number") {
     void (async () => {
       try {
         const dayStart = new Date(); dayStart.setUTCHours(0, 0, 0, 0);
@@ -260,7 +265,8 @@ export async function POST(req: Request) {
     })().catch(() => {});
   }
 
-  recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
+  // The activity table only allows a fixed list of events, and "completed a task" must not be written for a blocked one.
+  if (counts) recordActivity(user.id, "task_completed", { stage, projectId }).catch(() => {});
   invalidateCognitionCache(user.id);
   // CONSOLIDATION: was checkAndCacheStageTransition() (the looser,
   // now-retired detector) — see lib/server/stageTransition.ts for why
@@ -430,7 +436,7 @@ export async function POST(req: Request) {
     momentum: newMomentum,
     isFirstTask,
     consecutiveTasksCompleted: newConsecutive,
-    tasksCompletedTotal: (ctx?.tasks_completed_total ?? 0) + 1,
+    tasksCompletedTotal: (ctx?.tasks_completed_total ?? 0) + (counts ? 1 : 0),
     xpEarned,
     xp: newXP,
     streak: newStreak,
