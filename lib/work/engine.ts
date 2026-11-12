@@ -28,12 +28,12 @@ export async function generateWork(
   if (!first) return null;
 
   // One fix-up pass when the draft has problems a second look can fix. If it fails, the first draft stands.
-  const problems = draftProblems(first, input.spec, allowed);
+  const problems = draftProblems(first, input.spec, allowed, project.stage);
   if (problems.length > 0 && Date.now() < deadlineMs - 12_000) {
     try {
       const fixedRaw = await callModelJSON<unknown>([{ role: "user", content: revisePrompt(JSON.stringify(raw), input.spec, problems) }], { ...opts, feature: "work_revise" });
       const fixed = normalizeWork(fixedRaw, input.spec, allowed, unsupportedNumbers);
-      if (fixed && draftProblems(fixed, input.spec, allowed).length < problems.length) return fixed;
+      if (fixed && draftProblems(fixed, input.spec, allowed, project.stage).length < problems.length) return fixed;
     } catch { /* keep the first draft */ }
   }
   return first;

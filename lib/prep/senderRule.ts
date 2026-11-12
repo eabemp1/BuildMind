@@ -4,3 +4,23 @@
  * or claim to have seen something about a stranger.
  */
 export const SENDER_RULE = `The founder is the SENDER. Facts about the founder, their product, signups or milestones are the founder's: write them in the first person ("I just got my first two users"), never as facts about the reader. Never say you saw, noticed, read or heard anything about the reader unless the text above states exactly that.`;
+
+/** Stages at which there is usually nothing for a stranger to use yet. */
+export function productNotBuilt(stage: string | undefined | null): boolean {
+  return /^(idea|validation|research|pre[-\s]?mvp)$/i.test(String(stage ?? "").trim());
+}
+
+/** What a draft may say about the product, by stage. Empty when the product exists. */
+export function productClaimsRule(stage: string | undefined | null): string {
+  if (!productNotBuilt(stage)) return "Only describe what the product does using facts given above. Never state a price, a free offer or a feature that the text above does not state.";
+  return "THE PRODUCT DOES NOT EXIST YET. Do not offer it, invite anyone to try or test it, call it free or priced, or say it sends, books or does anything. Write as someone researching a problem or considering building something: \"I'm researching how repair shops handle collections\", \"I'm thinking of building a tool for this\". The ask is a conversation or a story, never a sign-up.";
+}
+
+const OFFERS_A_PRODUCT = /\b(free (tool|app|service|trial|to (use|try))|try (it|our|my|the (app|tool))|sign up|sign-up|beta (access|users?|testers?)|early access|join (the )?(waitlist|beta)|our (app|tool|product|platform|service)|(it|we|my (app|tool)) sends?|already (sends?|books?|works?)|\$\s?\d|£\s?\d|GHS\s?\d|per month)\b/i;
+
+/** Pure: does the text offer or describe a product the founder has not built? `allowed` is the founder's own text. */
+export function offersMissingProduct(text: string, allowed: string): boolean {
+  const m = text.match(OFFERS_A_PRODUCT);
+  if (!m) return false;
+  return !allowed.toLowerCase().includes(m[0].toLowerCase());
+}

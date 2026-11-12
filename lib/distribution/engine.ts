@@ -105,7 +105,7 @@ export function keepPastBehaviourQuestions(qs: string[]): string[] {
 
 // ── Prompts ─────────────────────────────────────────────────────────────────
 
-import { SENDER_RULE } from "@/lib/prep/senderRule";
+import { SENDER_RULE, productClaimsRule } from "@/lib/prep/senderRule";
 
 const PERSONA = `You prepare first drafts for a solo founder. Use only the facts you are given. Never invent statistics, customers, quotes, testimonials or links. No hype, no flattery, no emojis. Write plainly, in the founder's voice. ${SENDER_RULE} The founder reviews and sends or publishes everything themselves.`;
 
@@ -156,6 +156,7 @@ ${projectBlock(ctx.project)}
 TASK TODAY: ${ctx.task}
 ${ctx.firstStep ? `First step: ${ctx.firstStep}\n` : ""}
 ${learningPromptBlock(ctx.lessons)}
+${productClaimsRule(ctx.project.stage)}
 ${ctx.inferred ? `${ctx.inferred}\n` : ""}${ctx.shipped?.length ? `WHAT THE FOUNDER ACTUALLY SHIPPED RECENTLY (real, from their repository). Build on these. Do not claim anything beyond them:\n${ctx.shipped.map((x) => `- ${x}`).join("\n")}\n` : ""}
 ${kindInstructions(ctx)}
 
