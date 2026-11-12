@@ -13,7 +13,7 @@ import { DemandCheck } from "@/components/customers/DemandCheck";
 type Status = "saved" | "contacted" | "replied" | "converted" | "no_reply" | "not_a_fit";
 type Channel = "whatsapp" | "facebook" | "phone" | "visit" | "email" | "other";
 interface LeadRow {
-  id: string | null; name: string; kind: string; where: string; url: string;
+  id: string | null; name: string; kind: string; where: string; url: string; location?: "confirmed" | "unconfirmed";
   why_fit: string; evidence: string; how_to_reach: string; first_message: string;
   status: Status; channel: Channel | null;
 }
@@ -58,7 +58,7 @@ export default function CustomersPage() {
     if (replace || !leads.length) {
       setLeads((r.leads ?? []).map((l: { id: string; lead_name: string; lead_kind: string; lead_url: string; payload: Partial<LeadRow>; status: Status; channel: Channel | null }) => ({
         id: l.id, name: l.lead_name, kind: l.lead_kind, url: l.lead_url, status: l.status, channel: l.channel,
-        where: l.payload?.where ?? "", why_fit: l.payload?.why_fit ?? "", evidence: l.payload?.evidence ?? "",
+        where: l.payload?.where ?? "", location: l.payload?.location, why_fit: l.payload?.why_fit ?? "", evidence: l.payload?.evidence ?? "",
         how_to_reach: l.payload?.how_to_reach ?? "", first_message: l.payload?.first_message ?? "",
       })));
     }
@@ -168,6 +168,7 @@ export default function CustomersPage() {
                 <span className="rounded-full bg-[var(--bm-bg3)] px-2 py-0.5 text-[11px] text-[var(--bm-text3)]">{KIND_LABEL[l.kind] ?? l.kind}</span>
               </div>
               {l.where && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">{l.where}</p>}
+              {l.location === "unconfirmed" && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Location not confirmed on the page. Check it is in your area before you reach out.</p>}
               {l.why_fit && <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text)]">{l.why_fit}</p>}
               {l.evidence && <p className="mt-2 break-words border-l-2 border-[var(--bm-border2)] pl-3 text-[13px] leading-relaxed text-[var(--bm-text3)]">{l.evidence}</p>}
               {l.how_to_reach && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">How to reach them:</strong> {l.how_to_reach}</p>}

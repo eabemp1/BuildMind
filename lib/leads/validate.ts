@@ -16,6 +16,8 @@ export interface Lead {
   evidence: string;
   how_to_reach: string;
   first_message: string;
+  /** "unconfirmed" when nothing in the page ties the lead to the requested country or city. */
+  location?: "confirmed" | "unconfirmed";
 }
 
 const s = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");

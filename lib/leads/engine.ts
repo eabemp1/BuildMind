@@ -10,6 +10,7 @@ import { readPage, readPageWithLinks, isAllowedUrl, type PageLink } from "@/lib/
 import { findPlaces, type OsmPlace } from "@/lib/leads/osm";
 import { cleanInput, cleanQueries, cleanOsmTags, fallbackQueries, targetsFounders, type LeadInput, type OsmTag } from "@/lib/leads/plan";
 import { validateLeads, type Lead } from "@/lib/leads/validate";
+import { placeVerdict } from "@/lib/leads/place";
 import { isGenericLead } from "@/lib/leads/generic";
 
 export interface LeadRun {
@@ -156,13 +157,27 @@ Rules:
         { role: "user", content: `Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
       ], { role: att.role, temperature: 0.2, maxTokens: 3000 });
       const proposed = Array.isArray(out?.leads) ? out.leads.length : 0;
-      return { leads: validateLeads(out?.leads, allowed, 12, allowFounders), proposed, failed: false };
+      return { leads: keepRightPlace(validateLeads(out?.leads, allowed, 12, allowFounders), i, pages, snippets, places), proposed, failed: false };
     } catch (e) {
       lastError = String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 200);
       console.error(`[leads] extract attempt=${n + 1} failed:`, lastError);
     }
   }
   return { leads: [], proposed: 0, failed: true, error: lastError };
+}
+
+/** Drop leads whose page clearly belongs to another country; mark the ones nothing ties to the requested place. */
+export function keepRightPlace(leads: Lead[], i: { country: string; city?: string }, pages: Array<{ url: string; title?: string; text: string }>, snippets: SearchResult[], places: OsmPlace[]): Lead[] {
+  const key = (u: string) => { try { const x = new URL(u); return `${x.hostname.replace(/^www\./, "")}${x.pathname.replace(/\/$/, "")}`.toLowerCase(); } catch { return u.toLowerCase(); } };
+  const out: Lead[] = [];
+  for (const l of leads) {
+    const k = key(l.url);
+    const text = [l.where, l.evidence, l.name, ...pages.filter((p) => key(p.url) === k).map((p) => `${p.title ?? ""} ${p.text.slice(0, 4000)}`), ...snippets.filter((s) => key(s.url) === k).map((s) => `${s.title} ${s.snippet}`), ...places.filter((p) => key(p.url) === k).map((p) => JSON.stringify(p))].join(" \n ");
+    const v = placeVerdict(text, i);
+    if (v === "wrong") { console.warn(`[leads] dropped, wrong place: ${l.name}`); continue; }
+    out.push({ ...l, location: v === "confirmed" ? "confirmed" : "unconfirmed" });
+  }
+  return out;
 }
 
 /** The text sent to the model: capped pages, each cut short, a few snippets, and the map listings. Pure. */
