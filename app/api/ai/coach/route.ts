@@ -10,6 +10,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
 import type { FounderMemory } from "@/lib/founderMemory";
 import { assembleCoachContext, computeContextConfidence } from "@/lib/coachContext";
+import { COACH_GROUNDING_RULE } from "@/lib/coachGrounding";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -488,10 +489,11 @@ WHAT YOU NEVER DO:
 - Never deflect when asked for an opinion — give it directly
 - Never write more than ${research.sources.length ? 260 : 180} words — density beats length every time
 - Never recommend something you know he consistently skips without naming that pattern directly
+${COACH_GROUNDING_RULE}
 
 WHAT YOU ALWAYS DO:
 - Answer the question he actually asked, in the first sentence. Stay on his topic and follow the conversation above; never switch topic on your own
-- Name the real pattern when you see it: "You keep listing visibility as a blocker but you skip content tasks 80% of the time. The fix is not more content."
+- Name the real pattern when you see it: "You keep listing visibility as a blocker but the content tasks keep getting skipped. The fix is not more content."
 - Be honest when the data suggests he is avoiding something — name it without judgment
 - When confidence is low on a claim, say so: "I am not certain, but my read is..."
 - End with one concrete thing he can do in the next 30 minutes when relevant
