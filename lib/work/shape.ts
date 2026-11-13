@@ -51,7 +51,7 @@ RULES
 - Write for the founder's real audience in their real market. Do not assume US conventions, currency or channels.
 - The founder is the SENDER. Anything about the founder, their product, their signups or their milestones belongs to the founder. Never turn it into a fact about the reader (wrong: "I noticed you just signed up two users"; right: "I just got my first two users"). The reader is usually someone the founder has not met.
 - Never say you saw, noticed, read or heard something about the reader unless the BRIEF states exactly that.
-- ${productClaimsRule(project.stage)}
+- ${productClaimsRule(project.stage, `${project.description ?? ""} ${brief} ${context}`)}
 - Do exactly the job below and nothing else.
 
 QUALITY BAR (check your draft against every line before you answer)
@@ -168,7 +168,7 @@ const words = (t: string) => new Set((t.toLowerCase().match(/[a-z0-9']+/g) ?? []
 /** Problems a second pass can fix: marketing words, near-identical versions, an opening about the founder. */
 export function draftProblems(result: WorkResult, spec: WorkSpec, allowed = "", stage = ""): string[] {
   const out: string[] = [];
-  if (productNotBuilt(stage) && result.variants.some((v) => offersMissingProduct(v.text, allowed))) out.push("it offers, prices or describes a product that does not exist yet; write as someone researching the problem, with a conversation as the ask, never a sign-up or a free tool");
+  if (productNotBuilt(stage, allowed) && result.variants.some((v) => offersMissingProduct(v.text, allowed))) out.push("it offers, prices or describes a product that does not exist yet; write as someone researching the problem, with a conversation as the ask, never a sign-up or a free tool");
   const known = words(allowed);
   const invented = result.variants.some((v) => Array.from(v.text.matchAll(CLAIMS_TO_HAVE_SEEN)).some((m) => {
     const w = Array.from(words(m[1]));

@@ -156,7 +156,7 @@ ${projectBlock(ctx.project)}
 TASK TODAY: ${ctx.task}
 ${ctx.firstStep ? `First step: ${ctx.firstStep}\n` : ""}
 ${learningPromptBlock(ctx.lessons)}
-${productClaimsRule(ctx.project.stage)}
+${productClaimsRule(ctx.project.stage, ctx.project.description ?? "")}
 ${ctx.inferred ? `${ctx.inferred}\n` : ""}${ctx.shipped?.length ? `WHAT THE FOUNDER ACTUALLY SHIPPED RECENTLY (real, from their repository). Build on these. Do not claim anything beyond them:\n${ctx.shipped.map((x) => `- ${x}`).join("\n")}\n` : ""}
 ${kindInstructions(ctx)}
 
