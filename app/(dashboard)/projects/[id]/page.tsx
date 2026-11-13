@@ -1296,7 +1296,7 @@ export default function ProjectDetailPage() {
               fontSize: 11, fontWeight: 700, textDecoration: "none",
             }}
           >
-            {score}pts →
+            Project score {score} →
           </a>
         </div>
       </div>
@@ -1520,8 +1520,8 @@ export default function ProjectDetailPage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11, lineHeight: 1.45 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ color: "var(--bm-text3)" }}>Momentum</span>
-              <span style={{ color: "var(--bm-text2)", fontFamily: "'DM Mono', monospace" }}>{score} pts</span>
+              <span style={{ color: "var(--bm-text3)" }}>Project score</span>
+              <span style={{ color: "var(--bm-text2)", fontFamily: "'DM Mono', monospace" }}>{score} / 100</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span style={{ color: "var(--bm-text3)" }}>Execution</span>

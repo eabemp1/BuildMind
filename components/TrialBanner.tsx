@@ -58,7 +58,7 @@ interface TrialBannerProps {
 
 const BUILDER_FEATURES = [
   "Daily AI action — calibrated to your stage",
-  "Reflexion loop — AI that learns from your outcomes",
+  "Learns from your outcomes",
   "Behavioral memory — remembers your patterns",
 ];
 
@@ -261,7 +261,7 @@ export function TrialWelcomeCard({ daysRemaining }: TrialWelcomeCardProps) {
       >
         {[
           { label: "Daily AI action", desc: "One high-leverage task every morning" },
-          { label: "Reflexion loop", desc: "AI that improves from your outcomes" },
+          { label: "Learns from your outcomes", desc: "Advice improves as you report what happened" },
           { label: "Behavioral memory", desc: "Remembers your patterns over time" },
           { label: "Notion & Linear sync", desc: "Real tasks fed into your AI brief" },
           { label: "AI Coach", desc: "Ask anything, get founder-specific answers" },
@@ -372,7 +372,7 @@ export function TrialPaywall({ expired }: TrialPaywallProps) {
 
         <p style={{ fontSize: 14, color: "var(--bm-text3)", lineHeight: 1.65, margin: "0 0 8px" }}>
           You&apos;ve had 14 days of full Builder access — daily briefings, the full AI coach,
-          the Reflexion loop, and the behavioral memory system that&apos;s been watching
+          learning from your outcomes, and the memory that has been tracking
           your patterns.
         </p>
         <p style={{ fontSize: 14, color: "var(--bm-text3)", lineHeight: 1.65, margin: "0 0 24px" }}>
@@ -392,7 +392,7 @@ export function TrialPaywall({ expired }: TrialPaywallProps) {
         >
           {[
             "Daily AI action — stage-specific each morning",
-            "Reflexion loop — learns from every outcome",
+            "Learns from every outcome",
             "Behavioral memory — knows your patterns",
             "Notion & Linear task sync",
             "AI Coach: up to 80 messages a day",

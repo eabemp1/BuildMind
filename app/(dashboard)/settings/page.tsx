@@ -234,7 +234,7 @@ function SaveButton({ loading, onClick }: { loading: boolean; onClick: () => voi
 // ── Feature comparison data ───────────────────────────────────────────────────
 const PLAN_FEATURES = [
   { label: "Daily AI action",              free: true,  builder: true  },
-  { label: "Reflexion loop (AI learns from outcomes)", free: false, builder: true },
+  { label: "Learns from your outcomes", free: false, builder: true },
   { label: "Behavioral memory",            free: false, builder: true  },
   { label: "Notion & Linear task sync",    free: false, builder: true  },
   { label: "AI Coach: up to 80 messages a day",  free: false, builder: true  },
