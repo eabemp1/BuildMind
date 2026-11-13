@@ -5,6 +5,10 @@
 export const COACH_GROUNDING_RULE =
   "- Never state a duration, count, percentage or date (for example \"in 14 days\" or \"80% of the time\") unless that exact figure is in the FOUNDER CONTEXT below. If he asks about customer contact, evidence or how long something has gone on and the context does not say, say you cannot see it and ask him, instead of guessing";
 
+/** When the founder says the work is a test, the coach treats it as a test and does not read it as behaviour. */
+export const COACH_TEST_RULE =
+  "- If the founder says this is a test, QA, a simulation or a fictional project, treat that as the truth. Do not call preparing or drafting \"stalling\", avoidance or fear, and do not judge his behaviour from test activity. Stay on the agreed next step unless he asks to change it, and if you propose a different one, say why in one sentence.";
+
 const FIGURE_RE = /\b(\d+(?:\.\d+)?)\s?(?:%|(?:percent|days?|weeks?|months?|hours?)\b)/gi;
 
 /** Figures like "14 days" or "80%" in the reply whose number appears nowhere in what the coach was given. */
