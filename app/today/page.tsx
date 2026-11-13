@@ -1977,14 +1977,16 @@ function TodayContent() {
     return (
       <div style={{ maxWidth: 560, margin: "0 auto", padding: isMobile ? "36px 0" : "60px 24px", textAlign: "center" }}>
         <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--bm-green-dim)", border: "1px solid var(--bm-green-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
-            <CheckCircle2 size={28} color="var(--bm-green)" />
+          <div style={{ width: 64, height: 64, borderRadius: "50%", background: doneInfo.outcome === "blocked" ? "var(--bm-bg2)" : "var(--bm-green-dim)", border: doneInfo.outcome === "blocked" ? "1px solid var(--bm-border)" : "1px solid var(--bm-green-bd)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+            <CheckCircle2 size={28} color={doneInfo.outcome === "blocked" ? "var(--bm-text3)" : "var(--bm-green)"} />
           </div>
           <h2 style={{ fontSize: isMobile ? 20 : 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.03em", marginBottom: 10 }}>
-            {doneInfo.first ? "First task done." : doneInfo.outcome ? DONE_HEADLINE[doneInfo.outcome] : "Today is done."}
+            {doneInfo.outcome === "blocked" ? DONE_HEADLINE.blocked : doneInfo.first ? "First task done." : doneInfo.outcome ? DONE_HEADLINE[doneInfo.outcome] : "Checked in for today."}
           </h2>
           <p style={{ fontSize: 14, color: "var(--bm-text3)", marginBottom: isFirstSession ? 16 : 20, lineHeight: 1.6 }}>
-            {doneInfo.first
+            {doneInfo.outcome === "blocked"
+              ? "The task was not done. Tomorrow's task starts from what got in the way."
+              : doneInfo.first
               ? "Most people never get this far. Tomorrow's task starts from what you just did."
               : "Tomorrow's task starts from what you just did."}
             {displayName ? ` See you tomorrow, ${displayName.split(" ")[0]}.` : ""}

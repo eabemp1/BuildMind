@@ -51,7 +51,7 @@ export function pickCrossLink(i: CrossLinkInput): CrossLink | null {
       return { id: "break_blocked", text: "Blocked often means one risk is bigger than the others. A teardown shows which one.", cta: "Break my startup", href: "/break" };
     }
     if (unseen("break")) {
-      return { id: "break", text: `You finished a step. See what could stop ${name}, in about 2 minutes.`, cta: "Break my startup", href: "/break" };
+      return { id: "break", text: i.outcome === "blocked" ? `See what could stop ${name}, in about 2 minutes.` : `You finished a step. See what could stop ${name}, in about 2 minutes.`, cta: "Break my startup", href: "/break" };
     }
   } else if (i.breakAgeDays >= RERUN_AFTER_DAYS) {
     const last = i.seen.break_rerun;

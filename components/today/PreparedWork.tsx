@@ -336,28 +336,6 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         </div>
       )}
 
-      {kind === "validation_kit" && (
-        <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
-          <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>Log the interview (do this after you have run it)</div>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Paste your notes. BuildMind pulls out themes with their exact words and separates what they did from what they said they would do." aria-label="Interview notes"
-            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--mood-radius, 10px)", padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
-          <div><button type="button" style={btn(true)} disabled={notesBusy || notes.trim().length < 40} onClick={readNotes}>{notesBusy ? "Reading…" : "Read my notes"}</button></div>
-          {notesRead && (
-            <div style={{ display: "grid", gap: 6 }}>
-              <p style={{ ...muted, color: "var(--bm-text2)" }}>{notesRead.behaviourCount} of {notesRead.themes.length} quotes describe something they actually did{notesRead.opinionCount ? `; ${notesRead.opinionCount} are opinions or things they would do` : ""}.</p>
-              {notesRead.themes.map((t) => (
-                <div key={t.quote} style={{ fontSize: "var(--text-sm)", color: "var(--bm-text2)", lineHeight: "var(--leading-normal)" }}>
-                  {t.theme} <span style={{ ...muted, display: "inline" }}>({t.behaviour ? "did" : "said"})</span>
-                  <div style={{ ...muted, borderLeft: "2px solid var(--bm-border2)", paddingLeft: 8, marginTop: 3 }}>&ldquo;{t.quote}&rdquo;</div>
-                </div>
-              ))}
-              {notesRead.surprise && <p style={muted}>Possibly unexpected: {notesRead.surprise}</p>}
-              {notesRead.nextQuestion && <p style={muted}>Ask next: {notesRead.nextQuestion}</p>}
-            </div>
-          )}
-        </div>
-      )}
-
       {diag && (
         <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
           {diag.insight && <p style={{ ...muted, color: "var(--bm-text2)" }}>{diag.insight}</p>}
@@ -395,6 +373,28 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
           {n.connect && n.connect !== "search_console" && connectApp === n.connect && <ConnectCard app={n.connect} onCancel={() => setConnectApp(null)} onConnected={async () => { setConnectApp(null); setBusy("redo"); await load(true); setBusy(""); }} />}
         </div>
       ))}
+
+      {kind === "validation_kit" && (
+        <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
+          <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>Log the interview (do this after you have run it)</div>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Paste your notes. BuildMind pulls out themes with their exact words and separates what they did from what they said they would do." aria-label="Interview notes"
+            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--mood-radius, 10px)", padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
+          <div><button type="button" style={btn(true)} disabled={notesBusy || notes.trim().length < 40} onClick={readNotes}>{notesBusy ? "Reading…" : "Read my notes"}</button></div>
+          {notesRead && (
+            <div style={{ display: "grid", gap: 6 }}>
+              <p style={{ ...muted, color: "var(--bm-text2)" }}>{notesRead.behaviourCount} of {notesRead.themes.length} quotes describe something they actually did{notesRead.opinionCount ? `; ${notesRead.opinionCount} are opinions or things they would do` : ""}.</p>
+              {notesRead.themes.map((t) => (
+                <div key={t.quote} style={{ fontSize: "var(--text-sm)", color: "var(--bm-text2)", lineHeight: "var(--leading-normal)" }}>
+                  {t.theme} <span style={{ ...muted, display: "inline" }}>({t.behaviour ? "did" : "said"})</span>
+                  <div style={{ ...muted, borderLeft: "2px solid var(--bm-border2)", paddingLeft: 8, marginTop: 3 }}>&ldquo;{t.quote}&rdquo;</div>
+                </div>
+              ))}
+              {notesRead.surprise && <p style={muted}>Possibly unexpected: {notesRead.surprise}</p>}
+              {notesRead.nextQuestion && <p style={muted}>Ask next: {notesRead.nextQuestion}</p>}
+            </div>
+          )}
+        </div>
+      )}
 
       {(prep.learned.length > 0 || (prep.performance && prep.performance.used > 0)) && (
         <p style={muted}>
