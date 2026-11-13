@@ -14,6 +14,8 @@ export interface FallbackInput {
   problemDesc: string;
   productName: string;
   stage: string;
+  /** What the founder said got in the way last time, when yesterday ended blocked. */
+  blocker?: string;
 }
 
 export interface KindFallback {
@@ -28,6 +30,20 @@ export interface KindFallback {
 }
 
 type Variant = (i: FallbackInput) => KindFallback;
+
+/** Yesterday ended blocked: today is about that block, not a repeat of the same ask. */
+function aroundBlocker(blocker: string): KindFallback {
+  const b = blocker.trim().replace(/\s+/g, " ").slice(0, 120).replace(/[."]+$/, "");
+  return {
+    action: `Yesterday you got stuck on: "${b}". Write 3 ways around it, pick the cheapest, and do its first 10 minutes.`,
+    platform: "",
+    message: "",
+    why: `Repeating the same ask would hit the same wall. Getting around the block is the progress today.`,
+    time: "20 minutes",
+    done_when: `You have one way around "${b}" and the first step of it is done.`,
+    first_step: `Write the 3 ways around it, even rough ones, before you pick.`,
+  };
+}
 
 const BANK: Record<MissionKind, Variant[]> = {
   interview: [
@@ -135,7 +151,7 @@ const BANK: Record<MissionKind, Variant[]> = {
     }),
   ],
   unblock: [
-    ({ productName }) => ({
+    ({ productName, blocker }) => blocker ? aroundBlocker(blocker) : ({
       action: `Pick the one thing you have been putting off on ${productName} and do only its first 20 minutes, rough is fine.`,
       platform: "",
       message: "",
@@ -235,7 +251,7 @@ const MORE: Partial<Record<MissionKind, Variant[]>> = {
     }),
   ],
   unblock: [
-    () => ({
+    ({ blocker }) => blocker ? aroundBlocker(blocker) : ({
       action: `Name the one task you keep moving to tomorrow, write the first sentence or step of it, and send that to one person to hold you to it.`,
       platform: "",
       message: "",

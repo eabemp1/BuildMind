@@ -676,10 +676,10 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
     if (swapPlan) lastReflectionContext += `\n\n${[swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n")}`;
     if (missionGrounding.length) lastReflectionContext += `\n\n${groundingPromptBlock(missionGrounding)}`;
-    const fallbackInput = { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: inferProjectProblem(problem, title, projectContext), productName: title?.trim() || "your product", stage };
+    const fallbackInput = { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: inferProjectProblem(problem, title, projectContext), productName: title?.trim() || "your product", stage, blocker: recentTasksParsed[0]?.outcome === "blocked" ? personalisationCtx.recurringBlockers[0] : undefined };
     const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
     // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
-    const curated = isFirstRun(recentTasksParsed) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
+    const curated = isFirstRun(recentTasksParsed) && !fallbackInput.blocker ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
     const kindFallback = curated ?? fallbackForKind(mission.kind, fallbackInput, fallbackSeed, personalisationCtx.ledger);
 
     // NOTE: founderIntelligence loading + prediction recording already

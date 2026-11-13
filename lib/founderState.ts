@@ -180,9 +180,11 @@ export function fitMissionToState(mission: Mission, state: FounderState | null |
   }
   const meta = missionMeta(kind);
   const minutes = Math.min(state.maxMinutes, kind === mission.kind ? mission.minutes : meta.minutes);
+  // Say what the state is based on, so a guess from the clock or past tasks is not stated as fact.
+  const basis = (state.reasons[0] ?? "").replace(/\s+$/, "");
   const why = state.level === "depleted"
-    ? "You're running on empty, so this is one small finished thing, not a smaller priority."
-    : "Your energy is low, so this is a lighter slice of work that still matters.";
+    ? `${basis || "You look worn down."} So this is one small finished thing, not a smaller priority.`
+    : `${basis || "You may be low on energy."} So this is a lighter slice of work that still matters.`;
   return {
     ...mission, kind, minutes, label: meta.label, requires: meta.requires, shape: meta.shape("their target users"),
     reasons: [why, ...mission.reasons].slice(0, 4),
