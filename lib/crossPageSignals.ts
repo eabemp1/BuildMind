@@ -66,8 +66,8 @@ export async function getCrossPageSignals(
         href: "/founder-mirror",
         badge: `${count} pattern${count === 1 ? "" : "s"}`,
         headline: count === 1
-          ? `You're avoiding one specific kind of work — Founder Mirror names it.`
-          : `${count} avoidance patterns detected — Founder Mirror shows exactly what you're routing around.`,
+          ? `You flagged one kind of work as hard. Founder Mirror tracks whether it shows up in what you do.`
+          : `You flagged ${count} kinds of work as hard. Founder Mirror tracks whether they show up in what you do.`,
       });
     }
   }
