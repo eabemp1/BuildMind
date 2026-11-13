@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useProjectSummariesQuery } from "@/lib/queries";
 import { getActiveProjectId } from "@/lib/api";
@@ -16,7 +16,16 @@ interface LeadRow {
   id: string | null; name: string; kind: string; where: string; url: string; location?: "confirmed" | "unconfirmed";
   why_fit: string; evidence: string; how_to_reach: string; first_message: string;
   status: Status; channel: Channel | null;
+  country?: string; city?: string; created_at?: string;
 }
+
+// Results from different searches stay under their own heading: when it ran, and where it looked.
+const searchKey = (l?: LeadRow) => (l ? `${(l.created_at ?? "").slice(0, 10)}|${l.country ?? ""}|${l.city ?? ""}` : "");
+const searchLabel = (l: LeadRow) => {
+  const when = l.created_at ? new Date(l.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
+  const where = [l.city, l.country].filter(Boolean).join(", ");
+  return `Search${when ? ` on ${when}` : ""}${where ? ` · ${where}` : ""}`;
+};
 
 const KIND_LABEL: Record<string, string> = { business: "Business", public_community: "Public community", page: "Public page", association: "Association", event: "Event", listing: "Listing" };
 const STATUS_LABEL: Record<Status, string> = { saved: "Not contacted", contacted: "Contacted", replied: "Replied", converted: "Became a customer", no_reply: "No reply", not_a_fit: "Not a fit" };
@@ -56,13 +65,25 @@ export default function CustomersPage() {
     setWorking(r.working ?? []);
     setRun(r.run ?? null);
     if (replace || !leads.length) {
-      setLeads((r.leads ?? []).map((l: { id: string; lead_name: string; lead_kind: string; lead_url: string; payload: Partial<LeadRow>; status: Status; channel: Channel | null }) => ({
-        id: l.id, name: l.lead_name, kind: l.lead_kind, url: l.lead_url, status: l.status, channel: l.channel,
+      setLeads((r.leads ?? []).map((l: { id: string; lead_name: string; lead_kind: string; lead_url: string; payload: Partial<LeadRow>; status: Status; channel: Channel | null; country?: string; city?: string; created_at?: string }) => ({
+        id: l.id, country: l.country, city: l.city, created_at: l.created_at, name: l.lead_name, kind: l.lead_kind, url: l.lead_url, status: l.status, channel: l.channel,
         where: l.payload?.where ?? "", location: l.payload?.location, why_fit: l.payload?.why_fit ?? "", evidence: l.payload?.evidence ?? "",
         how_to_reach: l.payload?.how_to_reach ?? "", first_message: l.payload?.first_message ?? "",
       })));
     }
   }
+  // Keep the form across navigation: restore what was typed for this project.
+  useEffect(() => {
+    if (!project?.id) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`bm_find_customers_${project.id}`) ?? "null") as { country?: string; city?: string; customer?: string } | null;
+      if (saved) { setCountry(saved.country ?? ""); setCity(saved.city ?? ""); if (saved.customer) setCustomer(saved.customer); }
+    } catch { /* storage unavailable */ }
+  }, [project?.id]);
+  useEffect(() => {
+    if (!project?.id || (!country && !city && !customer)) return;
+    try { localStorage.setItem(`bm_find_customers_${project.id}`, JSON.stringify({ country, city, customer })); } catch { /* ignore */ }
+  }, [project?.id, country, city, customer]);
   useEffect(() => { void loadSaved(); }, [project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // While a search runs in the background, check on it every few seconds. It keeps running if you leave this page.
@@ -160,8 +181,12 @@ export default function CustomersPage() {
       )}
 
       <ul className="mt-5 flex flex-col gap-3">
-        {leads.map((l) => (
-          <li key={l.id ?? l.url}>
+        {leads.map((l, i) => (
+          <Fragment key={l.id ?? l.url}>
+            {searchKey(l) !== searchKey(leads[i - 1]) && (
+              <li aria-hidden={false} className="mt-2 text-[12px] font-semibold text-[var(--bm-text3)]">{searchLabel(l)}</li>
+            )}
+          <li>
             <Card className="p-4 sm:p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="break-words text-[16px] font-semibold text-[var(--bm-text)]">{l.name}</h2>
@@ -201,6 +226,7 @@ export default function CustomersPage() {
               </div>
             </Card>
           </li>
+          </Fragment>
         ))}
       </ul>
 
