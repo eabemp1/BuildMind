@@ -74,3 +74,42 @@ describe("who is who", () => {
     expect(buildPrompt(spec, { who: "a", goal: "b" }, project)).toMatch(/The founder is the SENDER/);
   });
 });
+
+import { readFileSync } from "node:fs";
+import { SENDER_RULE } from "@/lib/prep/senderRule";
+describe("the sender rule reaches every prompt that writes to a reader", () => {
+  it("states the rule plainly", () => { expect(SENDER_RULE).toMatch(/SENDER/); expect(SENDER_RULE).toMatch(/never as facts about the reader/); });
+  for (const f of ["lib/distribution/engine.ts", "lib/prep/engine.ts", "app/api/ai/prep/reply/route.ts", "app/api/radar/prep/route.ts"]) {
+    it(f, () => expect(readFileSync(f, "utf8")).toContain("${SENDER_RULE}"));
+  }
+});
+
+import { offersMissingProduct, productClaimsRule, productNotBuilt } from "@/lib/prep/senderRule";
+describe("drafts match what exists", () => {
+  const spec = SPEC_BY_ID.whatsapp_message;
+  const make = (texts: string[]) => normalizeWork({ title: "t", summary: "s", variants: texts.map((t, i) => ({ label: `v${i}`, text: t })) }, spec, "", () => [])!;
+  it("knows which stages have no product yet", () => {
+    expect(productNotBuilt("Idea")).toBe(true);
+    expect(productNotBuilt("Validation")).toBe(true);
+    expect(productNotBuilt("MVP")).toBe(false);
+    expect(productNotBuilt(undefined)).toBe(false);
+  });
+  it("flags a free tool or already-sending claim at idea stage", () => {
+    expect(offersMissingProduct("Would you like to try our free tool that sends SMS reminders?", "A bike shop reminder idea")).toBe(true);
+    expect(offersMissingProduct("It already sends texts to your customers.", "")).toBe(true);
+    expect(offersMissingProduct("I'm researching how repair shops handle bike collections. How do you do it today?", "")).toBe(false);
+  });
+  it("does not flag what the founder wrote themselves", () => {
+    expect(offersMissingProduct("Sign up for the waitlist", "Goal: get them to sign up for the waitlist")).toBe(false);
+  });
+  it("draftProblems flags it at Idea stage only", () => {
+    const r = make(["Hi, would you like to try our free tool for reminders?", "How do you handle missed pickups today?"]);
+    expect(draftProblems(r, spec, "", "Idea").join(" ")).toMatch(/does not exist yet/);
+    expect(draftProblems(r, spec, "", "MVP").join(" ")).not.toMatch(/does not exist yet/);
+  });
+  it("the prompt says the product does not exist when it does not", () => {
+    expect(buildPrompt(spec, { who: "a", goal: "b" }, { ...project, stage: "Idea" })).toMatch(/THE PRODUCT DOES NOT EXIST YET/);
+    expect(buildPrompt(spec, { who: "a", goal: "b" }, { ...project, stage: "MVP" })).not.toMatch(/DOES NOT EXIST YET/);
+    expect(productClaimsRule("Idea")).toMatch(/researching/);
+  });
+});
