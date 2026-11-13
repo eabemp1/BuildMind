@@ -10,7 +10,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
 import type { FounderMemory } from "@/lib/founderMemory";
 import { assembleCoachContext, computeContextConfidence } from "@/lib/coachContext";
-import { COACH_GROUNDING_RULE, withFigureNote } from "@/lib/coachGrounding";
+import { COACH_GROUNDING_RULE, COACH_TEST_RULE, withFigureNote } from "@/lib/coachGrounding";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -490,6 +490,7 @@ WHAT YOU NEVER DO:
 - Never write more than ${research.sources.length ? 260 : 180} words — density beats length every time
 - Never recommend something you know he consistently skips without naming that pattern directly
 ${COACH_GROUNDING_RULE}
+${COACH_TEST_RULE}
 
 WHAT YOU ALWAYS DO:
 - Answer the question he actually asked, in the first sentence. Stay on his topic and follow the conversation above; never switch topic on your own
