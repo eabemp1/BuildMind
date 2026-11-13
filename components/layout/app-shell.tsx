@@ -10,6 +10,7 @@ import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
 import { createClient } from "@/lib/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { storage } from "@/lib/storage";
+import { taskStripLabel } from "@/lib/taskOutcome";
 import { cachedRead } from "@/lib/shellCache";
 import { fetchBehaviorState } from "@/lib/userBehaviorState";
 import dynamic from "next/dynamic";
@@ -23,6 +24,7 @@ function DailyLoopStatusBar() {
   const [loopState, setLoopState] = useState<{
     dayOfWeek: number;
     taskDone: boolean;
+    taskOutcome: string | null;
     reflectionDone: boolean;
     hoursUntilBriefing: number;
   } | null>(null);
@@ -37,8 +39,9 @@ function DailyLoopStatusBar() {
     const today = now.toISOString().slice(0, 10);
     const taskDone = storage.get(`bm_task_done_${today}`) === "1";
     const reflectionDone = storage.get(`bm_reflect_done_${today}`) === "1";
+    const taskOutcome = storage.get(`bm_task_outcome_${today}`);
 
-    setLoopState({ dayOfWeek, taskDone, reflectionDone, hoursUntilBriefing });
+    setLoopState({ dayOfWeek, taskDone, taskOutcome, reflectionDone, hoursUntilBriefing });
     cachedRead("behavior-loop", 60_000, () => fetchBehaviorState<{ checkin_done_date: string; reflect_done_date: string }>([
       "checkin_done_date",
       "reflect_done_date",
@@ -46,6 +49,7 @@ function DailyLoopStatusBar() {
       setLoopState({
         dayOfWeek,
         taskDone: values.checkin_done_date === today || taskDone,
+        taskOutcome,
         reflectionDone: values.reflect_done_date === today || reflectionDone,
         hoursUntilBriefing,
       });
@@ -79,7 +83,7 @@ function DailyLoopStatusBar() {
       <span>
         Task:{" "}
         <span style={{ color: loopState.taskDone ? "var(--bm-accent)" : "var(--bm-text2)", fontWeight: loopState.taskDone ? 500 : 400 }}>
-          {loopState.taskDone ? "done" : "not yet"}
+          {taskStripLabel(loopState.taskDone, loopState.taskOutcome)}
         </span>
       </span>
       <span style={{ color: "var(--bm-border2)" }}>·</span>
