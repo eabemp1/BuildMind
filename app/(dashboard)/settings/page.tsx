@@ -21,6 +21,7 @@ import { User, CreditCard, Bell, Bot, Shield, Check, Zap, Globe, Plug2, type Luc
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Price } from "@/components/Price";
 import ConnectedApps from "@/components/integrations/ConnectedApps";
+import { isTrialOnly, trialLine } from "@/lib/billingView";
 
 type Tab = "profile" | "account" | "notifications" | "ai" | "billing" | "integrations" | "public";
 
@@ -451,7 +452,10 @@ const CANCEL_REASONS = [
 function BillingTab() {
   const isMobile = useIsMobile();
   const { plan } = usePlan();
-  const isPaid = plan !== "free";
+  const [facts, setFacts] = useState<{ trialActive: boolean; trialEndsAt: string | null; billingStatus: string | null }>({ trialActive: false, trialEndsAt: null, billingStatus: null });
+  const trialOnly = isTrialOnly({ plan, ...facts });
+  // A trial is not a paid plan: no renewal wording, no cancel button, and the upgrade link stays visible.
+  const isPaid = plan !== "free" && !trialOnly;
   const [loading, setLoading] = useState(true);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -464,6 +468,7 @@ function BillingTab() {
     try {
       const res = await fetch("/api/billing/status", { cache: "no-store" });
       const data = await res.json().catch(() => null);
+      setFacts({ trialActive: Boolean(data?.trial?.active), trialEndsAt: typeof data?.trial?.endsAt === "string" ? data.trial.endsAt : null, billingStatus: typeof data?.billingStatus === "string" ? data.billingStatus : null });
       if (data?.cancelAtPeriodEnd) {
         setScheduled({ until: typeof data.currentPeriodEnd === "string" ? data.currentPeriodEnd : null });
       } else {
@@ -532,7 +537,8 @@ function BillingTab() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexDirection: isMobile ? "column" : "row", gap: 16 }}>
           <div>
             <div style={{ fontSize: 10, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, marginBottom: 8 }}>Current Plan</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 4 }}>{PLAN_NAMES[plan] ?? plan}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--bm-text)", letterSpacing: "-0.02em", marginBottom: 4 }}>{trialOnly ? `${PLAN_NAMES[plan] ?? plan} trial` : (PLAN_NAMES[plan] ?? plan)}</div>
+            {trialOnly && <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>{trialLine(facts.trialEndsAt)}</div>}
             {isPaid && (
               <div style={{ fontSize: 12, color: "var(--bm-text3)" }}>
                 {scheduled ? `Cancelled · Builder continues until ${untilLabel ?? "the end of your paid period"}` : <><Price /> · Renews monthly</>}
