@@ -31,7 +31,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   ...(FEATURES.notifications ? [{ id: "notifications" as Tab, label: "Notifications", icon: Bell }] : []),
   { id: "billing",        label: "Billing",        icon: CreditCard },
   { id: "integrations",   label: "Integrations",   icon: Plug2      },
-  { id: "ai",             label: "AI Usage",       icon: Bot        },
+  { id: "ai",             label: "AI Preferences",       icon: Bot        },
   { id: "public",         label: "Public Profile", icon: Globe      },
 ];
 
@@ -237,7 +237,7 @@ const PLAN_FEATURES = [
   { label: "Reflexion loop (AI learns from outcomes)", free: false, builder: true },
   { label: "Behavioral memory",            free: false, builder: true  },
   { label: "Notion & Linear task sync",    free: false, builder: true  },
-  { label: "AI Coach: up to 80 messages a day",  free: false, builder: true  },
+  { label: "Coach: up to 80 messages a day",  free: false, builder: true  },
   { label: "Weekly performance reports",   free: false, builder: true  },
   { label: "Break My Startup analysis",    free: true,  builder: true  },
   { label: "Morning briefings",            free: false, builder: true  },
@@ -555,7 +555,7 @@ function BillingTab() {
         </div>
       </div>
 
-      <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
+      {!trialOnly && <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Manage subscription</div>
         <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 16 }}>Cancel any time. You keep Builder until the end of the period you paid for.</div>
         {doneMessage && cancelStep === "idle" && (
@@ -615,7 +615,7 @@ function BillingTab() {
             <div style={{ fontSize: 13, color: "var(--bm-text3)", lineHeight: 1.6 }}>{doneMessage ?? "Cancelled. You won't be charged again."}</div>
           </motion.div>
         )}
-      </div>
+      </div>}
 
       {loading && <div style={{ fontSize: 12, color: "var(--bm-text4)", textAlign: "center" }}>Loading billing status…</div>}
     </div>
@@ -864,7 +864,7 @@ function SettingsContent() {
                     {[
                       { key: "streakReminder", label: "Streak Reminder", desc: "Daily reminder to complete your action" },
                       { key: "weeklyReport", label: "Weekly Report", desc: "Report-ready alert on Fridays and your Sunday recap email" },
-                      { key: "coachTips", label: "AI Coach Tips", desc: "Occasional startup insights from your coach" },
+                      { key: "coachTips", label: "Coach tips", desc: "Occasional startup insights from your coach" },
                     ].map(({ key, label, desc }) => (
                       <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: isMobile ? "18px 0" : "16px 0", borderBottom: "1px solid var(--bm-border)" }}>
                         <div>

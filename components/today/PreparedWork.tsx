@@ -284,7 +284,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
         </div>
       )}
 
-      {!meta.doneVerb && !idea && <ResultNote task={task} projectId={projectId} />}
+      {!meta.doneVerb && !idea && kind !== "validation_kit" && <ResultNote task={task} projectId={projectId} />}
 
       {done && meta.outcomes && (
         <div style={{ display: "grid", gap: 6 }}>
@@ -338,7 +338,7 @@ export default function PreparedWork({ task, missionKind, firstStep, projectId, 
 
       {kind === "validation_kit" && (
         <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: "var(--space-3)" }}>
-          <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>After the interview</div>
+          <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--bm-text3)" }}>Log the interview (do this after you have run it)</div>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Paste your notes. BuildMind pulls out themes with their exact words and separates what they did from what they said they would do." aria-label="Interview notes"
             style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "var(--bm-bg3)", border: "1px solid var(--bm-border2)", borderRadius: "var(--mood-radius, 10px)", padding: "8px 10px", color: "var(--bm-text)", fontFamily: "inherit", fontSize: "var(--text-sm)" }} />
           <div><button type="button" style={btn(true)} disabled={notesBusy || notes.trim().length < 40} onClick={readNotes}>{notesBusy ? "Reading…" : "Read my notes"}</button></div>

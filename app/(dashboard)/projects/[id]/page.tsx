@@ -1311,17 +1311,18 @@ export default function ProjectDetailPage() {
         const allDone = tasks.length > 0 && !next;
         return (
           <section aria-label="Next step" className="mb-5 rounded-[14px] border border-[var(--bm-accent-bd)] p-4 sm:p-5" style={{ background: "var(--bm-accent-dim)" }}>
-            <p className="text-[12px] font-semibold text-[var(--bm-accent)]">{next ? "Your next step" : allDone ? "All tasks done" : "Get started"}</p>
+            <p className="text-[12px] font-semibold text-[var(--bm-accent)]">{next ? "Next roadmap task" : allDone ? "All tasks done" : "Get started"}</p>
             <p className="mt-1.5 break-words text-[17px] font-semibold leading-snug text-[var(--bm-text)]">
               {next ? next.title : allDone ? "Every task is done. Check whether you are ready for the next stage." : "No tasks yet. Generate your first steps from the project idea."}
             </p>
             {nextMilestone ? <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Part of: {nextMilestone.title}</p> : null}
+            {next ? <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Today picks the one action to do first. This roadmap task stays here until you mark it done.</p> : null}
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               {next ? (
                 <>
                   <button onClick={() => router.push("/today")}
                     className="min-h-[44px] rounded-lg border-none bg-[var(--bm-text)] px-4 py-2 text-[13px] font-semibold text-[var(--bm-bg)]">
-                    Work on it in Today
+                    Open Today
                   </button>
                   <button onClick={() => toggleTask(next)}
                     className="min-h-[44px] rounded-lg border border-[var(--bm-border2)] bg-transparent px-4 py-2 text-[13px] font-medium text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)]">

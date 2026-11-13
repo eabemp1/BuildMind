@@ -458,6 +458,14 @@ function TodayContent() {
   // means nobody has to hunt for the check-in.
   const [checkinEl, setCheckinEl] = useState<HTMLDivElement | null>(null);
   const [checkinInView, setCheckinInView] = useState(false);
+  // The floating reflect button waits until the founder has scrolled, so it never sits on the first-screen controls.
+  const [scrolledPastFold, setScrolledPastFold] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolledPastFold(window.scrollY > 320);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   useEffect(() => {
     if (!checkinEl || typeof IntersectionObserver === "undefined") { setCheckinInView(false); return; }
     const io = new IntersectionObserver(([e]) => setCheckinInView(e.isIntersecting), { threshold: 0.25 });
@@ -2764,7 +2772,7 @@ function TodayContent() {
         </div>
         <TrackedLinks projectId={project?.id} suggestedSource={inferSource(actionData?.action)} nudge={needsTrackedLink(actionData?.action)} />
       </motion.div>
-      {!checkinInView && !done && actionData?.action && (
+      {!checkinInView && scrolledPastFold && !done && actionData?.action && (
         <button
           type="button"
           onClick={() => checkinEl?.scrollIntoView({ behavior: "smooth", block: "center" })}

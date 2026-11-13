@@ -68,7 +68,7 @@ export default function ConversationsJob() {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button type="button" onClick={() => void add()} disabled={!name.trim()} style={{ ...btn(true), opacity: name.trim() ? 1 : 0.55 }}>Add</button>
-          <span style={muted}>Need places to look? <Link href="/work" style={{ color: "inherit" }}>Work → Find 10 founders to talk to</Link> lists real communities and threads.</span>
+          <span style={muted}>Need places to look? <Link href="/work?kind=prospects" style={{ color: "inherit" }}>Where to find people</Link> lists real communities and threads.</span>
         </div>
         {err && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{err}</p>}
       </div>

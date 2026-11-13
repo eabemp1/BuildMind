@@ -136,11 +136,12 @@ export default function PwaProvider({
       return;
     }
 
-    // Permission explicitly blocked — show the unblock modal
+    // Permission blocked in the browser: stay quiet. The unblock help opens only when the
+    // founder asks for reminders (handleAccept), never on page load or navigation.
     if (status === "denied") {
       setShowPrompt(false);
       setShowPersistentBanner(false);
-      setShowBlockedModal(true);
+      setShowBlockedModal(false);
       return;
     }
 

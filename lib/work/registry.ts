@@ -200,7 +200,7 @@ export interface ExistingEntry { kind: PrepKind; group: WorkGroup; label: string
 /** The original prepared-work kinds, each opened with a sentence that selects it (checked by a test). */
 export const EXISTING: ExistingEntry[] = [
   { kind: "outreach", group: "reach", label: "Outreach messages", blurb: "Three tailored messages and a follow-up", task: "Write outreach messages to reach my first users" },
-  { kind: "prospects", group: "reach", label: "Where to find people", blurb: "Real places and live conversations", task: "Find 10 founders to talk to" },
+  { kind: "prospects", group: "reach", label: "Where to find people", blurb: "Real places and live conversations", task: "Find 10 people to talk to" },
   { kind: "validation_kit", group: "validate", label: "Interview kit", blurb: "Questions and a message to book people", task: "Prepare customer interviews to validate my idea" },
   { kind: "competitor_brief", group: "validate", label: "Competitor brief", blurb: "Who else exists, with sources", task: "Research my competitors" },
   { kind: "pricing_test", group: "validate", label: "Pricing test", blurb: "A way to learn what people will pay", task: "Design a pricing test" },

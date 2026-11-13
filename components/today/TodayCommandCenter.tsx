@@ -321,7 +321,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
             </div>
             <span style={{ display: "inline-flex", gap: 14, flexWrap: "wrap", marginLeft: narrow ? 0 : "auto" }}>
               <button type="button" data-tour="today-why" className="bm-ink-link" onClick={showWhy} style={link()}>Why this</button>
-              <button type="button" className="bm-ink-link" onClick={askCoach} style={link()}>Ask the coach</button>
+              <button type="button" className="bm-ink-link" onClick={askCoach} style={link()}>Ask Coach</button>
             </span>
           </div>
         )}

@@ -136,7 +136,7 @@ function ProgressContent() {
           }}>
             Progress
           </h1>
-          <OpenBesideButton label="Ask coach beside" request={{ kind: "coach", title: "Progress chart", prompt: "Chart my progress" }} />
+          <OpenBesideButton label="Open Coach panel" request={{ kind: "coach", title: "Progress chart", prompt: "Chart my progress" }} />
         </div>
 
         {/* Tab bar */}

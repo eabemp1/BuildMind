@@ -37,7 +37,7 @@ describe("Today hook", () => {
     expect(html).toContain("First move");
     expect(html).toContain("Open LinkedIn and find 3 names");
     expect(html).toContain("Why this");
-    expect(html).toContain("Ask the coach");
+    expect(html).toContain("Ask Coach");
   });
 
   it("hides the first move once the task is done", () => {
