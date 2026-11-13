@@ -108,6 +108,16 @@ export const LIVE_ONLY_TABLES = ["projects", "reflections", "agent_runs", "agent
 const SECRET_KEY = /^(?:.*_)?(?:access_?token|refresh_?token|id_?token|api_?key|secret|password|authorization|credentials?|share_?token|confirm_?token|token|private_?key)$/i;
 
 /** Remove credential-looking keys at any depth, noting which names were removed. Pure. */
+/** projects.momentum_score and execution_score are old mirrors (momentum defaults to 50); the screens use the live scorecard. */
+function dropStaleScores<T>(rows: T): T {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((r) => {
+    if (!r || typeof r !== "object") return r;
+    const { momentum_score: _m, execution_score: _e, ...rest } = r as Record<string, unknown>;
+    return rest;
+  }) as unknown as T;
+}
+
 export function redactSecrets<T>(value: T, removed?: Set<string>): T {
   if (Array.isArray(value)) return value.map((v) => redactSecrets(v, removed)) as unknown as T;
   if (value && typeof value === "object") {
@@ -197,7 +207,7 @@ export async function buildDataExport(admin: SupabaseClient, user: { id: string;
       const { rows, total, error } = await readAll(admin, cat, user.id);
       if (error) { const c = classify(error); return { ...base, status: c.status, reason: c.reason }; }
       const removed = new Set<string>();
-      tables[cat.table] = redactSecrets(rows, removed);
+      tables[cat.table] = redactSecrets(cat.table === "projects" ? dropStaleScores(rows) : rows, removed);
       const truncated = rows.length >= MAX_ROWS_PER_TABLE && (total === null || total > rows.length);
       return {
         ...base,
@@ -235,6 +245,7 @@ export async function buildDataExport(admin: SupabaseClient, user: { id: string;
     truncated: truncatedList,
     notes: [
       "Fields named in redacted_fields were removed because they act like passwords or private links.",
+      "Project momentum and execution scores are not exported: the stored copies are old placeholders. The live scores are on your Overview and Progress screens.",
       "Categories marked ai_generated hold model-written interpretations. They are suggestions, not facts about you.",
       "signal_events can include email addresses typed by people who visited your pages. Handle them as that person's data.",
     ],

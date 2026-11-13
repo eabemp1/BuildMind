@@ -293,8 +293,8 @@ export default function FounderMirrorPage() {
   const modelStatus = useMemo(() => {
     if (!data) return null;
     if (sampleSize < 10) return { label: "Learning", color: "var(--bm-text3)" };
-    if (accuracyTrend === "up") return { label: "Active · Improving", color: "var(--bm-green)" };
-    if (accuracyTrend === "down") return { label: "Active · Slipping", color: "var(--bm-red)" };
+    if (sampleSize >= 5 && accuracyTrend === "up") return { label: "Active · Improving", color: "var(--bm-green)" };
+    if (sampleSize >= 5 && accuracyTrend === "down") return { label: "Active · Slipping", color: "var(--bm-red)" };
     return { label: "Active", color: "var(--bm-intel)" };
   }, [data, sampleSize, accuracyTrend]);
 
@@ -418,9 +418,9 @@ export default function FounderMirrorPage() {
                   <Eyebrow>Trend</Eyebrow>
                   <div
                     className="mt-1 font-[Syne] text-[19px] font-bold capitalize"
-                    style={{ color: accuracyTrend === "down" ? "var(--bm-red)" : accuracyTrend === "up" ? "var(--bm-green)" : "var(--bm-text)" }}
+                    style={{ color: sampleSize < 5 ? "var(--bm-text3)" : accuracyTrend === "down" ? "var(--bm-red)" : accuracyTrend === "up" ? "var(--bm-green)" : "var(--bm-text)" }}
                   >
-                    {accuracyTrend ?? "unknown"}
+                    {sampleSize >= 5 ? accuracyTrend ?? "unknown" : "too early"}
                   </div>
                 </div>
               </div>
