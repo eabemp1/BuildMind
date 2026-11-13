@@ -188,7 +188,11 @@ describe("founderMirror: honest belief confidence", () => {
     expect(buildFounderMirror(state, { ...base, structured_count: 0 }).self_reported_accuracy.summary).toMatch(/wording-overlap/i);
     expect(buildFounderMirror(state, { ...base, structured_count: 12 }).self_reported_accuracy.summary).toMatch(/observed or you backed with proof/i);
     expect(buildFounderMirror(state, { ...base, structured_count: 5 }).self_reported_accuracy.summary).toMatch(/5 are scored/);
-    expect(buildFounderMirror(state, { ...base, sample_size: 4, structured_count: 4 }).self_reported_accuracy.summary).toMatch(/first reading/);
+    expect(buildFounderMirror(state, { ...base, sample_size: 7, structured_count: 7 }).self_reported_accuracy.summary).toMatch(/first reading/);
+    // Under 5 outcomes no percentage is shown at all.
+    const thin = buildFounderMirror(state, { ...base, sample_size: 4, structured_count: 0 }).self_reported_accuracy;
+    expect(thin.accuracy_pct).toBeNull();
+    expect(thin.summary).toMatch(/No match rate is shown/);
   });
 });
 

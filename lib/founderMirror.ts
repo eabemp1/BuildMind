@@ -364,8 +364,12 @@ function mayBeWrongAbout(state: FounderIntelligenceState, accuracy: Intelligence
   return items.slice(0, 4);
 }
 
+/** Below this many resolved recommendations a percentage says nothing, so none is shown. */
+export const MIN_ACCURACY_SAMPLE = 5;
+
 function accuracySummary(accuracy: IntelligenceAccuracy): string {
   if (!accuracy.sample_size) return "Not enough resolved recommendations yet to self-score accuracy.";
+  if (accuracy.sample_size < MIN_ACCURACY_SAMPLE) return `Only ${accuracy.sample_size} of ${MIN_ACCURACY_SAMPLE} outcomes needed so far. No match rate is shown until there are enough real ones.`;
   const pct = Math.round(accuracy.average_match_score * 100);
   const trendText = accuracy.trend === "up" ? " (improving)" : accuracy.trend === "down" ? " (slipping)" : "";
   const n = accuracy.sample_size;
@@ -445,7 +449,7 @@ export function buildFounderMirror(state: FounderIntelligenceState, accuracy: In
     suppressed_beliefs: suppressed,
     self_reported_accuracy: {
       sample_size: accuracy.sample_size,
-      accuracy_pct: accuracy.sample_size ? Math.round(accuracy.average_match_score * 100) : null,
+      accuracy_pct: accuracy.sample_size >= MIN_ACCURACY_SAMPLE ? Math.round(accuracy.average_match_score * 100) : null,
       trend: accuracy.trend,
       summary: accuracySummary(accuracy),
     },
