@@ -33,6 +33,7 @@
  *   const pipeline = await runAgentPipeline({ idea, stage, competitors, ... });
  */
 
+import { reportsNothingReal } from "@/lib/realness";
 import { callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 import { buildFounderStylePromptBlock, type FounderStyleProfile } from "@/lib/founderStyle";
 import { discussionSearch, newsSearch } from "@/lib/search";
@@ -216,23 +217,33 @@ function focusAreaLine(ctx: StartupContext): string {
  * fresh/outside idea these signals describe the founder, not the idea, so
  * we label them accordingly and tell the agent to weight them lightly.
  */
-function founderContextLine(ctx: StartupContext): string {
+export function founderContextLine(ctx: StartupContext): string {
+  // Free text in the idea itself: a founder who says this is a test, a simulation or has no product is the source of truth.
+  const ownWords = `${ctx.idea} ${ctx.problem} ${ctx.solution}`;
+  const simulated = reportsNothingReal(ownWords) || /\b(qa|test (run|account|case)|dummy|demo data|sandbox)\b/i.test(ownWords);
+  const rules = [
+    "Money and time are limits you were not given unless the idea text states them. Do not recommend paid advertising or any spend, or a daily time commitment, unless stated; prefer free, small actions and say a cost depends on the founder's budget.",
+    "Do not describe the founder as avoiding, lazy, afraid or unmotivated. Behaviour can only be described from the events listed above, and a worry the founder named is a worry, not avoidance.",
+  ];
+  if (simulated) {
+    return `\nFounder behavioral context: withheld. The founder describes this project as a test, simulation or one with nothing real behind it, so activity on the account says nothing about how the founder behaves. Judge only the idea as written, and do not call anything fatal because of founder behaviour.\n${rules.map((l) => `- ${l}`).join("\n")}`;
+  }
   const hasSignal =
     ctx.founderCognitiveLoad || ctx.founderAvoidanceZones?.length ||
     ctx.founderTopicsRepeated?.length || typeof ctx.founderDaysInactive === "number";
-  if (!hasSignal) return "\nFounder behavioral context: none available.";
+  if (!hasSignal) return `\nFounder behavioral context: none available.\n${rules.map((l) => `- ${l}`).join("\n")}`;
 
   const lines: string[] = [];
   if (ctx.founderCognitiveLoad) lines.push(`Cognitive load: ${ctx.founderCognitiveLoad}`);
   if (typeof ctx.founderDaysInactive === "number") lines.push(`Days inactive: ${ctx.founderDaysInactive}`);
-  if (ctx.founderAvoidanceZones?.length) lines.push(`Topics/tasks the founder has been avoiding: ${ctx.founderAvoidanceZones.join(", ")}`);
+  if (ctx.founderAvoidanceZones?.length) lines.push(`Topics the founder named as worries or tends to skip (self-reported or inferred, not verified): ${ctx.founderAvoidanceZones.join(", ")}`);
   if (ctx.founderTopicsRepeated?.length) lines.push(`Recurring themes across the founder's reflections: ${ctx.founderTopicsRepeated.join(", ")}`);
 
   const scopeNote = ctx.isOwnProject
     ? "This is the founder's own tracked project — weight this context directly when assessing execution risk."
     : "This idea is being evaluated outside the founder's tracked project — use this only as light context on founder capacity, not as evidence about the idea itself.";
 
-  return `\nFounder behavioral context (${scopeNote}):\n${lines.map(l => `- ${l}`).join("\n")}`;
+  return `\nFounder behavioral context (${scopeNote}):\n${[...lines, ...rules].map(l => `- ${l}`).join("\n")}`;
 }
 
 // ── Pipeline output ───────────────────────────────────────────────────────────

@@ -78,8 +78,8 @@ li{margin:4px 0}@media print{body{padding:0}}
 </style></head><body>
 <h1>Your BuildMind data</h1>
 <p class="muted">Exported ${esc(exp.exported_at.slice(0, 10))} for ${esc(exp.email ?? exp.user_id)}. Data version ${esc(exp.schema_version)}.</p>
-<div class="box"><strong>${exp.complete ? "This export is complete." : "This export is NOT complete."}</strong>
-${exp.complete ? "Every category that exists in your account was read in full." : "Some categories failed or were cut short. See the table at the end."}</div>
+<div class="box"><strong>This is a summary, not the full export.</strong>
+Long text is shortened and some fields (for example the answers inside reflections) are left out. ${exp.complete ? "Every category in your account was read in full, and the JSON download has every field." : "Some categories also failed or were cut short, so even the JSON may be missing data. See the table at the end."}</div>
 
 <h2>What you recorded</h2>
 <p class="muted">These sections are your own words and actions as BuildMind stored them.</p>

@@ -41,7 +41,7 @@ export default function PrivacyPage() {
 
           <section>
             <h2 className="text-base font-semibold bm-text mb-2">5. Cookies</h2>
-            <p>We use session cookies for authentication. We do not use advertising or tracking cookies. Our analytics provider (Posthog) may set cookies to track usage across sessions.</p>
+            <p>We use session cookies for authentication. We do not use advertising cookies. Our analytics provider (PostHog) stores a cookie or local-storage identifier to measure how the product is used across sessions, and receives your user ID and email address while you are signed in.</p>
           </section>
 
           <section>

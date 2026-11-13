@@ -245,6 +245,7 @@ export async function buildDataExport(admin: SupabaseClient, user: { id: string;
     truncated: truncatedList,
     notes: [
       "Fields named in redacted_fields were removed because they act like passwords or private links.",
+      "In founder_context, the tasks_completed_* and consecutive_tasks_completed counters count check-ins whose outcome was completed, partial or learned. Blocked, skipped and abandoned check-ins are not counted. Counters written before 13 November 2026 may still include blocked days.",
       "Project momentum and execution scores are not exported: the stored copies are old placeholders. The live scores are on your Overview and Progress screens.",
       "Categories marked ai_generated hold model-written interpretations. They are suggestions, not facts about you.",
       "signal_events can include email addresses typed by people who visited your pages. Handle them as that person's data.",
