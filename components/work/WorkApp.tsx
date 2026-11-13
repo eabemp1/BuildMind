@@ -43,6 +43,9 @@ export default function WorkApp() {
       // A link such as /work?open=visual:market opens that drawn view straight away.
       const open = VISUALS.find((v) => v.id === p.get("open"));
       if (open && !task) setView({ name: "visual", kind: open.kind });
+      // /work?kind=prospects opens that tool's brief straight away.
+      const kind = p.get("kind") ?? "";
+      if (kind && !task && !open && SPEC_BY_ID[kind]) setView({ name: "brief", specId: kind });
     } catch { /* no query string */ }
   }, []);
 

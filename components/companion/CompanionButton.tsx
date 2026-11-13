@@ -44,8 +44,8 @@ export default function CompanionButton() {
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       <button
-        type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Co-founder"
-        title={top ? `Co-founder: ${top.headline}` : "Co-founder"}
+        type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Daily brief"
+        title={top ? `Daily brief: ${top.headline}` : "Daily brief"}
         style={{ position: "relative", display: "grid", placeItems: "center", width: 32, height: 32, borderRadius: 6, border: "1px solid var(--bm-border2)", background: "transparent", cursor: "pointer", padding: 0 }}
       >
         <CofounderAvatar style={data.style} color={color} mode={mode} pulsing={Boolean(top)} size={22} />
@@ -58,7 +58,7 @@ export default function CompanionButton() {
 
       {open && (
         <div
-          role="dialog" aria-label="Co-founder brief"
+          role="dialog" aria-label="Daily brief"
           style={{
             position: "fixed", zIndex: 80, top: 54, right: 8, left: 8, marginLeft: "auto", width: "min(380px, calc(100vw - 16px))",
             maxHeight: "calc(100dvh - 70px)", overflowY: "auto", background: "var(--bm-bg)", border: "1px solid var(--bm-border2)",

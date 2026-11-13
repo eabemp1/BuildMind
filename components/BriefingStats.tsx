@@ -83,7 +83,7 @@ export default function BriefingStats({ onNavigate }: { onNavigate?: () => void 
             {snap.pendingActionTitle ? `Start: ${truncateChars(snap.pendingActionTitle, 30)}` : "Go to today’s action"}
           </button>
         )}
-        <a href="/ai-coach" style={{ fontSize: 11, padding: "7px 11px", borderRadius: 8, border: "1px solid var(--bm-border)", color: "var(--bm-text2)", textDecoration: "none" }}>Ask the Coach</a>
+        <a href="/ai-coach" style={{ fontSize: 11, padding: "7px 11px", borderRadius: 8, border: "1px solid var(--bm-border)", color: "var(--bm-text2)", textDecoration: "none" }}>Ask Coach</a>
         {snap.completedToday && (
           <a href="/reflect" style={{ fontSize: 11, padding: "7px 11px", borderRadius: 8, border: "1px solid var(--bm-accent-bd)", color: "var(--bm-accent)", textDecoration: "none" }}>Reflect on today’s win</a>
         )}
