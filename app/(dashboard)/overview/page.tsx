@@ -298,7 +298,7 @@ export default function OverviewPage() {
         </div>
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 99, border: "1px solid var(--bm-border)", background: todayDone ? "var(--bm-accent-dim)" : "var(--bm-bg2)", fontSize: 12, fontWeight: 600, color: todayDone ? "var(--bm-accent)" : "var(--bm-text3)" }}>
           {todayDone ? <CheckCircle2 size={13} /> : <Circle size={13} />}
-          {todayDone ? "Today done" : "Today open"}
+          {todayDone ? "Checked in today" : "Not checked in yet"}
         </div>
       </motion.header>
 

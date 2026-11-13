@@ -209,7 +209,7 @@ export function BuildMindCalibrating({ count, surface = "insights" }: Props) {
             margin: 0,
           }}
         >
-          Tonight&apos;s reflection is{" "}
+          Your next reflection is{" "}
           <span style={{ color: "var(--bm-accent)", fontWeight: 600 }}>
             signal {nextSignal}
           </span>
