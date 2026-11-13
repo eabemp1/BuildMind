@@ -76,7 +76,9 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("Founder Intelligence coherence layer", () => {
   it("turns existing subsystems into typed signals with evidence", () => {
-    const state = buildFounderIntelligenceState(baseInput());
+    const base = baseInput();
+    const more = [1, 2, 3].map((n) => ({ today_action: "Message a privacy officer on LinkedIn", outcome: "blocked", confidence: 2, blocker: "felt too early", note: "Did not send", created_at: `2026-07-2${n}T10:00:00.000Z` }));
+    const state = buildFounderIntelligenceState({ ...base, reflections: [...(base.reflections ?? []), ...more] } as typeof base);
     const types = state.signals.map((s) => s.type);
 
     expect(types).toContain("EVIDENCE_GAP");

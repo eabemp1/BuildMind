@@ -466,7 +466,10 @@ export function deriveIntelligenceSignals(params: {
     ...executionSignature.avoidanceZones.map((z) => String(z.category)),
     ...learnedPatterns.avoided_action_types,
   ], 6);
-  if (avoidance.length > 0) {
+  // Worry chips picked at onboarding are written into avoidance_zones. They are what the founder SAID, not what they did,
+  // so a pattern is only reported when behaviour backs it: tasks in that area left undone, or learned avoided action types.
+  const observedAvoidance = executionSignature.avoidanceZones.length + learnedPatterns.avoided_action_types.length;
+  if (avoidance.length > 0 && observedAvoidance > 0) {
     const avoidanceObserved = confidenceFromCounts(avoidance.length + executionSignature.avoidanceZones.length, 5);
     signals.push(signal({
       now,

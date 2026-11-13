@@ -8,6 +8,12 @@ import {
 
 const NOW = new Date("2026-08-05T12:00:00.000Z");
 
+// Observed behaviour: several customer-interview tasks left undone.
+function withObservedAvoidance(input: FounderIntelligenceInput): FounderIntelligenceInput {
+  const more = [1, 2, 3].map((n) => ({ today_action: "Message a privacy officer on LinkedIn", outcome: "blocked", confidence: 2, blocker: "felt too early", note: "Didn't send", created_at: `2026-07-2${n}T10:00:00.000Z` }));
+  return { ...input, reflections: [...(input.reflections ?? []), ...more] } as FounderIntelligenceInput;
+}
+
 function baseInput(overrides: Partial<FounderIntelligenceInput> = {}): FounderIntelligenceInput {
   return {
     now: NOW,
@@ -100,9 +106,15 @@ describe("round 16 intelligence rules", () => {
   });
 
   it("labels avoidance as an interpretation with other explanations", () => {
-    const s = buildFounderIntelligenceState(baseInput()).signals.find((x) => x.type === "REPEATED_AVOIDANCE");
+    const s = buildFounderIntelligenceState(withObservedAvoidance(baseInput())).signals.find((x) => x.type === "REPEATED_AVOIDANCE");
     expect(s?.interpretation_confidence).toBeLessThan(s?.confidence ?? 1);
     expect(s?.alternative_explanations?.length).toBeGreaterThan(1);
+  });
+
+  it("does not call onboarding worry chips repeated avoidance", () => {
+    const input = baseInput({ tasks: [], reflections: [], learningLogs: [] });
+    const s = buildFounderIntelligenceState(input).signals.find((x) => x.type === "REPEATED_AVOIDANCE");
+    expect(s).toBeUndefined();
   });
 
   it("never lists the same change twice in different words", () => {

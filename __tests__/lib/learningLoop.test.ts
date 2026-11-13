@@ -241,6 +241,35 @@ describe("learningLoop: structured outcomes", () => {
     return { builder, payloads };
   }
 
+  it("a blocked action scores 0 and earns no quality, even when the reflection repeats the prediction's words", async () => {
+    const { builder, payloads } = makeCapturing();
+    const r = await compareFounderIntelligenceOutcome(builder, {
+      userId: "u1", recommendationId: "log-1", taskTitle: "Message a founder", outcome: "blocked",
+      reflectionText: "I could not message a founder, so no reply from a founder came", evidenceReferences: [{ source: "reflection", recordId: "r1" }],
+    });
+    expect(r?.score).toBe(0);
+    expect(payloads[0]).toMatchObject({ evidence_match_score: 0, outcome_quality: "none" });
+  });
+
+  it("a completed reflection that says the data was simulated cannot score as a match", async () => {
+    const { builder, payloads } = makeCapturing();
+    const r = await compareFounderIntelligenceOutcome(builder, {
+      userId: "u1", recommendationId: "log-1", taskTitle: "Message a founder", outcome: "completed",
+      reflectionText: "This was simulated data: a reply from a founder, message a founder, no real customer contact", evidenceReferences: [{ source: "reflection", recordId: "r1" }],
+    });
+    expect(r!.score).toBeLessThanOrEqual(0.1);
+    expect(payloads[0]).toMatchObject({ outcome_quality: "none" });
+  });
+
+  it("text-only comparison is at most 'useful', never 'strong'", async () => {
+    const { builder, payloads } = makeCapturing();
+    await compareFounderIntelligenceOutcome(builder, {
+      userId: "u1", recommendationId: "log-1", taskTitle: "Message a founder", outcome: "completed",
+      reflectionText: "I messaged a founder and got a reply from a founder", evidenceReferences: [{ source: "reflection", recordId: "r1" }],
+    });
+    expect(payloads[0]).toMatchObject({ outcome_quality: "useful" });
+  });
+
   it("scores from the structured signal, ignoring wording", async () => {
     const { builder, payloads } = makeCapturing();
     const r = await compareFounderIntelligenceOutcome(builder, {

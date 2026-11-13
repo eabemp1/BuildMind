@@ -226,6 +226,11 @@ function mapOutcome(raw: string): "completed" | "overridden" | "ignored" | "part
  *
  * Deterministic by design (Phase 13: no LLM needed for this comparison).
  */
+/** True when the founder's own words say nothing real happened: simulated or fictional data, or no real contact. */
+export function reportsNothingReal(text: string): boolean {
+  return /\b(simulat\w*|fictional|fictitious|fake|pretend\w*|hypothetical|test (data|account|run)|dummy|made[-\s]up|no (real|actual) (customer|contact|interview|conversation|reply|replies|response|revenue|user)s?|nothing (real|actual) happened)\b/i.test(text);
+}
+
 export async function compareFounderIntelligenceOutcome(
   supabase: SupabaseLike,
   params: {
@@ -286,10 +291,15 @@ export async function compareFounderIntelligenceOutcome(
       // predicted evidence occurred; textual comparison remains the fallback
       // when the founder gave no structured outcome.
       score = Math.max(0, Math.min(1, actionOverlap * 0.35 + evidenceOverlap * 0.45 + (completed ? 0.1 : 0) + (hasStructuredEvidence ? 0.1 : 0)));
+      // Word overlap cannot prove a prediction came true. If the action was blocked, or the founder says nothing real
+      // happened (simulated, fictional, no real contact), the prediction was not tested: it must not score as a match.
+      if (!completed) score = 0;
+      else if (reportsNothingReal(reflectionText)) score = Math.min(score, 0.1);
       basis = "text";
     }
 
-    const quality = signal ? (signalProducedEvidence(signal) && !isUnproven(signal) ? "strong" : "useful") : hasStructuredEvidence ? "strong" : "useful";
+    // Text-only comparison never earns "strong": that needs a structured signal of what the task produced.
+    const quality = signal ? (signalProducedEvidence(signal) && !isUnproven(signal) ? "strong" : "useful") : !completed || reportsNothingReal(reflectionText) ? "none" : "useful";
     const baseUpdate = {
       outcome: mapOutcome(params.outcome),
       outcome_recorded_at: new Date().toISOString(),
