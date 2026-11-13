@@ -3,6 +3,7 @@
  * stage, skipping jobs the founder has already made. Pure, so it can be tested without the UI.
  */
 import { stageBand } from "@/lib/stages";
+import { kindOfTask } from "@/lib/todayMission";
 
 export interface Recommendation { id: string; reason: string }
 
@@ -41,4 +42,40 @@ export function recommendedFor(stage: string | null | undefined, madeKinds: stri
   const made = new Set(madeKinds);
   const fresh = list.filter((r) => !made.has(r.id.replace("existing:", "")));
   return (fresh.length ? fresh : list).slice(0, limit);
+}
+
+const BY_TASK: Record<string, Recommendation[]> = {
+  interview: [
+    { id: "existing:validation_kit", reason: "Today's task is a conversation. These are the questions to ask." },
+    { id: "existing:outreach", reason: "A short first message to book it." },
+    { id: "existing:prospects", reason: "Places to find the right people." },
+  ],
+  outreach: [
+    { id: "existing:outreach", reason: "Today's task is first messages. This drafts them." },
+    { id: "existing:prospects", reason: "Who to send them to." },
+  ],
+  follow_up: [
+    { id: "existing:outreach", reason: "Today's task is a follow-up. This drafts one that gets an answer." },
+    { id: "existing:validation_kit", reason: "What to ask once they reply." },
+  ],
+  publish: [
+    { id: "existing:post", reason: "Today's task is to publish. This drafts the post." },
+    { id: "existing:landing", reason: "A page for people to land on." },
+  ],
+  pricing: [
+    { id: "existing:pricing_test", reason: "Today's task is a price ask. This sets up the test." },
+    { id: "existing:validation_kit", reason: "Questions about what they pay for now." },
+  ],
+  build: [
+    { id: "existing:build_plan", reason: "Today's task is building. Decide the smallest useful slice first." },
+  ],
+};
+
+/** Jobs that fit today's task when it is recognisable; otherwise the stage picks. */
+export function recommendedForTask(task: string | null | undefined, stage: string | null | undefined, madeKinds: string[] = [], limit = 3): Recommendation[] {
+  const kind = task ? kindOfTask(task) : null;
+  const list = kind ? BY_TASK[kind] : undefined;
+  if (!list) return recommendedFor(stage, madeKinds, limit);
+  const rest = recommendedFor(stage, madeKinds, limit).filter((r) => !list.some((l) => l.id === r.id));
+  return [...list, ...rest].slice(0, limit);
 }

@@ -6,7 +6,7 @@ import { catalog, SPEC_BY_ID, EXISTING, VISUALS, TOOLS, type CatalogEntry } from
 import { LiveVisual } from "@/components/visuals/LiveVisual";
 import PreparedWork from "@/components/today/PreparedWork";
 import Catalog from "./Catalog";
-import { recommendedFor } from "@/lib/work/recommend";
+import { recommendedForTask } from "@/lib/work/recommend";
 import ScreenshotReview from "./ScreenshotReview";
 import BriefForm from "./BriefForm";
 import ResultView, { type WorkItem } from "./ResultView";
@@ -34,10 +34,23 @@ export default function WorkApp() {
   const [error, setError] = React.useState("");
   const [upgrade, setUpgrade] = React.useState(false);
   const entries = React.useMemo(() => catalog(), []);
-  const recommended = React.useMemo(() => recommendedFor(project?.stage, rows.map((r) => r.kind)).flatMap((r) => {
+  // Today's chosen action, so the recommendations can match it.
+  const [todayTask, setTodayTask] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    fetch("/api/user/behavior-state?keys=today_action_cache", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        const c = j?.values?.today_action_cache as { date?: string; data?: { action?: string } } | undefined;
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        setTodayTask(c && c.date === today && c.data?.action ? c.data.action : null);
+      })
+      .catch(() => setTodayTask(null));
+  }, []);
+  const recommended = React.useMemo(() => recommendedForTask(todayTask, project?.stage, rows.map((r) => r.kind)).flatMap((r) => {
     const entry = entries.find((e) => e.id === r.id);
     return entry ? [{ entry, reason: r.reason }] : [];
-  }), [project?.stage, rows, entries]);
+  }), [todayTask, project?.stage, rows, entries]);
 
   // Arriving from Today with the day's task: open its prepared work straight away.
   React.useEffect(() => {
