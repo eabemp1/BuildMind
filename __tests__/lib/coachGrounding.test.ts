@@ -28,3 +28,11 @@ describe("figure check", () => {
     expect(withFigureNote("About 30% fail.", "x", true)).toBe("About 30% fail.");
   });
 });
+
+import { COACH_TEST_RULE } from "@/lib/coachGrounding";
+describe("coach test-data rule", () => {
+  it("is wired into the prompt and bans reading test activity as behaviour", () => {
+    expect(COACH_TEST_RULE).toMatch(/Do not call preparing or drafting/);
+    expect(readFileSync("app/api/ai/coach/route.ts", "utf8")).toContain("${COACH_TEST_RULE}");
+  });
+});
