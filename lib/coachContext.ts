@@ -9,6 +9,7 @@
  * Returns a single formatted string ready to inject into the system prompt.
  */
 
+import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { isShownTaskRow } from "@/lib/recommendationRows";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
@@ -308,6 +309,12 @@ export async function assembleCoachContext(
     const regionalBlock = formatRegionalContextBlock(fc?.country ?? null);
     if (regionalBlock) sections.push(regionalBlock);
   } catch { /* non-fatal */ }
+
+  // ── 8. The founder's own limits (time, money) ───────────────────────────
+  try {
+    const limits = constraintsRule(await loadConstraints(supabase, userId));
+    if (limits) sections.push(limits);
+  } catch { /* optional */ }
 
   // ── Assemble ──────────────────────────────────────────────────────────────
 

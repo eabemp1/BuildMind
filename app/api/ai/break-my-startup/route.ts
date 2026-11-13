@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { z } from "zod";
 import { enforceAndTrackAIUsage, groqJSON, groqReasoningJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -800,6 +801,7 @@ export async function POST(request: Request) {
       focusAreas,
       founderCognitiveLoad: (founderCtxRow?.cognitive_load as "fresh" | "drained" | "autopilot") ?? undefined,
       founderAvoidanceZones: founderCtxRow?.avoidance_zones ?? [],
+      founderLimits: constraintsRule(await loadConstraints(supabase, userId)) || undefined,
       founderTopicsRepeated: founderCtxRow?.topics_repeated ?? [],
       founderDaysInactive: founderCtxRow?.days_inactive ?? undefined,
       isOwnProject: true,

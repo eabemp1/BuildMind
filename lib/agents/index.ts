@@ -222,7 +222,9 @@ export function founderContextLine(ctx: StartupContext): string {
   const ownWords = `${ctx.idea} ${ctx.problem} ${ctx.solution}`;
   const simulated = reportsNothingReal(ownWords) || /\b(qa|test (run|account|case)|dummy|demo data|sandbox)\b/i.test(ownWords);
   const rules = [
-    "Money and time are limits you were not given unless the idea text states them. Do not recommend paid advertising or any spend, or a daily time commitment, unless stated; prefer free, small actions and say a cost depends on the founder's budget.",
+    ctx.founderLimits
+      ? ctx.founderLimits
+      : "Money and time are limits you were not given unless the idea text states them. Do not recommend paid advertising or any spend, or a daily time commitment, unless stated; prefer free, small actions and say a cost depends on the founder's budget.",
     "Do not describe the founder as avoiding, lazy, afraid or unmotivated. Behaviour can only be described from the events listed above, and a worry the founder named is a worry, not avoidance.",
   ];
   if (simulated) {
