@@ -12,3 +12,19 @@ describe("coach grounding", () => {
     expect(src).not.toContain("80% of the time");
   });
 });
+
+import { unsupportedFigures, withFigureNote } from "@/lib/coachGrounding";
+
+describe("figure check", () => {
+  it("flags a figure that is not in the context", () => {
+    expect(unsupportedFigures("No outreach in 14 days.", "Last reflection 2 days ago")).toEqual(["14 days"]);
+  });
+  it("accepts a figure that is in the context", () => {
+    expect(unsupportedFigures("You skipped it for 14 days.", "streak broke 14 days ago")).toEqual([]);
+  });
+  it("adds a caveat only when something is unsupported, and not when sources are cited", () => {
+    expect(withFigureNote("Fine.", "x")).toBe("Fine.");
+    expect(withFigureNote("About 30% fail.", "x")).toMatch(/treat that as my guess/);
+    expect(withFigureNote("About 30% fail.", "x", true)).toBe("About 30% fail.");
+  });
+});

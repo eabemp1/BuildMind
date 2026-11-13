@@ -10,7 +10,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
 import type { FounderMemory } from "@/lib/founderMemory";
 import { assembleCoachContext, computeContextConfidence } from "@/lib/coachContext";
-import { COACH_GROUNDING_RULE } from "@/lib/coachGrounding";
+import { COACH_GROUNDING_RULE, withFigureNote } from "@/lib/coachGrounding";
 
 export const runtime     = "nodejs";
 export const dynamic     = "force-dynamic";
@@ -535,7 +535,7 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
       : ["Reading your project data...", "Identifying the key constraint...", "Deciding what matters most right now..."];
 
     const answer = typeof result?.answer === "string" && result.answer.trim().length > 10
-      ? result.answer.trim()
+      ? withFigureNote(result.answer.trim(), `${systemPrompt}\n${message}`, research.sources.length > 0)
       : "BuildMind couldn't generate a response right now. Focus on your most important open task.";
 
     // Only pass through when the model actually gave a concrete action —
