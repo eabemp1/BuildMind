@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     admin.from("work_items").select("id, kind, title, status, updated_at").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(60),
     loadProject(admin, user.userId, null),
   ]);
-  return NextResponse.json({ ok: true, setup: Boolean(error), items: error ? [] : data ?? [], project: { name: project.name, targetUsers: project.targetUsers, problem: project.problem, description: project.description } });
+  return NextResponse.json({ ok: true, setup: Boolean(error), items: error ? [] : data ?? [], project: { name: project.name, targetUsers: project.targetUsers, problem: project.problem, description: project.description, stage: project.stage } });
 }
 
 export async function PATCH(request: Request) {

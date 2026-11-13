@@ -3,8 +3,9 @@ import React from "react";
 import { GROUP_LABEL, GROUP_ORDER, searchCatalog, type CatalogEntry, type WorkGroup } from "@/lib/work/registry";
 import { input, muted } from "./ui";
 
-export default function Catalog({ entries, recent, onPick, onOpenItem }: {
+export default function Catalog({ entries, recommended = [], recent, onPick, onOpenItem }: {
   entries: CatalogEntry[];
+  recommended?: Array<{ entry: CatalogEntry; reason: string }>;
   recent: Array<{ id: string; title: string; kind: string }>;
   onPick: (e: CatalogEntry) => void;
   onOpenItem: (id: string) => void;
@@ -14,6 +15,22 @@ export default function Catalog({ entries, recent, onPick, onOpenItem }: {
   return (
     <div style={{ display: "grid", gap: 22 }}>
       <input className="wk-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: email, pricing, pitch" aria-label="Search work" style={{ ...input, padding: "12px 14px", borderRadius: 11 }} />
+      {recommended.length > 0 && !q && (
+        <section aria-label="Recommended for you">
+          <h2 style={heading}>Recommended for where you are</h2>
+          <div className="wk-list">
+            {recommended.map(({ entry, reason }) => (
+              <button key={entry.id} type="button" className="wk-row" onClick={() => onPick(entry)}>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "var(--bm-text)" }}>{entry.label}</span>
+                  <span style={{ display: "block", ...muted, marginTop: 2 }}>{reason}</span>
+                </span>
+                <span className="wk-go" aria-hidden>›</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       {recent.length > 0 && !q && (
         <section aria-label="Recent">
           <h2 style={heading}>Recent</h2>
