@@ -168,7 +168,7 @@ export function BuildMindCalibrating({ count, surface = "insights" }: Props) {
             margin: "0 0 10px",
           }}
         >
-          After {total} reflections, you unlock:
+          After {total} reflections, you unlock ({filled} of {total} so far):
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           {unlockCopy.map((item, i) => (
@@ -179,20 +179,20 @@ export function BuildMindCalibrating({ count, surface = "insights" }: Props) {
               <span
                 style={{
                   fontSize: 11,
-                  color: i < filled ? "var(--bm-accent)" : "var(--bm-text4)",
+                  color: filled >= total ? "var(--bm-accent)" : "var(--bm-text4)",
                   flexShrink: 0,
                   fontWeight: 700,
                 }}
               >
-                {i < filled ? "✓" : "○"}
+                {filled >= total ? "✓" : "○"}
               </span>
               <span
                 style={{
                   fontSize: 13,
-                  color: i < filled ? "var(--bm-text2)" : "var(--bm-text3)",
+                  color: filled >= total ? "var(--bm-text2)" : "var(--bm-text3)",
                 }}
               >
-                {item}
+                {item}{filled >= total ? "" : " (locked)"}
               </span>
             </div>
           ))}
