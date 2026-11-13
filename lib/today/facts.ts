@@ -14,6 +14,7 @@
  * Rule-based on purpose: it never invents a fact, and every fact carries the
  * founder's own words as evidence.
  */
+import { reportsNothingReal } from "@/lib/realness";
 
 export interface ReflectionText {
   created_at: string;
@@ -163,7 +164,7 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
     if (!text) continue;
     const at = r.created_at;
 
-    if (GOT_USERS_RE.test(text) && !NO_USERS_RE.test(text)) drop((f) => f.kind === "no_users");
+    if (GOT_USERS_RE.test(text) && !NO_USERS_RE.test(text) && !reportsNothingReal(text)) drop((f) => f.kind === "no_users");
 
     const nu = NO_USERS_RE.exec(text);
     if (nu) {
@@ -246,7 +247,7 @@ export function buildLedger(reflections: ReflectionText[], opts: LedgerOptions =
   }
 
   // Nobody recorded and nobody ever mentioned: do not assume the founder has users to contact.
-  if (opts.knownContacts === 0 && !facts.some((f) => f.kind === "no_users") && !sorted.some((r) => GOT_USERS_RE.test(textOf(r)))) {
+  if (opts.knownContacts === 0 && !facts.some((f) => f.kind === "no_users") && !sorted.some((r) => GOT_USERS_RE.test(textOf(r)) && !reportsNothingReal(textOf(r)))) {
     facts.push({ kind: "no_users", rule: NO_USERS_RULE, evidence: "No people or conversations are recorded in BuildMind yet.", at: new Date(now).toISOString() });
   }
 
