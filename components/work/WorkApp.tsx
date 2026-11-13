@@ -6,6 +6,7 @@ import { catalog, SPEC_BY_ID, EXISTING, VISUALS, TOOLS, type CatalogEntry } from
 import { LiveVisual } from "@/components/visuals/LiveVisual";
 import PreparedWork from "@/components/today/PreparedWork";
 import Catalog from "./Catalog";
+import { recommendedFor } from "@/lib/work/recommend";
 import ScreenshotReview from "./ScreenshotReview";
 import BriefForm from "./BriefForm";
 import ResultView, { type WorkItem } from "./ResultView";
@@ -13,7 +14,7 @@ import Library, { type LibraryRow } from "./Library";
 import Link from "next/link";
 import { api, btn, muted, WORK_CSS } from "./ui";
 
-type Project = { name: string; targetUsers: string; problem: string; description: string } | null;
+type Project = { name: string; targetUsers: string; problem: string; description: string; stage?: string } | null;
 type View =
   | { name: "catalog" }
   | { name: "brief"; specId: string; given?: Record<string, string>; regenerateId?: string | null }
@@ -33,6 +34,10 @@ export default function WorkApp() {
   const [error, setError] = React.useState("");
   const [upgrade, setUpgrade] = React.useState(false);
   const entries = React.useMemo(() => catalog(), []);
+  const recommended = React.useMemo(() => recommendedFor(project?.stage, rows.map((r) => r.kind)).flatMap((r) => {
+    const entry = entries.find((e) => e.id === r.id);
+    return entry ? [{ entry, reason: r.reason }] : [];
+  }), [project?.stage, rows, entries]);
 
   // Arriving from Today with the day's task: open its prepared work straight away.
   React.useEffect(() => {
@@ -116,7 +121,7 @@ export default function WorkApp() {
         </Link>
       )}
       {home && tab === "new" && (
-        <Catalog entries={entries} recent={rows.slice(0, 3).map((r) => ({ id: r.id, title: r.title, kind: r.kind }))} onPick={pick} onOpenItem={(id) => void openItem(id)} />
+        <Catalog entries={entries} recommended={recommended} recent={rows.slice(0, 3).map((r) => ({ id: r.id, title: r.title, kind: r.kind }))} onPick={pick} onOpenItem={(id) => void openItem(id)} />
       )}
       {home && tab === "new" && <VoiceSample />}
       {home && tab === "library" && <Library rows={rows} setup={setup} onOpen={(id) => void openItem(id)} />}
