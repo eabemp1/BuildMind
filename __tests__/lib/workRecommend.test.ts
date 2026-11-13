@@ -19,3 +19,22 @@ describe("work recommendations", () => {
     expect(recommendedFor("Validation", ["validation_kit"]).map((r) => r.id)).not.toContain("existing:validation_kit");
   });
 });
+
+import { recommendedForTask } from "@/lib/work/recommend";
+describe("recommendations by today's task", () => {
+  it("every task kind maps to real catalogue entries", () => {
+    const ids = new Set(catalog().map((e) => e.id));
+    for (const t of ["Interview two shop owners about missed pickups", "Send 5 messages to repair shops on WhatsApp", "Follow up with the 3 people who haven't replied", "Publish a post on LinkedIn about repair tracking", "Ask one shop to pay 20 dollars for early access"]) {
+      const r = recommendedForTask(t, "Validation");
+      expect(r.length).toBeGreaterThan(0);
+      for (const x of r) expect(ids.has(x.id)).toBe(true);
+    }
+  });
+  it("falls back to the stage when the task is not recognised or missing", () => {
+    expect(recommendedForTask(null, "Validation")).toEqual(recommendedForTask("", "Validation"));
+    expect(recommendedForTask("Think", "Validation").length).toBeGreaterThan(0);
+  });
+  it("a follow-up task puts outreach first", () => {
+    expect(recommendedForTask("Follow up with the 3 people who haven't replied", "Validation")[0].id).toBe("existing:outreach");
+  });
+});
