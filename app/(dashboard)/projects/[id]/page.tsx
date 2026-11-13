@@ -583,6 +583,21 @@ export default function ProjectDetailPage() {
 
   useEffect(() => { if (id) setActiveProjectId(id); }, [id]);
 
+  // The action Today already chose for this project, so the roadmap card can say which one comes first.
+  const [todaysAction, setTodaysAction] = useState<string | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    fetch("/api/user/behavior-state?keys=today_action_cache", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        const c = j?.values?.today_action_cache as { date?: string; projectId?: string; data?: { action?: string } } | undefined;
+        const d = new Date();
+        const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        setTodaysAction(c && c.date === today && c.projectId === id && c.data?.action ? c.data.action : null);
+      })
+      .catch(() => setTodaysAction(null));
+  }, [id]);
+
   // Last activity feed (real data — activity_log filtered to this project).
   useEffect(() => {
     if (!id) return;
@@ -1311,6 +1326,12 @@ export default function ProjectDetailPage() {
         const allDone = tasks.length > 0 && !next;
         return (
           <section aria-label="Next step" className="mb-5 rounded-[14px] border border-[var(--bm-accent-bd)] p-4 sm:p-5" style={{ background: "var(--bm-accent-dim)" }}>
+            {todaysAction ? (
+              <a href="/today" className="mb-3 block rounded-[10px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 py-2 no-underline">
+                <span className="block text-[11px] font-semibold text-[var(--bm-text3)]">Do this first: today&apos;s action</span>
+                <span className="block text-[13px] text-[var(--bm-text)]">{todaysAction}</span>
+              </a>
+            ) : null}
             <p className="text-[12px] font-semibold text-[var(--bm-accent)]">{next ? "Next roadmap task" : allDone ? "All tasks done" : "Get started"}</p>
             <p className="mt-1.5 break-words text-[17px] font-semibold leading-snug text-[var(--bm-text)]">
               {next ? next.title : allDone ? "Every task is done. Check whether you are ready for the next stage." : "No tasks yet. Generate your first steps from the project idea."}
