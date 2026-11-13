@@ -523,10 +523,10 @@ export async function POST(request: Request) {
           swapPlan ? [swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n") : "",
           personalisationCtx.recoveryBlock ?? "",
         ].filter(Boolean).join("\n\n");
-        const fallbackInput = { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage };
+        const fallbackInput = { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage, blocker: recentTasks[0]?.outcome === "blocked" ? personalisationCtx.recurringBlockers[0] : undefined };
         const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
         // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
-        const curated = isFirstRun(recentTasks) ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
+        const curated = isFirstRun(recentTasks) && !fallbackInput.blocker ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
         const kindFallback = curated ?? fallbackForKind(mission.kind, fallbackInput, fallbackSeed, personalisationCtx.ledger);
         const qualityCtx = {
           ledger: personalisationCtx.ledger,

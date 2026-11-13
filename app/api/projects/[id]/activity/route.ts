@@ -18,7 +18,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const EVENT_LABELS: Record<string, string> = {
-  task_accepted: "Accepted today's action",
+  task_accepted: "Today's action was set",
   task_completed: "Completed a task",
   task_overridden: "Overrode today's action",
   reflection_done: "Filed a reflection",
