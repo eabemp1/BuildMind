@@ -226,10 +226,8 @@ function mapOutcome(raw: string): "completed" | "overridden" | "ignored" | "part
  *
  * Deterministic by design (Phase 13: no LLM needed for this comparison).
  */
-/** True when the founder's own words say nothing real happened: simulated or fictional data, or no real contact. */
-export function reportsNothingReal(text: string): boolean {
-  return /\b(simulat\w*|fictional|fictitious|fake|pretend\w*|hypothetical|test (data|account|run)|dummy|made[-\s]up|no (real|actual) (customer|contact|interview|conversation|reply|replies|response|revenue|user)s?|nothing (real|actual) happened)\b/i.test(text);
-}
+import { reportsNothingReal } from "@/lib/realness";
+export { reportsNothingReal };
 
 export async function compareFounderIntelligenceOutcome(
   supabase: SupabaseLike,
