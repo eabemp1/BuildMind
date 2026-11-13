@@ -236,7 +236,7 @@ export default function GhostGoalBanner({
   const behind    = goal ? !surpassed && mDone < Math.floor(mTarget * 0.5) && new Date().getUTCDay() >= 4 : false;
 
   const chipGlyph = !goal ? "◎" : surpassed ? "✦" : behind ? "⚠" : "◎";
-  const chipLabel = !goal ? "Vigil" : `Vigil ${mDone}/${mTarget}`;
+  const chipLabel = !goal ? "Weekly goal" : `Weekly goal ${mDone}/${mTarget}`;
 
   return (
     <>
@@ -287,7 +287,7 @@ export default function GhostGoalBanner({
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 0" }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "var(--bm-text3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  Weekly Vigil
+                  Weekly goal
                 </span>
                 <button
                   onClick={() => setExpanded(false)}

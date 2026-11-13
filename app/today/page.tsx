@@ -2357,7 +2357,7 @@ function TodayContent() {
               <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text2)" }}>From your teardown</span>
             )}
             {actionData.isAI && !actionLoading && (
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text2)" }}>Context calibrated</span>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text2)" }}>Uses your project history</span>
             )}
             {actionLoading && (
               <span style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
