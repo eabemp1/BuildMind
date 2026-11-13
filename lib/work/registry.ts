@@ -86,6 +86,7 @@ export const WORK_SPECS: WorkSpec[] = [
     fields: [short("learn", "What do you need to find out?", "e.g. how students currently find part-time work"), short("audience", "Who will answer it?", "e.g. university students")],
     shape: "sections",
     instruction: "Write a short survey as sections: 'Questions' (at most 8, each about what the person did or does today, never about what they would do in future; mix 2 multiple-choice with options written out and the rest open), 'How to run it' (where to share it and how many answers are enough to learn something), and 'What the answers mean' (how to read answers that support the idea and answers that do not). Do not ask leading questions.",
+    craft: "Ask about the last time it happened, not about intentions: when did you last, what did you do, what did it cost. One question, one idea, no leading words like great or easy. Put the multiple-choice options in the order a person would think of them, with an other. Say how many answers make a pattern (about 15 from a narrow group beats 100 from anyone) and name the answer that would change the plan, so the founder knows in advance what would count as a no.",
     you: "Build the form in your own tool and share it.",
   },
   {
@@ -97,6 +98,7 @@ export const WORK_SPECS: WorkSpec[] = [
     ],
     shape: "sections",
     instruction: "Write a competitive edge check as sections. Section 'Edge check': one bullet per edge the founder listed, in the form 'Edge: grade. Reason.' where grade is exactly one of 'Backed by what customers did', 'Plausible, not yet tested' or 'Easy to copy'. Use 'Backed by what customers did' ONLY when the founder's proof field shows customers saying or doing something that supports that edge; otherwise choose between the other two and say why in one sentence. Section 'Hardest to copy': name the one edge that would take a competitor longest to match and why, or say none of them yet. Section 'Our read: where you sit': describe, in plain sentences, how the founder's product differs from each named competitor on the two things that matter most to this audience (say which two). Start this section with 'This is our read from what you told us, not measured data.' Only discuss competitors the founder named; do not invent competitor features, prices or customers. Section 'Test this week': one cheap way to check the weakest edge with real customers.",
+    craft: "Be blunt and specific. An edge a competitor could copy in a month is easy to copy, however good it sounds. For every untested edge, end with the cheapest way to test it this week (one question to ask a real customer, in their words). Place the founder against the competitors the founder named, plus what people do today instead (a spreadsheet, a WhatsApp group, nothing), because that is usually the real competitor. Never invent a competitor, a feature or a market fact.",
     you: "Ask real customers about the edges marked untested, and correct anything here that is wrong.",
   },
   {
@@ -152,6 +154,7 @@ export const WORK_SPECS: WorkSpec[] = [
     fields: [long("traction", "What traction or proof do you have?", "Only real things. Leave blank if none yet.", true), short("ask", "What are you asking for?", "e.g. a GHS 100,000 pre-seed, or feedback", true)],
     shape: "sections", claims: true,
     instruction: "Write a 10-slide pitch outline as sections, one per slide, heading 'Slide N: title'. Each body has 2-3 short bullets of what goes on the slide and one 'Say:' line. Slides: problem, who has it, solution, how it works, why now, traction (only what the founder gave, else [add: your first real result]), market (no invented market sizes; write [add: your own sizing]), business model, team, the ask. Never invent numbers.",
+    craft: "Each Say: line is something a person would actually say aloud, in plain words, under 25. The problem slide uses a real example from the founder facts, not a statistic. A slide with nothing real behind it gets an honest [add: ...] and a note on how to get it, never filler. Put the ask last and make it specific: how much, for what, to reach which result in how long, using only what the founder gave.",
     you: "Build the slides in your own tool and rehearse.",
   },
   {
@@ -159,6 +162,7 @@ export const WORK_SPECS: WorkSpec[] = [
     fields: [short("program", "Which program or grant?", "e.g. a local accelerator"), long("questions", "Paste the questions", "One per line", false)],
     shape: "sections", claims: true,
     instruction: "Answer each pasted question as its own section; the heading is the question. Write from the project facts given. Where the answer needs a fact, number or story the founder has not given, write [add: ...] saying exactly what is needed instead of inventing it. Plain, specific, no buzzwords. If a question asks for a number you do not have, say so in the section.",
+    craft: "Answer the question that was asked, in the first sentence, then support it. Reviewers read dozens, so use short concrete sentences, one real example per answer, and the actual numbers the founder gave. Respect any word limit in the question. When the honest answer is we do not have that yet, say so and say what the founder will do about it, which reads better than a stretched claim. Match the program: say what it is looking for only if the founder said so.",
     you: "Fill every [add: ...], check the facts and submit it yourself.",
   },
   {
@@ -166,6 +170,7 @@ export const WORK_SPECS: WorkSpec[] = [
     fields: [short("investor", "Who is the investor, and why them?", "e.g. a partner who invests in African fintech"), long("traction", "Real traction to mention", "Only true things", true)],
     shape: "variants", count: 2, claims: true,
     instruction: "Write 2 versions: a cold email ('Subject: ...' first line, under 130 words) and a shorter LinkedIn message (under 70 words). Lead with the one reason this investor should care, then what the startup does in one sentence, then real traction only as given (else [add: your first real result]), then a small ask (a 15-minute call). No hype, no invented numbers or names.",
+    craft: "Investors skim, so the first line is the reason this particular investor should care, taken from the investor field. Then one sentence on what the startup does for whom. Traction only as given; with none, say plainly what stage it is at and what the founder is learning, which is more credible than a vague claim. The ask is small and easy to say yes to. No hype words, no we are disrupting, no invented names, numbers or introductions.",
     you: "Send it yourself. Personalise the first line.",
   },
   {
@@ -189,6 +194,7 @@ export const WORK_SPECS: WorkSpec[] = [
     fields: [short("channels", "Which channels?", "e.g. LinkedIn and WhatsApp status"), short("goal", "What is the goal?", "e.g. 20 people on the waitlist")],
     shape: "sections",
     instruction: "Write a two-week content plan as two sections, 'Week 1' and 'Week 2', each with up to 7 bullets of the form 'Day N: channel: the post or message itself, ready to paste (under 50 words)'. Write the real words, not a topic. Give every day a different angle: a lesson from the founder's own experience, a mistake and what it taught, a question that invites replies, a short teardown, a small useful tip. Never repeat an angle, and never say 'behind-the-scenes' twice. Use plain, everyday words and no startup jargon. For public communities such as Reddit or forums, give value only and no link; at most one soft line such as 'I built a tool for this, it is in my profile if you want to try it', and never in the first week. For WhatsApp or direct messages, write one-to-one notes to a single person, never a broadcast. Use only facts the founder gave. No invented results, numbers or customers; mark anything missing as [add: ...].",
+    craft: "Every item is something that could be posted as is: a first line that stops the scroll without clickbait, one idea, and an ending that invites a reply or points to the goal. Vary the shape across days (story, question, tip, teardown, ask) so two days never read alike. At least three items per week ask for a real conversation or the goal action, not just attention. Use only experiences and facts the founder gave; where a story is needed and none was given, write [add: a real moment from your week].",
     you: "Write and post each item yourself.",
   },
 ];
