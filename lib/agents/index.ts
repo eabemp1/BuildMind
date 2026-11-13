@@ -102,6 +102,8 @@ export interface StartupContext {
   founderAvoidanceZones?: string[];   // topics/tasks the founder has been avoiding
   founderTopicsRepeated?: string[];   // recurring themes across reflections
   founderDaysInactive?: number;
+  /** The founder's own stated limits (lib/constraints.ts constraintsRule), when set. */
+  founderLimits?: string;
   // true when this analysis is running against the founder's own tracked
   // project (projectId present); false when it's a fresh/outside idea
   // pasted into the idea-only flow. Agents should scope how much weight
