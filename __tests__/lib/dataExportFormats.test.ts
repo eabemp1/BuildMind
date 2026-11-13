@@ -39,11 +39,11 @@ describe("csvTables and report", () => {
     expect(html).toContain("interpretation, not fact");
     expect(html).toContain("2 tasks recorded, 1 marked done");
     expect(html).toContain("does not mean you ignored it");
-    expect(html).toContain("This export is complete.");
+    expect(html).toContain("This is a summary, not the full export.");
     expect(html).toContain("Left out on purpose");
   });
   it("says plainly when the export is not complete", async () => {
     const bad: any = { from: () => { const c: any = { select: () => c, eq: () => c, order: () => c, range: async () => ({ data: null, error: { code: "XX" }, count: null }) }; return c; } };
-    expect(buildReportHtml(await buildDataExport(bad, { id: "u" }))).toContain("This export is NOT complete.");
+    expect(buildReportHtml(await buildDataExport(bad, { id: "u" }))).toContain("Some categories also failed or were cut short");
   });
 });
