@@ -305,7 +305,7 @@ export default function ReflectPage() {
         blocker      ? `Blocker: ${blocker}` : "",
       ].filter(Boolean).join(" | ");
 
-      let caus = buildFallbackCausality(outcome, richNote, confidence);
+      let caus = buildFallbackCausality(outcome, blocker.trim(), confidence);
       let next = "";
       let witness = buildFallbackWitness(outcome, whatTried);
       try {
@@ -382,6 +382,7 @@ export default function ReflectPage() {
       } catch {}
       if (userId) storage.set(`bm_last_reflection_ts_${userId}`, Date.now().toString());
       broadcastTabEvent({ type: "reflection_done", date: new Date().toISOString().slice(0, 10) });
+      try { window.dispatchEvent(new CustomEvent("bm:loop-refresh")); } catch { /* status bar catches up on next load */ }
 
       const currentStreak = getStoredStreak();
       const modalSource = shouldShowTestimonialModal(currentStreak, outcome, confidence);
