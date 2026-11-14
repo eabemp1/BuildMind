@@ -20,6 +20,7 @@ export type TodayActionData = {
     pipeline?: string;
     passedCritic: boolean;
     lastReflectionUsed: boolean;
+    lastReflectionSummary?: string;
     /** True when the pre-screen gate rejected the AI's own composition and
      *  the deterministic buildFallback() template shipped instead — see
      *  the hard pre-screen gate in today-action/stream/route.ts. If this
@@ -126,7 +127,7 @@ export function buildTodayActionCacheFromBriefing(input: {
       rationale: fallback.why,
       loopRan: true,
       passedCritic: true,
-      lastReflectionUsed: true,
+      lastReflectionUsed: false,
     },
     reflexion_status: "precomputed",
   };

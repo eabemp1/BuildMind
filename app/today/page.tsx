@@ -89,6 +89,7 @@ type ReflexionMeta = {
   pipeline?: string;
   passedCritic: boolean;
   lastReflectionUsed: boolean;
+  lastReflectionSummary?: string;
   wasHardFallback?: boolean;
   hardFallbackReasons?: string[];
 };
@@ -2468,7 +2469,7 @@ function TodayContent() {
               </div>
               {actionData.reflexion?.lastReflectionUsed && (
                 <div style={{ fontSize: "var(--text-xs)", color: "var(--bm-text3)", marginBottom: "var(--space-2)" }}>
-                  Your yesterday's reflection shaped this recommendation.
+                  {actionData.reflexion.lastReflectionSummary ? `Shaped by your last reflection. ${actionData.reflexion.lastReflectionSummary}` : "Shaped by your last reflection."}
                 </div>
               )}
               {actionData.reflexion?.wasHardFallback && (

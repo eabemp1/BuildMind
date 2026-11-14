@@ -1,4 +1,6 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
+import { summarizeReflection } from "@/lib/today/reflectionSummary";
+import { taskMinutes } from "@/lib/today/minutes";
 import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
@@ -929,6 +931,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         pipeline?: string;
         passedCritic: boolean;
         lastReflectionUsed: boolean;
+        lastReflectionSummary?: string;
         wasHardFallback?: boolean;
         hardFallbackReasons?: string[];
       };
@@ -1027,7 +1030,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       finalResult.message = "";
     }
     Object.assign(finalResult, {
-      time: `${wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : mission.minutes} min`,
+      time: `${taskMinutes(finalResult.action, wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : mission.minutes)} min`,
       missionKind: mission.kind,
       missionLabel: mission.label,
       missionReasons: mission.reasons,
@@ -1052,6 +1055,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
         loopRan: true,
         passedCritic: reflexionOutput.verdict !== "fail",
         lastReflectionUsed: Boolean(reflexionContext.lastReflection),
+        lastReflectionSummary: reflexionContext.lastReflection ? summarizeReflection({ outcome: reflexionContext.lastReflection.outcome, note: reflexionContext.lastReflection.note }) : undefined,
         // Surfaced to the client for the same reason as the stream route:
         // if the pre-screen rejected the AI's own composition, the founder
         // is looking at the deterministic fallback and the UI should be

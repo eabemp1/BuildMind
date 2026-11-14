@@ -12,6 +12,7 @@
  *  4. localDayKey uses UTC (toISOString().slice(0,10)) to match server-side today.
  */
 
+import { taskMinutes } from "@/lib/today/minutes";
 import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
@@ -604,7 +605,7 @@ ${groundingBlock}
 Return JSON with exactly these fields:
 {
   "kind": "${mission.kind}",
-  "task": one sentence naming the exact thing to do, in this founder's own product/user terms. Completable in ${mission.minutes} minutes or less. No generics like "some users", "relevant communities", "research", "explore", "brainstorm".${mission.requires.platform ? ` Must name one of ${JSON.stringify(ALLOWED_PLATFORMS)}.` : ""}${mission.requires.number ? " Must include a specific number." : ""}
+  "task": one sentence naming the exact thing to do, in this founder's own product/user terms. Completable in ${mission.minutes} minutes or less. State the real size of the work: if finding one name or number takes 15 minutes, say 15 and add the next small step (for example drafting the ask) instead of padding to fill the time. Never describe contact as made until the founder actually sends it. No generics like "some users", "relevant communities", "research", "explore", "brainstorm".${mission.requires.platform ? ` Must name one of ${JSON.stringify(ALLOWED_PLATFORMS)}.` : ""}${mission.requires.number ? " Must include a specific number." : ""}
   "first_step": the literal first action to take in the next 2 minutes (open X, write Y),
   "done_when": one sentence a stranger could check ("3 messages sent", "page live at a URL", "decision written in 3 lines"),
   "minutes": integer ${Math.min(10, mission.minutes)}-${mission.minutes},
@@ -823,7 +824,7 @@ ${JSON.stringify(structuredA)}`,
         const finalDraft = wasHardFallback ? kindFallback.message : agentCFields.draft;
         const finalDoneWhen = wasHardFallback ? kindFallback.done_when : agentCFields.done_when;
         const finalFirstStep = wasHardFallback ? kindFallback.first_step : agentCFields.first_step;
-        const finalMinutes = wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : agentCFields.minutes;
+        const finalMinutes = taskMinutes(finalAction, wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : agentCFields.minutes);
         const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
         if (swapPlan) {
           void recordSwap(hasAdminEnv() ? createAdminClient() : null, {
@@ -903,6 +904,7 @@ ${JSON.stringify(structuredA)}`,
             pipeline: "agent_abc",
             passedCritic: criticVerdict !== "fail",
             lastReflectionUsed: lastReflectionContext.includes("LAST REFLECTION"),
+            lastReflectionSummary: tctx.lastReflectionSummary,
             // Surfaced to the client rather than hidden — if the AI's own
             // composition failed the platform/number/user-type gate, the
             // founder is looking at the deterministic fallback, and the UI

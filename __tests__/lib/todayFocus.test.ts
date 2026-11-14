@@ -49,7 +49,7 @@ describe("suggested length", () => {
     expect(parseSuggestedMinutes("25 minutes")).toBe(25);
     expect(parseSuggestedMinutes("10 min")).toBe(10);
     expect(parseSuggestedMinutes("1 hour")).toBe(60);
-    expect(parseSuggestedMinutes("20-30 minutes")).toBe(30);
+    expect(parseSuggestedMinutes("20-30 minutes")).toBe(20); // a range starts at the low end
     expect(parseSuggestedMinutes("About 2 hours")).toBe(90);
   });
   it("returns null for unreadable text and snaps to presets", () => {

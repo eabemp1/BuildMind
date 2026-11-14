@@ -15,6 +15,7 @@
  * SERVER-SIDE ONLY — imports server-only libs (admin client, cognition).
  */
 
+import { summarizeReflection } from "@/lib/today/reflectionSummary";
 import { founderStatePromptBlock, type FounderState as CapacityState } from "@/lib/founderState";
 import { loadFounderState } from "@/lib/server/founderStateLoad";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -89,6 +90,8 @@ export interface TodayActionContext {
   /** How the founder is doing right now; shapes the mission, the ranking and the prompt. */
   founderState: CapacityState | null;
   lastReflectionNote: string | undefined;
+  /** Which reflection was used, in the founder's words (lib/today/reflectionSummary.ts). */
+  lastReflectionSummary: string | undefined;
   personalisationCtx: {
     recentActionsBlock: string;
     recentReflectionsBlock: string;
@@ -154,6 +157,7 @@ export async function loadTodayActionContext(params: {
     cognitionCognitiveLoad: "fresh",
     founderState: null,
     lastReflectionNote: undefined,
+    lastReflectionSummary: undefined,
     personalisationCtx: { recentActionsBlock: "", recentReflectionsBlock: "", recurringBlockers: [], activeGoals: [] },
     founderIntelligence: null,
     intelligenceSummary: undefined,
@@ -370,6 +374,7 @@ export async function loadTodayActionContext(params: {
   if (lastReflection) {
     const reflectDate = new Date(lastReflection.created_at).toLocaleDateString();
     ctx.lastReflectionNote = lastReflection.note ?? undefined;
+    ctx.lastReflectionSummary = summarizeReflection(lastReflection);
     ctx.lastReflectionContext =
       `\nLAST REFLECTION (${reflectDate}):\nYesterday: "${lastReflection.today_action ?? "Not recorded"}"\nOutcome: ${lastReflection.outcome}\nConfidence: ${lastReflection.confidence}/5\nNote: "${lastReflection.note ?? "None"}"\n` +
       `${lastReflection.what_tried ? `What they actually tried: "${lastReflection.what_tried}"\n` : ""}` +

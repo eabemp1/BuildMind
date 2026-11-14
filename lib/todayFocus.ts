@@ -99,9 +99,10 @@ export function parseSuggestedMinutes(text: string | null | undefined): number |
   if (!text) return null;
   const m = text.toLowerCase().match(/(\d+(?:\.\d+)?)(?:\s*(?:-|–|to)\s*(\d+(?:\.\d+)?))?\s*(hours?|hrs?|h\b|minutes?|mins?|m\b)/);
   if (!m) return null;
-  const high = Number(m[2] ?? m[1]);
+  // A range like 30-60 minutes starts the timer at the low end: a timebox should not overrun.
+  const low = Number(m[1]);
   const isHours = /^h/.test(m[3]);
-  const minutes = Math.round(isHours ? high * 60 : high);
+  const minutes = Math.round(isHours ? low * 60 : low);
   if (!Number.isFinite(minutes) || minutes <= 0) return null;
   return Math.min(90, Math.max(5, minutes));
 }
