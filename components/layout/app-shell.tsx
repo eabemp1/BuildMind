@@ -29,6 +29,22 @@ function DailyLoopStatusBar() {
     hoursUntilBriefing: number;
   } | null>(null);
 
+  // Re-read the local flags when a page marks the task or reflection done, so
+  // the bar never lags behind the page the founder is looking at.
+  useEffect(() => {
+    const refresh = () => {
+      const today = new Date().toISOString().slice(0, 10);
+      setLoopState((prev) => prev && ({
+        ...prev,
+        taskDone: prev.taskDone || storage.get(`bm_task_done_${today}`) === "1",
+        taskOutcome: storage.get(`bm_task_outcome_${today}`) ?? prev.taskOutcome,
+        reflectionDone: prev.reflectionDone || storage.get(`bm_reflect_done_${today}`) === "1",
+      }));
+    };
+    window.addEventListener("bm:loop-refresh", refresh);
+    return () => window.removeEventListener("bm:loop-refresh", refresh);
+  }, []);
+
   useEffect(() => {
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
@@ -280,7 +296,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
         {/* ── 14-Day Free Trial banner (active trial) ── */}
         {trialDaysRemaining > 0 && (
-          <div style={{ padding: "8px 16px 0" }}>
+          // On phones the banner moves inside the scrolling page (below) so it scrolls away
+          // instead of taking ~80px of a small screen permanently.
+          <div className="hidden sm:block" style={{ padding: "8px 16px 0" }}>
             <TrialBanner daysRemaining={trialDaysRemaining} />
           </div>
         )}
@@ -292,6 +310,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         <CommandPalette />
         <ProductTour />
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 outline-none overflow-y-auto overflow-x-hidden px-3 py-5 sm:px-8 sm:py-8">
+          {trialDaysRemaining > 0 && (
+            <div className="mb-4 sm:hidden"><TrialBanner daysRemaining={trialDaysRemaining} /></div>
+          )}
           <div style={{ maxWidth: 1120, margin: "0 auto", width: "100%", minWidth: 0 }}>{children}</div>
         </main>
       </div>

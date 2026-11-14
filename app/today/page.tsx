@@ -2037,7 +2037,7 @@ function TodayContent() {
 
 
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10, justifyContent: "center" }}>
-            <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reflect on today →</button>
+            <button onClick={() => router.push("/reflect")} style={{ padding: "12px 20px", borderRadius: 10, border: "none", background: "var(--grad-primary)", color: "white", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{storage.get(`bm_reflect_done_${new Date().toISOString().slice(0, 10)}`) === "1" ? "View or edit reflection" : "Reflect on today →"}</button>
             <button onClick={() => router.push("/overview")} style={{ padding: "12px 20px", borderRadius: 10, border: "1px solid var(--bm-border)", background: "transparent", color: "var(--bm-text2)", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>View full dashboard</button>
           </div>
         </motion.div>
@@ -2415,6 +2415,7 @@ function TodayContent() {
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
               timeText={actionData?.time ?? null}
               done={done}
+              reflected={storage.get(`bm_reflect_done_${new Date().toISOString().slice(0, 10)}`) === "1"}
               streak={streak}
               firstStep={actionData?.firstStep ?? null}
               onEngage={setTimerRunning}

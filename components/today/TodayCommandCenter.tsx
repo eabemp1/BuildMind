@@ -67,6 +67,8 @@ export interface TodayCommandCenterProps {
   actionTitle: string | null;
   timeText: string | null;
   done: boolean;
+  /** A reflection is already saved today, so the button opens it instead of starting a new one. */
+  reflected?: boolean;
   streak: number;
   /** Shown in the phone reminder so the alert says what to start with. */
   firstStep?: string | null;
@@ -77,7 +79,7 @@ export interface TodayCommandCenterProps {
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STORAGE_KEY = "bm_focus_state_v1";
 
-export default function TodayCommandCenter({ action, kicker, accent, rationale, whyMore, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", whyNow, whyNowHref, actionTitle, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
+export default function TodayCommandCenter({ action, kicker, accent, rationale, whyMore, reasons, expectedEvidence, lowConfidence = false, onExecute, executeLabel = "Open script", whyNow, whyNowHref, actionTitle, reflected = false, timeText, done, streak, firstStep, onEngage }: TodayCommandCenterProps) {
   const { openPane } = useSidePane();
   const askCoach = () => openPane({ kind: "coach", title: "Coach on today's task", prompt: actionTitle ? `I'm about to work on this: "${actionTitle}". What is the smallest first move, and what usually makes people stall on it?` : undefined });
   const showWhy = () => openPane({
@@ -355,7 +357,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
         )}
 
         {focus.mode === "idle" && done && (
-          <button type="button" className="bm-ink-link" onClick={goToCheckIn} style={link({ padding: "10px 0" })}>Reflect on today</button>
+          <button type="button" className="bm-ink-link" onClick={goToCheckIn} style={link({ padding: "10px 0" })}>{reflected ? "View or edit reflection" : "Reflect on today"}</button>
         )}
       </div>
 
