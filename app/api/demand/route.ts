@@ -27,9 +27,6 @@ export async function POST(req: NextRequest) {
   const auth = await getRouteUser();
   if (!auth) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   if (auth.plan === "free") return NextResponse.json({ ok: false, error: "The Demand Check is part of the Builder plan." }, { status: 403 });
-  const blocked = await gateAIUsage(auth.userId, "general");
-  if (blocked) return blocked;
-
   let body: z.infer<typeof Body>;
   try { body = Body.parse(await req.json()); } catch { return NextResponse.json({ ok: false, error: "Add your country and what people need." }, { status: 400 }); }
 
@@ -50,12 +47,22 @@ export async function POST(req: NextRequest) {
   const admit = await admitHeavyRun(auth.userId);
   if (!admit.allowed) return NextResponse.json({ ok: false, error: admit.reason, retryAfterMinutes: admit.retryAfterMinutes }, { status: 429 });
 
+  // Spend the allowance last: a bad form, a check already running, or a busy server costs nothing.
+  const blocked = await gateAIUsage(auth.userId, "general");
+  if (blocked) return blocked;
+
   const { data: row, error } = await admin.from("demand_runs").insert({ user_id: auth.userId, project_id: body.projectId ?? null, status: "running", input }).select("id").single();
   if (error || !row) return NextResponse.json({ ok: false, error: "Could not start the check. Has the demand_runs table been created?" }, { status: 500 });
 
   after(async () => {
     try {
-      const run = await checkDemand(input);
+      // Stop before the platform cuts the function off, so the run is marked failed with a clear message.
+      const HARD_LIMIT_MS = (maxDuration - 20) * 1000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const run = await Promise.race([
+        checkDemand(input),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The check took too long and was stopped. Try again.")), HARD_LIMIT_MS); }),
+      ]).finally(() => clearTimeout(timer));
       await admin.from("demand_runs").update({ status: "done", result: run, signal_count: run.signals.length, finished_at: new Date().toISOString() }).eq("id", row.id);
     } catch (e) {
       await admin.from("demand_runs").update({ status: "failed", error: String((e as Error)?.message ?? e).slice(0, 300), finished_at: new Date().toISOString() }).eq("id", row.id);
