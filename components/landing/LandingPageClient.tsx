@@ -2351,9 +2351,9 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             {showStats ? (
             <div className="flex flex-wrap gap-2 pt-1 sm:pt-2">
               {[
-                { label: "Founders building", val: stats.founders },
-                { label: "Projects active", val: stats.projects },
-                { label: "Milestones completed", val: stats.milestones },
+                { label: "Founders signed up", val: stats.founders },
+                { label: "Projects created", val: stats.projects },
+                { label: "Milestones created", val: stats.milestones },
               ].map((s) => (
                 <div
                   key={s.label}
@@ -2372,7 +2372,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
                   <span style={{ fontWeight: 600, color: "var(--bm-accent)" }}>
                     {stats.weekly_tasks.toLocaleString()}
                   </span>
-                  <span style={{ color: "var(--bm-text3)" }}>daily tasks this week</span>
+                  <span style={{ color: "var(--bm-text3)" }}>daily tasks completed this week</span>
                 </div>
               )}
             </div>
@@ -2405,7 +2405,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
         >
           <div className="mb-1 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--bm-text4)]">
             <span className="bm-live-dot" style={{ width: 5, height: 5 }} />
-            Founders building
+            Founders signed up
           </div>
           <div className="font-display text-2xl font-bold text-[var(--bm-text)]">
             {stats.founders.toLocaleString()}
@@ -2422,7 +2422,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           }}
         >
           <div className="mb-1 text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--bm-text4)]">
-            Projects active
+            Projects created
           </div>
           <div className="font-display text-2xl font-bold text-[var(--bm-text)]">
             {stats.projects.toLocaleString()}
@@ -2441,7 +2441,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           >
             <div className="mb-1 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--bm-text4)]">
               <span className="bm-live-dot" style={{ width: 5, height: 5 }} />
-              Tasks this week
+              Tasks completed this week
             </div>
             <div className="font-display text-2xl font-bold text-[var(--bm-accent)]">
               {stats.weekly_tasks.toLocaleString()}

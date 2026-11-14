@@ -25,3 +25,26 @@ describe("test mode", () => {
     expect(testModeRule(true)).toMatch(/TEST MODE/);
   });
 });
+
+import { spendsAgainstBudget } from "@/lib/constraints";
+import { fallbackForKind } from "@/lib/todayFallbacks";
+
+describe("zero budget", () => {
+  const zero = { minutesPerDay: null, monthlyBudget: 0 };
+  it("flags tasks that spend money", () => {
+    for (const t of ["Run a Facebook ad for your repair shop.", "Boost your post with $5.", "Buy a premium plan for the tool.", "Set up a paid promotion."]) {
+      expect(spendsAgainstBudget(t, zero)).toBe(true);
+    }
+  });
+  it("passes free tasks, and anyone who set a real or no budget", () => {
+    expect(spendsAgainstBudget("Message 5 shops on Facebook.", zero)).toBe(false);
+    expect(spendsAgainstBudget("Run a Facebook ad.", { minutesPerDay: null, monthlyBudget: 50 })).toBe(false);
+    expect(spendsAgainstBudget("Run a Facebook ad.", null)).toBe(false);
+  });
+  it("no built-in fallback task asks for spending", () => {
+    const input = { userType: "bike shop owners", problemDesc: "tracking repairs", productName: "RepairBoard", stage: "Validation" };
+    for (const kind of ["interview", "outreach", "follow_up", "build", "unblock"] as const) {
+      for (const seed of ["a", "b", "c", "d"]) expect(spendsAgainstBudget(fallbackForKind(kind, input, seed).action, zero)).toBe(false);
+    }
+  });
+});

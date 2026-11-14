@@ -32,8 +32,22 @@ export interface KindFallback {
 type Variant = (i: FallbackInput) => KindFallback;
 
 /** Yesterday ended blocked: today is about that block, not a repeat of the same ask. */
-function aroundBlocker(blocker: string): KindFallback {
+const NO_CONTACT = /\b(?:(?:don'?t|do not|dont|didn'?t|never)\s+(?:know|have)|no(?:\s+one|body)?\s+(?:to|i)\b|know\s+(?:no\s*one|nobody|none)|no\s+(?:contacts?|leads?))/i;
+
+function aroundBlocker(blocker: string, userType = ""): KindFallback {
   const b = blocker.trim().replace(/\s+/g, " ").slice(0, 120).replace(/[."]+$/, "");
+  // Not knowing anyone is solved by finding someone, not by brainstorming.
+  if (userType && NO_CONTACT.test(b)) {
+    return {
+      action: `You said: "${b}". So the next step is to find them: search Google Maps or Facebook for ${userType} near you, and write down 5 names with how to reach each. Do not contact anyone yet.`,
+      platform: "Google Maps",
+      message: "",
+      why: `You cannot talk to people you have not found. Finding five real names is the whole step.`,
+      time: "20 minutes",
+      done_when: `You have a list of 5 real ${userType}, each with a phone number, page or address.`,
+      first_step: `Open Google Maps and search for ${userType} in your town.`,
+    };
+  }
   return {
     action: `Yesterday you got stuck on: "${b}". Write 3 ways around it, pick the cheapest, and do its first 10 minutes.`,
     platform: "",
@@ -151,7 +165,7 @@ const BANK: Record<MissionKind, Variant[]> = {
     }),
   ],
   unblock: [
-    ({ productName, blocker }) => blocker ? aroundBlocker(blocker) : ({
+    ({ productName, userType, blocker }) => blocker ? aroundBlocker(blocker, userType) : ({
       action: `Pick the one thing you have been putting off on ${productName} and do only its first 20 minutes, rough is fine.`,
       platform: "",
       message: "",
@@ -251,7 +265,7 @@ const MORE: Partial<Record<MissionKind, Variant[]>> = {
     }),
   ],
   unblock: [
-    ({ blocker }) => blocker ? aroundBlocker(blocker) : ({
+    ({ userType, blocker }) => blocker ? aroundBlocker(blocker, userType) : ({
       action: `Name the one task you keep moving to tomorrow, write the first sentence or step of it, and send that to one person to hold you to it.`,
       platform: "",
       message: "",

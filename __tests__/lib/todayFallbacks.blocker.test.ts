@@ -10,6 +10,17 @@ describe("blocked yesterday", () => {
     expect(f.action).toContain("I don't know any bike shop owners");
     expect(f.action).not.toMatch(/call one/i);
   });
+  it("not knowing anyone leads to finding people, not a brainstorm or another call", () => {
+    for (const b of ["I don't know any bike shop owners.", "I know nobody in this business", "no contacts yet"]) {
+      const f = fallbackForKind("unblock", { ...input, blocker: b }, "seed");
+      expect(f.action).toMatch(/find them/);
+      expect(f.action).toContain("bike shop owners");
+      expect(f.action).not.toMatch(/call one/i);
+    }
+  });
+  it("other blockers still get the general way-around task", () => {
+    expect(fallbackForKind("unblock", { ...input, blocker: "I ran out of time" }, "seed").action).toMatch(/3 ways around/);
+  });
   it("without a blocker the generic unblock task is unchanged", () => {
     expect(fallbackForKind("unblock", input, "seed").action).not.toContain("got stuck");
   });
