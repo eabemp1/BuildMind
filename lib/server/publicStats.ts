@@ -66,10 +66,22 @@ async function safeWeeklyTasks(supabase: ReturnType<typeof createAdminClient>): 
   }
 }
 
+// The homepage renders on every visit, and these counts walk every user and project. Keep one copy
+// per server instance for a few minutes so a traffic spike does not turn into a database spike.
+const STATS_TTL_MS = 5 * 60 * 1000;
+let cached: { at: number; value: PublicStats } | null = null;
+let inflight: Promise<PublicStats> | null = null;
+
 export async function getPublicStats(): Promise<PublicStats> {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return PUBLIC_STATS_FALLBACK;
-  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return PUBLIC_STATS_FALLBACK;
+  if (cached && Date.now() - cached.at < STATS_TTL_MS) return cached.value;
+  inflight ??= computePublicStats()
+    .then((value) => { cached = { at: Date.now(), value }; return value; })
+    .finally(() => { inflight = null; });
+  return inflight;
+}
+
+async function computePublicStats(): Promise<PublicStats> {
 
   const supabase = createAdminClient();
   const [profiles, users, authUsers, projectOwners, projects, milestones, weekly_tasks] = await Promise.all([
