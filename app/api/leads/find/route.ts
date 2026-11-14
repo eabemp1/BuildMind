@@ -27,9 +27,6 @@ export async function POST(req: NextRequest) {
   const auth = await getRouteUser();
   if (!auth) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   if (auth.plan === "free") return NextResponse.json({ ok: false, error: "The Lead Finder is part of the Builder plan." }, { status: 403 });
-  const blocked = await gateAIUsage(auth.userId, "general");
-  if (blocked) return blocked;
-
   let body: z.infer<typeof Body>;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -69,6 +66,10 @@ export async function POST(req: NextRequest) {
   const admit = await admitHeavyRun(auth.userId);
   if (!admit.allowed) return NextResponse.json({ ok: false, error: admit.reason, retryAfterMinutes: admit.retryAfterMinutes }, { status: 429 });
 
+  // Spend the allowance last: a bad form, a search already running, or a busy server costs nothing.
+  const blocked = await gateAIUsage(auth.userId, "general");
+  if (blocked) return blocked;
+
   const { data: row, error: insErr } = await admin.from("lead_runs").insert({ user_id: auth.userId, project_id: body.projectId ?? null, status: "running", input }).select("id").single();
   if (insErr || !row) return NextResponse.json({ ok: false, error: "Could not start the search. Has the lead_runs table been created?" }, { status: 500 });
 
@@ -79,7 +80,14 @@ export async function POST(req: NextRequest) {
   // Keep working after the response is sent, so the founder can leave this page.
   after(async () => {
     try {
-      const run = await findLeads(input, undefined, admit.light);
+      // The function is cut off at maxDuration. Stop a little earlier so the run is marked failed
+      // with a clear message instead of staying "running" until the page gives up on it.
+      const HARD_LIMIT_MS = (maxDuration - 20) * 1000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const run = await Promise.race([
+        findLeads(input, Date.now() + HARD_LIMIT_MS - 30_000, admit.light),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The search took too long and was stopped. Try again.")), HARD_LIMIT_MS); }),
+      ]).finally(() => clearTimeout(timer));
       let saveFailed = 0;
       for (const l of run.leads) {
         // Select-then-write: the unique index is on an expression, so ON CONFLICT cannot target it.

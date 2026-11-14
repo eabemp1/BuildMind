@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useProjectSummariesQuery } from "@/lib/queries";
 import { getActiveProjectId } from "@/lib/api";
@@ -124,6 +124,18 @@ export default function CustomersPage() {
 
   const ready = country.trim().length >= 2 && customer.trim().length >= 3 && !busy && !running && !!project;
 
+  // Group by search (date + place), newest first. Inside a search, leads not yet contacted come first.
+  const groups: Array<{ key: string; leads: LeadRow[]; todo: number }> = [];
+  for (const l of leads) {
+    const key = searchKey(l);
+    let g = groups.find((x) => x.key === key);
+    if (!g) groups.push((g = { key, leads: [], todo: 0 }));
+    g.leads.push(l);
+    if (l.status === "saved") g.todo++;
+  }
+  groups.sort((x, y) => y.key.localeCompare(x.key));
+  for (const g of groups) g.leads.sort((x, y) => Number(y.status === "saved") - Number(x.status === "saved"));
+
   return (
     <div className="mx-auto max-w-[760px] px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader title="Find customers" subtitle="Real businesses, pages and groups in your own area, with a first message for each." />
@@ -182,13 +194,17 @@ export default function CustomersPage() {
         </div>
       )}
 
-      <ul className="mt-5 flex flex-col gap-3">
-        {leads.map((l, i) => (
-          <Fragment key={l.id ?? l.url}>
-            {searchKey(l) !== searchKey(leads[i - 1]) && (
-              <li aria-hidden={false} className="mt-2 text-[12px] font-semibold text-[var(--bm-text3)]">{searchLabel(l)}</li>
-            )}
-          <li>
+      {/* One section per search. The newest is open; older ones fold away so a long history stays short. */}
+      <div className="mt-5 flex flex-col gap-4">
+        {groups.map((g, gi) => (
+          <details key={g.key} open={gi === 0} className="rounded-[12px] border border-[var(--bm-border)] p-3 sm:p-4">
+            <summary className="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-semibold text-[var(--bm-text)]">
+              <span>{searchLabel(g.leads[0])}</span>
+              <span className="text-[12px] font-normal text-[var(--bm-text3)]">{g.leads.length} {g.leads.length === 1 ? "lead" : "leads"}{g.todo > 0 ? `, ${g.todo} not contacted yet` : ", all followed up"}</span>
+            </summary>
+            <ul className="mt-3 flex flex-col gap-3">
+        {g.leads.map((l) => (
+          <li key={l.id ?? l.url}>
             <Card className="p-4 sm:p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="break-words text-[16px] font-semibold text-[var(--bm-text)]">{l.name}</h2>
@@ -228,9 +244,11 @@ export default function CustomersPage() {
               </div>
             </Card>
           </li>
-          </Fragment>
         ))}
-      </ul>
+            </ul>
+          </details>
+        ))}
+      </div>
 
       {leads.length > 0 && (
         <p className="mt-6 text-[12px] leading-relaxed text-[var(--bm-text3)]">
