@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadTestMode, testModeRule } from "@/lib/testMode";
 import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { distinctByAction, isShownTaskRow } from "@/lib/recommendationRows";
 import { buildLedger, factsPromptBlock, type Ledger } from "@/lib/today/facts";
@@ -198,7 +199,7 @@ export async function buildTodayPersonalisationContext(
     const loopRows = loopsResult.status === "fulfilled" && !loopsResult.value.error ? ((loopsResult.value.data ?? []) as Loop[]) : [];
     const { due: dueLoops } = partitionLoops(loopRows);
     const radarBlock = await radarPromptBlock(supabase, userId, projectId).catch(() => "");
-    const limitsBlock = constraintsRule(await loadConstraints(supabase, userId));
+    const limitsBlock = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(await loadTestMode(supabase, userId))].filter(Boolean).join("\n\n");
     const factsBlock = [factsPromptBlock(ledger), loopsPromptBlock(dueLoops), radarBlock, limitsBlock].filter(Boolean).join("\n\n");
 
     return {

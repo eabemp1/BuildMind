@@ -31,7 +31,20 @@ export async function POST(req: NextRequest) {
   if (blocked) return blocked;
 
   let body: z.infer<typeof Body>;
-  try { body = Body.parse(await req.json()); } catch { return NextResponse.json({ ok: false, error: "Add your country and who your customers are." }, { status: 400 }); }
+  const parsed = Body.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    // Say which field failed and why, so a filled-in form never gets a misleading "add your country".
+    const issue = parsed.error.issues[0];
+    const field = String(issue?.path?.[0] ?? "");
+    const names: Record<string, string> = { country: "Country", city: "City", customer: "Who your customers are", problem: "The problem", projectId: "Project" };
+    const name = names[field] ?? "The form";
+    const error = issue?.code === "too_big" ? `${name} is too long. Shorten it and try again.`
+      : issue?.code === "too_small" ? `${name} is too short. Add a little more.`
+      : field === "projectId" ? "Reload the page and pick your project again."
+      : "Add your country and who your customers are.";
+    return NextResponse.json({ ok: false, error, field }, { status: 400 });
+  }
+  body = parsed.data;
 
   const admin = createAdminClient();
   let problem = sanitizePromptInput(body.problem, 240);

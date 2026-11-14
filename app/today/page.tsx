@@ -2708,7 +2708,7 @@ function TodayContent() {
           How did it go?
         </h2>
         <div style={{ fontSize: 14, color: "var(--bm-text2)", marginBottom: 16, lineHeight: 1.5 }}>
-          Tap what happened. That opens the reflection page, where you add one line. It takes about 20 seconds, and tomorrow's task is built from it.
+          Tapping one records that outcome now and opens the reflection page, where you add one line and can pick a different outcome. It takes about 20 seconds, and tomorrow's task is built from it.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
           {OUTCOME_CHIPS.map((chip, i) => (

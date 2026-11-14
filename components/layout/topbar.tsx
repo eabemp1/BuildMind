@@ -178,7 +178,7 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
         title={navOpen ? "Unpin sidebar (Ctrl+B)" : "Pin sidebar open (Ctrl+B)"}
         style={{
           display: "grid", placeItems: "center",
-          width: 32, height: 32, borderRadius: 6,
+          width: 40, height: 40, borderRadius: 8,
           border: "1px solid var(--bm-border2)",
           background: "transparent", color: "var(--bm-text3)",
           cursor: "pointer", flexShrink: 0,
@@ -284,8 +284,8 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
       {/* Right controls */}
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
         <button type="button" onClick={() => (pane?.kind === "coach" ? closePane() : openPane({ kind: "coach" }))}
-          title="Ask your coach beside this page (Ctrl+J)" aria-pressed={pane?.kind === "coach"}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600,
+          title="Ask your coach beside this page (Ctrl+J)" aria-label="Coach" aria-pressed={pane?.kind === "coach"}
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, height: 40, minWidth: 40, padding: "0 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600,
             border: `1px solid ${pane?.kind === "coach" ? "var(--bm-accent-bd)" : "var(--bm-border2)"}`,
             background: pane?.kind === "coach" ? "var(--bm-accent-dim)" : "transparent",
             color: pane?.kind === "coach" ? "var(--bm-accent)" : "var(--bm-text3)" }}>
@@ -298,8 +298,9 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
         <div style={{ position: "relative" }} ref={menuRef}>
           <button
             onClick={() => setOpen(s => !s)}
+            aria-label="Account menu" aria-expanded={open}
             style={{
-              width: 32, height: 32, borderRadius: 8,
+              width: 40, height: 40, borderRadius: 8,
               border: "1px solid var(--bm-border2)",
               background: open ? "var(--bm-accent-dim)" : "var(--bm-bg2)",
               color: "var(--bm-text)", fontSize: 12, fontWeight: 600,

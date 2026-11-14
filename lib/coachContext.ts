@@ -9,6 +9,7 @@
  * Returns a single formatted string ready to inject into the system prompt.
  */
 
+import { loadTestMode, testModeRule } from "@/lib/testMode";
 import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { isShownTaskRow } from "@/lib/recommendationRows";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -312,7 +313,7 @@ export async function assembleCoachContext(
 
   // ── 8. The founder's own limits (time, money) ───────────────────────────
   try {
-    const limits = constraintsRule(await loadConstraints(supabase, userId));
+    const limits = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(await loadTestMode(supabase, userId))].filter(Boolean).join("\n\n");
     if (limits) sections.push(limits);
   } catch { /* optional */ }
 

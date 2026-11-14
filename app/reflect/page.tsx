@@ -420,6 +420,12 @@ export default function ReflectPage() {
         <ReflectionCompletion
           witnessed={sanitizeOutput(witnessed)}
           causality={sanitizeOutput(causality)}
+          answers={[
+            { label: "What you tried", text: whatTried },
+            { label: "What happened", text: whatHappened },
+            { label: "What you learned", text: whatLearned },
+            { label: "What blocked you", text: blocker },
+          ].filter((a) => a.text.trim())}
           nextAction={sanitizeOutput(displayNextAction)}
           confidenceAdjustment={confidenceAdjustment}
           onOverview={() => router.push("/overview")}

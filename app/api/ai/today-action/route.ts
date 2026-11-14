@@ -1,6 +1,7 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { summarizeReflection } from "@/lib/today/reflectionSummary";
 import { taskMinutes } from "@/lib/today/minutes";
+import { loadConstraints } from "@/lib/constraints";
 import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
@@ -1029,8 +1030,9 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     } else if (!mission.requires.draft) {
       finalResult.message = "";
     }
+    const dailyCap = (hasAdminEnv() ? await loadConstraints(createAdminClient(), userId) : null)?.minutesPerDay ?? null;
     Object.assign(finalResult, {
-      time: `${taskMinutes(finalResult.action, wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : mission.minutes)} min`,
+      time: `${taskMinutes(finalResult.action, wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : mission.minutes, dailyCap)} min`,
       missionKind: mission.kind,
       missionLabel: mission.label,
       missionReasons: mission.reasons,

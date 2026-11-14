@@ -34,7 +34,7 @@ const CHANNELS: Array<[Channel, string]> = [["whatsapp", "WhatsApp"], ["facebook
 const inputCls = "min-h-[44px] w-full rounded-lg border border-[var(--bm-border2)] bg-[var(--bm-bg2)] px-3 py-2 text-[14px] text-[var(--bm-text)] outline-none focus:border-[var(--bm-accent-bd)]";
 
 export default function CustomersPage() {
-  const { data: summaries = [] } = useProjectSummariesQuery();
+  const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
   const [projectId, setProjectId] = useState("");
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
@@ -77,7 +77,7 @@ export default function CustomersPage() {
     if (!project?.id) return;
     try {
       const saved = JSON.parse(localStorage.getItem(`bm_find_customers_${project.id}`) ?? "null") as { country?: string; city?: string; customer?: string } | null;
-      if (saved) { setCountry(saved.country ?? ""); setCity(saved.city ?? ""); if (saved.customer) setCustomer(saved.customer); }
+      if (saved) { if (saved.country) setCountry(saved.country.slice(0, 60)); if (saved.city) setCity(saved.city.slice(0, 60)); if (saved.customer) setCustomer(saved.customer.slice(0, 160)); }
     } catch { /* storage unavailable */ }
   }, [project?.id]);
   useEffect(() => {
@@ -100,7 +100,7 @@ export default function CustomersPage() {
     try {
       const res = await fetch("/api/leads/find", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, country, city, customer }),
+        body: JSON.stringify({ projectId: project.id, country: country.trim(), city: city.trim(), customer: customer.trim() }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) { setError(json?.error ?? "Something went wrong. Try again."); return; }
@@ -128,7 +128,9 @@ export default function CustomersPage() {
     <div className="mx-auto max-w-[760px] px-4 py-6 sm:px-6 sm:py-8">
       <PageHeader title="Find customers" subtitle="Real businesses, pages and groups in your own area, with a first message for each." />
 
-      {summaries.length === 0 ? (
+      {summariesLoading && summaries.length === 0 ? (
+        <p role="status" className="mt-6 text-[14px] text-[var(--bm-text3)]">Loading your projects…</p>
+      ) : summaries.length === 0 ? (
         <p className="mt-6 text-[14px] text-[var(--bm-text3)]">Create a project first, then come back. <Link href="/projects/new" className="underline">New project</Link></p>
       ) : (
         <Card className="mt-5 p-4 sm:p-5">

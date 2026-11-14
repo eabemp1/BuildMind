@@ -81,11 +81,10 @@ function DailyLoopStatusBar() {
     : `Briefing at 7am`;
 
   return (
-    <div style={{
+    <div className="hidden sm:flex" style={{
       borderBottom: "1px solid var(--bm-border)",
       background: "var(--bm-bg)",
       padding: "5px 12px",
-      display: "flex",
       alignItems: "center",
       gap: 10,
       fontSize: 11,

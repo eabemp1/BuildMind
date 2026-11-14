@@ -13,6 +13,7 @@
  */
 
 import { taskMinutes } from "@/lib/today/minutes";
+import { loadConstraints } from "@/lib/constraints";
 import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { NextResponse } from "next/server";
 import { enforceAndTrackAIUsage, hasAdminEnv } from "@/app/api/ai/_utils";
@@ -824,7 +825,8 @@ ${JSON.stringify(structuredA)}`,
         const finalDraft = wasHardFallback ? kindFallback.message : agentCFields.draft;
         const finalDoneWhen = wasHardFallback ? kindFallback.done_when : agentCFields.done_when;
         const finalFirstStep = wasHardFallback ? kindFallback.first_step : agentCFields.first_step;
-        const finalMinutes = taskMinutes(finalAction, wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : agentCFields.minutes);
+        const dailyCap = (hasAdminEnv() ? await loadConstraints(createAdminClient(), userId) : null)?.minutesPerDay ?? null;
+        const finalMinutes = taskMinutes(finalAction, wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : agentCFields.minutes, dailyCap);
         const decisionReason = deterministicCandidate?.why_it_beats_alternatives;
         if (swapPlan) {
           void recordSwap(hasAdminEnv() ? createAdminClient() : null, {

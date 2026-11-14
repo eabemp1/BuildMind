@@ -8,13 +8,15 @@ import { useEffect, useState } from "react";
 export default function LimitsCard({ isMobile = false }: { isMobile?: boolean }) {
   const [minutes, setMinutes] = useState("");
   const [budget, setBudget] = useState("");
+  const [testOn, setTestOn] = useState(false);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
-    fetch("/api/user/behavior-state?keys=founder_constraints", { cache: "no-store" })
+    fetch("/api/user/behavior-state?keys=founder_constraints,test_mode", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
         const c = j?.values?.founder_constraints as { minutesPerDay?: number | null; monthlyBudget?: number | null } | null | undefined;
+        setTestOn((j?.values?.test_mode as { on?: boolean } | null | undefined)?.on === true);
         if (c?.minutesPerDay != null) setMinutes(String(c.minutesPerDay));
         if (c?.monthlyBudget != null) setBudget(String(c.monthlyBudget));
       })
@@ -27,7 +29,7 @@ export default function LimitsCard({ isMobile = false }: { isMobile?: boolean })
       const res = await fetch("/api/user/behavior-state", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values: { founder_constraints: { minutesPerDay: minutes === "" ? null : Number(minutes), monthlyBudget: budget === "" ? null : Number(budget) } } }),
+        body: JSON.stringify({ values: { test_mode: { on: testOn }, founder_constraints: { minutesPerDay: minutes === "" ? null : Number(minutes), monthlyBudget: budget === "" ? null : Number(budget) } } }),
       });
       setSaved(res.ok ? "saved" : "error");
     } catch {
@@ -54,9 +56,13 @@ export default function LimitsCard({ isMobile = false }: { isMobile?: boolean })
           <input id="limit-budget" inputMode="numeric" style={field} value={budget} onChange={(e) => { setBudget(e.target.value.replace(/\D/g, "")); setSaved("idle"); }} placeholder="e.g. 0, in your own currency" />
         </div>
       </div>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16, fontSize: 13, color: "var(--bm-text2)", minHeight: 24 }}>
+        <input type="checkbox" checked={testOn} onChange={(e) => { setTestOn(e.target.checked); setSaved("idle"); }} style={{ marginTop: 3, width: 18, height: 18 }} />
+        <span>This account is a test run. Advice will not treat anything here as real customer or market evidence.</span>
+      </label>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
         <button type="button" onClick={save} disabled={saved === "saving"} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "var(--bm-accent)", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-          {saved === "saving" ? "Saving…" : "Save limits"}
+          {saved === "saving" ? "Saving…" : "Save"}
         </button>
         <span role="status" style={{ fontSize: 12, color: saved === "error" ? "var(--bm-red)" : "var(--bm-text3)" }}>
           {saved === "saved" ? "Saved. Tomorrow's task will respect this." : saved === "error" ? "Could not save. Try again." : ""}
