@@ -47,3 +47,10 @@ export async function loadConstraints(admin: SupabaseClient, userId: string): Pr
     return null;
   }
 }
+
+const SPENDS_MONEY = /\b(?:run|launch|set up|create|buy|pay for|paying for|purchase|sponsor|boost|promote with|subscribe to|upgrade to)\b[^.]{0,40}\b(?:ads?|adverts?|advertising|campaigns?|sponsored|paid (?:tool|plan|promotion|samples?|listing)|subscription|premium|credits?)\b|\bpaid (?:ads?|promotion|campaigns?|tools?)\b|\bad (?:spend|budget)\b|[$£€₵]\s?\d/i;
+
+/** True when a founder with a zero money budget is told to spend money. Anything else passes. */
+export function spendsAgainstBudget(action: string, c: Constraints | null): boolean {
+  return !!c && c.monthlyBudget === 0 && SPENDS_MONEY.test(action);
+}

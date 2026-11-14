@@ -1,7 +1,7 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { summarizeReflection } from "@/lib/today/reflectionSummary";
 import { taskMinutes } from "@/lib/today/minutes";
-import { loadConstraints } from "@/lib/constraints";
+import { loadConstraints, spendsAgainstBudget } from "@/lib/constraints";
 import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, failsMissionPreScreen } from "@/lib/todayMission";
@@ -1018,6 +1018,8 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       recentTasks: recentTasksParsed,
     });
     const swapIssues = swapProblems(finalResult.action, swapPlan);
+    const founderLimits = hasAdminEnv() ? await loadConstraints(createAdminClient(), userId) : null;
+    if (spendsAgainstBudget(finalResult.action, founderLimits)) swapIssues.push("budget_zero_spend");
     if (swapIssues.length) preScreen.failed_checks.push(...swapIssues.map((i) => `swap_${i}`));
     if (curated) preScreen.failed_checks = ["first_run_curated", ...preScreen.failed_checks];
     const wasHardFallback = Boolean(curated) || preScreen.fails || swapIssues.length > 0;
@@ -1030,7 +1032,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     } else if (!mission.requires.draft) {
       finalResult.message = "";
     }
-    const dailyCap = (hasAdminEnv() ? await loadConstraints(createAdminClient(), userId) : null)?.minutesPerDay ?? null;
+    const dailyCap = founderLimits?.minutesPerDay ?? null;
     Object.assign(finalResult, {
       time: `${taskMinutes(finalResult.action, wasHardFallback ? Number.parseInt(kindFallback.time, 10) || mission.minutes : mission.minutes, dailyCap)} min`,
       missionKind: mission.kind,
