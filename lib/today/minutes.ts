@@ -16,6 +16,9 @@ export function statedMinutes(action: string): number | null {
 }
 
 export function taskMinutes(action: string, missionMinutes: number, cap?: number | null): number {
-  const m = statedMinutes(action) ?? missionMinutes;
-  return cap && cap > 0 ? Math.min(m, cap) : m;
+  // The cap only trims the task type's default. A time the sentence states stays, so the label
+  // never contradicts the task text (the prompt already tells the model to fit the limit).
+  const stated = statedMinutes(action);
+  if (stated !== null) return stated;
+  return cap && cap > 0 ? Math.min(missionMinutes, cap) : missionMinutes;
 }
