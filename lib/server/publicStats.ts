@@ -52,6 +52,16 @@ async function safeProjectOwners(supabase: ReturnType<typeof createAdminClient>)
   }
 }
 
+/** Founders who marked their account as a test run (Settings). Left out of the public counts. */
+async function safeTestUserIds(supabase: ReturnType<typeof createAdminClient>): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.from("user_behavior_state").select("user_id").eq("key", "test_mode").eq("value->>on", "true");
+    return error || !data ? [] : data.map((r) => String(r.user_id));
+  } catch {
+    return [];
+  }
+}
+
 async function safeWeeklyTasks(supabase: ReturnType<typeof createAdminClient>): Promise<number> {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -84,7 +94,7 @@ export async function getPublicStats(): Promise<PublicStats> {
 async function computePublicStats(): Promise<PublicStats> {
 
   const supabase = createAdminClient();
-  const [profiles, users, authUsers, projectOwners, projects, milestones, weekly_tasks] = await Promise.all([
+  const [profiles, users, authUsers, projectOwners, projects, milestones, weekly_tasks, testIds] = await Promise.all([
     safeCount(supabase, "profiles"),
     safeCount(supabase, "users"),
     safeAuthCount(supabase),
@@ -92,11 +102,15 @@ async function computePublicStats(): Promise<PublicStats> {
     safeCount(supabase, "projects"),
     safeCount(supabase, "milestones"),
     safeWeeklyTasks(supabase),
+    safeTestUserIds(supabase),
   ]);
+  const testProjects = testIds.length
+    ? await supabase.from("projects").select("id", { count: "exact", head: true }).in("user_id", testIds).then((r) => r.count ?? 0, () => 0)
+    : 0;
 
   return {
-    founders: Math.max(profiles, users, authUsers, projectOwners),
-    projects,
+    founders: Math.max(0, Math.max(profiles, users, authUsers, projectOwners) - testIds.length),
+    projects: Math.max(0, projects - testProjects),
     milestones,
     weekly_tasks,
   };

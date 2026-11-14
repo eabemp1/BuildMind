@@ -294,8 +294,11 @@ export default function ReflectPage() {
     setExtracting(false);
   }
 
+  // Set synchronously, so a fast double tap cannot save the same reflection twice before the button disables.
+  const submitLock = useRef(false);
   async function handleSubmit() {
-    if (!canSubmit) return;
+    if (!canSubmit || submitLock.current) return;
+    submitLock.current = true;
     setSubmitting(true);
     try {
       const richNote = [
@@ -404,7 +407,7 @@ export default function ReflectPage() {
 
       setDone(true);
       setShowCelebration(true);
-    } finally { setSubmitting(false); }
+    } finally { setSubmitting(false); submitLock.current = false; }
   }
 
   if (done) {
