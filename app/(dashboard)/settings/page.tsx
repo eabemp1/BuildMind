@@ -1,5 +1,6 @@
 "use client";
 
+import LimitsCard from "@/components/settings/LimitsCard";
 import { FormEvent, Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -881,6 +882,7 @@ function SettingsContent() {
 
               {tab === "ai" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <LimitsCard isMobile={isMobile} />
                   <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
                     <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 700, color: "var(--bm-text)", marginBottom: 6 }}>AI Coach Personality</div>
                     <div style={{ fontSize: isMobile ? 13 : 12, color: "var(--bm-text3)", marginBottom: 18 }}>Choose how your AI Coach communicates with you.</div>

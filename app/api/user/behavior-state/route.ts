@@ -5,6 +5,7 @@
  * out of localStorage without needing a new founder_context column every time.
  * localStorage remains only an optimistic/offline cache on the client.
  */
+import { parseConstraints } from "@/lib/constraints";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -50,6 +51,7 @@ const ALLOWED_KEYS = new Set([
   "founder_energy",
   "tz_offset_minutes",
   "tour_state",
+  "founder_constraints",
 ]);
 
 function isAllowedKey(key: unknown): key is string {
@@ -95,7 +97,7 @@ export async function PATCH(req: NextRequest) {
     .map(([key, value]) => ({
       user_id: user.id,
       key,
-      value,
+      value: key === "founder_constraints" ? parseConstraints(value) : value,
       updated_at: new Date().toISOString(),
     }));
 
