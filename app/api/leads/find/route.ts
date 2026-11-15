@@ -8,7 +8,7 @@ import { z } from "zod";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { findLeads } from "@/lib/leads/engine";
+import { findLeads, type LeadSink } from "@/lib/leads/engine";
 import { sanitizePromptInput } from "@/lib/agents";
 import { admitHeavyRun } from "@/lib/server/heavyRuns";
 
@@ -86,10 +86,18 @@ async function postInner(req: NextRequest) {
       // with a clear message instead of staying "running" until the page gives up on it.
       const HARD_LIMIT_MS = (maxDuration - 20) * 1000;
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const run = await Promise.race([
-        findLeads(input, Date.now() + HARD_LIMIT_MS - 30_000, admit.light),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The search took too long and was stopped. Try again.")), HARD_LIMIT_MS); }),
-      ]).finally(() => clearTimeout(timer));
+      const sink: LeadSink = { leads: [], stats: null, queries: [] };
+      let run: Awaited<ReturnType<typeof findLeads>>;
+      try {
+        run = await Promise.race([
+          findLeads(input, Date.now() + HARD_LIMIT_MS - 30_000, admit.light, sink),
+          new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The search took too long and was stopped. Try again.")), HARD_LIMIT_MS); }),
+        ]);
+      } catch (e) {
+        // Out of time: keep what earlier rounds already found instead of throwing it away.
+        if (!sink.leads.length || !sink.stats) throw e;
+        run = { leads: sink.leads, thin: sink.leads.length < 3, reason: "The search ran out of time, so these are the leads found before it stopped.", queries: sink.queries, stats: sink.stats };
+      } finally { clearTimeout(timer); }
       let saveFailed = 0;
       for (const l of run.leads) {
         // Select-then-write: the unique index is on an expression, so ON CONFLICT cannot target it.
