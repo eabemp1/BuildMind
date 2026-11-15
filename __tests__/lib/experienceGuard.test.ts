@@ -77,3 +77,13 @@ describe("cleanQuery", () => {
     expect(cleanQuery("Independent bike shops in Bristol")).toBe("Independent bike shops in Bristol");
   });
 });
+
+import { normalizeWork } from "@/lib/work/shape";
+describe("survey Other boxes", () => {
+  it("are not counted as missing founder facts", () => {
+    const spec = { shape: "sections", fields: [] } as never;
+    const raw = { title: "Survey", summary: "", sections: [{ heading: "Q1", bullets: ["How do you remind customers? Text / Call / [add: other]"] }] };
+    const r = normalizeWork(raw, spec, "", () => []);
+    expect(r?.needs.some((n) => /Fill \d+ gap/.test(n.label))).toBe(false);
+  });
+});
