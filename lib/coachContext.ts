@@ -10,6 +10,7 @@
  */
 
 import { loadTestMode, testModeRule } from "@/lib/testMode";
+import { factsBlock, loadFacts } from "@/lib/projectFacts";
 import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { isShownTaskRow } from "@/lib/recommendationRows";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -310,6 +311,12 @@ export async function assembleCoachContext(
     const regionalBlock = formatRegionalContextBlock(fc?.country ?? null);
     if (regionalBlock) sections.push(regionalBlock);
   } catch { /* non-fatal */ }
+
+  // ── 7b. Shared facts (contacts, locations, team), with the founder's corrections ──
+  try {
+    const block = factsBlock(await loadFacts(supabase, userId, projectId));
+    if (block) sections.push(block);
+  } catch { /* optional */ }
 
   // ── 8. The founder's own limits (time, money) ───────────────────────────
   try {

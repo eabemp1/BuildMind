@@ -1,5 +1,6 @@
 "use client";
 
+import { FactsCard } from "@/components/coach/FactsCard";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -453,6 +454,7 @@ function AICoachPageInner() {
   const greetingName = hasHistoryGlobal(overview);
   const contextPanel = (
     <div className="flex flex-col gap-3">
+      <FactsCard projectId={activeProject?.id} />
       {activeProject && (
         <div className="rounded-[16px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] p-4">
           <div className="mb-1 text-[12px] text-[var(--bm-text3)]">Coaching on</div>
