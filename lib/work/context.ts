@@ -3,6 +3,7 @@
  * Their reflections hold the real evidence: what they tried, what happened, what they learned. A draft that
  * knows this is written for where they actually are. It is context for relevance, never a source of new facts.
  */
+import { factsBlock, loadFacts } from "@/lib/projectFacts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadInferredContext } from "@/lib/prep/context";
 
@@ -35,6 +36,6 @@ export async function loadWorkContext(admin: SupabaseClient, userId: string, pro
     let q = admin.from("reflections").select("outcome,what_tried,what_happened,what_learned,blocker,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(12);
     if (projectId) q = q.or(`project_id.eq.${projectId},project_id.is.null`);
     const [{ data }, record] = await Promise.all([q, loadInferredContext(admin, userId)]);
-    return [evidenceBlock((data ?? []) as NoteRow[]), record].filter(Boolean).join("\n\n");
+    return [evidenceBlock((data ?? []) as NoteRow[]), record, factsBlock(await loadFacts(admin, userId, projectId))].filter(Boolean).join("\n\n");
   } catch { return ""; }
 }

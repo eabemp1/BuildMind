@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { factsBlock as sharedFactsBlock, loadFacts } from "@/lib/projectFacts";
 import { loadTestMode, testModeRule } from "@/lib/testMode";
 import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { distinctByAction, isShownTaskRow } from "@/lib/recommendationRows";
@@ -202,7 +203,7 @@ export async function buildTodayPersonalisationContext(
     const { due: dueLoops } = partitionLoops(loopRows);
     const radarBlock = await radarPromptBlock(supabase, userId, projectId).catch(() => "");
     const testMode = await loadTestMode(supabase, userId);
-    const limitsBlock = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(testMode)].filter(Boolean).join("\n\n");
+    const limitsBlock = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(testMode), sharedFactsBlock(await loadFacts(supabase, userId, projectId))].filter(Boolean).join("\n\n");
     const factsBlock = [factsPromptBlock(ledger), loopsPromptBlock(dueLoops), radarBlock, limitsBlock].filter(Boolean).join("\n\n");
 
     return {
