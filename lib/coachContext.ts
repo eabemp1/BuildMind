@@ -31,6 +31,18 @@ export interface CoachBehavioralContext {
   };
 }
 
+/** What was actually read for this reply, in plain words. Built from records, never written by a model. */
+export function recordsRead(s: CoachBehavioralContext["signals"]): string[] {
+  const out: string[] = [];
+  if (s.hasRecentReflections) out.push("Read your latest reflections");
+  if (s.hasCompletionPattern) out.push("Read which kinds of tasks you finished in the last 30 days");
+  if (s.hasMomentumData) out.push("Read your streak and recent activity");
+  if (s.hasSkipReasons) out.push("Read the reasons you gave for skipping tasks");
+  if (s.hasBlockerInsight) out.push("Read the blocker insight BuildMind showed you");
+  if (s.hasMemoryData) out.push("Read what BuildMind has observed over time");
+  return out.length ? out : ["Found no reflections or task history yet, so this answer rests on your message and project only"];
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function pct(n: number, d: number): string {

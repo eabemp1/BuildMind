@@ -9,7 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { logError } from "@/lib/server/logger";
 import type { FounderMemory } from "@/lib/founderMemory";
-import { assembleCoachContext, computeContextConfidence } from "@/lib/coachContext";
+import { assembleCoachContext, computeContextConfidence, recordsRead } from "@/lib/coachContext";
 import { COACH_GROUNDING_RULE, COACH_TEST_RULE, withFigureNote } from "@/lib/coachGrounding";
 
 export const runtime     = "nodejs";
@@ -287,6 +287,7 @@ export async function POST(request: Request) {
     // How the founder is doing right now: shapes the advice, and holds irreversible
     // decisions (pivot, quit, reprice) until they are rested.
     let stateBlock = "";
+    let recordSteps: string[] = [];
     try {
       const clientHour = Number.isInteger(body?.clientHour) ? Number(body.clientHour) : null;
       const founderState = await loadFounderState(supabase, userId, { clientHour });
@@ -318,6 +319,7 @@ export async function POST(request: Request) {
         const project    = projectResult.status    === "fulfilled" ? projectResult.value.data    : null;
         const milestones = milestonesResult.status === "fulfilled" ? milestonesResult.value.data ?? [] : [];
         const behavioral = behavioralResult.status === "fulfilled" ? behavioralResult.value : null;
+        if (behavioral) recordSteps = recordsRead(behavioral.signals);
         const intelligenceState = intelligenceResult?.status === "fulfilled" ? intelligenceResult.value : null;
         intelligenceBlock = intelligenceState
           ? `${buildFounderIntelligencePromptBlock(intelligenceState)}\n\n${buildCofounderJudgmentPromptBlock(buildCofounderJudgment(intelligenceState))}`
@@ -531,9 +533,8 @@ Return ONLY the JSON. No preamble. No markdown fences.`;
 
     const result = await groqJSON<{ reasoning: string[]; answer: string; recommended_action?: { what_to_do?: string; why_now?: string; expected_evidence?: string } }>(systemPrompt, message, { prefer: "gemini", geminiTimeoutMs: 8_000, feature: "coach" });
 
-    const reasoning = Array.isArray(result?.reasoning) && result.reasoning.length > 0
-      ? result.reasoning.slice(0, 4).map((r) => String(r).trim()).filter(Boolean)
-      : ["Reading your project data...", "Identifying the key constraint...", "Deciding what matters most right now..."];
+    // Shown under "How I got here": the records actually read, not a story the model wrote about itself.
+    const reasoning = recordSteps.length ? recordSteps : ["Used your message and project details only"];
 
     const answer = typeof result?.answer === "string" && result.answer.trim().length > 10
       ? withFigureNote(result.answer.trim(), `${systemPrompt}\n${message}`, research.sources.length > 0)
