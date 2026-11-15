@@ -318,6 +318,16 @@ export async function assembleCoachContext(
     if (block) sections.push(block);
   } catch { /* optional */ }
 
+  // ── 7c. The task Today is showing right now, so Coach and Today say the same thing ──
+  try {
+    const { data: row } = await supabase.from("user_behavior_state").select("value").eq("user_id", userId).eq("key", "today_action_cache").maybeSingle();
+    const c = row?.value as { date?: string; projectId?: string; data?: { action?: string; time?: string } } | null;
+    const today = new Date().toISOString().slice(0, 10);
+    if (c?.date === today && c.data?.action && (!projectId || !c.projectId || c.projectId === projectId)) {
+      sections.push(`TODAY'S TASK (the one shown on the Today screen; refer to this one, do not invent another):\n${truncate(c.data.action, 240)}${c.data.time ? ` (${c.data.time})` : ""}`);
+    }
+  } catch { /* optional */ }
+
   // ── 8. The founder's own limits (time, money) ───────────────────────────
   try {
     const limits = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(await loadTestMode(supabase, userId))].filter(Boolean).join("\n\n");
@@ -325,6 +335,16 @@ export async function assembleCoachContext(
   } catch { /* optional */ }
 
   // ── Assemble ──────────────────────────────────────────────────────────────
+
+  // A test run makes up its history. Patterns read from it (avoidance, rhythm, memory) are not the founder's.
+  let testRun = false;
+  try { testRun = await loadTestMode(supabase, userId); } catch { /* optional */ }
+  if (testRun) {
+    const inferred = /^(EXECUTION PATTERN|MOMENTUM & RHYTHM|EXPLICIT SKIP REASONS|ACTIVE BLOCKER INSIGHT|EXECUTION SCORE TREND|FOUNDER MEMORY)/;
+    for (let i = sections.length - 1; i >= 0; i--) if (inferred.test(sections[i])) sections.splice(i, 1);
+    signals.hasCompletionPattern = false;
+    sections.push("TEST RUN: patterns such as avoidance, rhythm or habits are not drawn from this account's history because the history is simulated. Do not tell the founder they avoid anything based on it. Work from what they say in this conversation.");
+  }
 
   const contextBlock = sections.length
     ? "\n\n" + sections.join("\n\n")
