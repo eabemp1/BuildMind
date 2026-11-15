@@ -9,6 +9,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadProject } from "@/lib/prep/engine";
 import { correctDraft } from "@/lib/distribution/engine";
 import type { Platform } from "@/lib/distribution/textSignals";
 
@@ -42,7 +43,10 @@ export async function POST(request: Request) {
   if (blocked) return blocked;
 
   const platform = (["linkedin", "x", "reddit", "hn", "other"].includes((row?.platform ?? p.data.platform) as string) ? (row?.platform ?? p.data.platform) : "other") as Platform;
-  const diagnosis = await correctDraft(p.data.text, platform, "founders", "start a real conversation");
+  const projectId = (row as unknown as { project_id?: string | null } | null)?.project_id ?? null;
+  const proj = await loadProject(admin, user.userId, projectId);
+  const founderText = [proj.name, proj.description, proj.problem, proj.targetUsers, proj.stage].filter(Boolean).join(". ");
+  const diagnosis = await correctDraft(p.data.text, platform, "founders", "start a real conversation", founderText);
   if (row && p.data.id) await admin.from("prepared_work").update({ corrections: row.corrections + 1, updated_at: new Date().toISOString() }).eq("id", p.data.id).eq("user_id", user.userId);
   return NextResponse.json({ ok: true, diagnosis });
 }

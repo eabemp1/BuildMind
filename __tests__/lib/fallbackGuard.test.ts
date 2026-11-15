@@ -17,7 +17,7 @@ describe("fallback respects the founder's facts", () => {
 
 import { findContradictions } from "@/lib/today/facts";
 describe("generic user contact", () => {
-  const L = buildLedger([{ created_at: "2026-10-16T10:00:00Z", what_tried: "", blocker: "I don't have beta users", what_learned: "" } as never]);
+  const L = buildLedger([{ created_at: new Date().toISOString(), what_tried: "", blocker: "I don't have beta users", what_learned: "" } as never]);
   it("flags DM-ing 'users' but not recruiting them", () => {
     expect(findContradictions("DM 3 users on Discord about the product", L).length).toBe(1);
     expect(findContradictions("Find 5 new users in a founders community", L).length).toBe(0);

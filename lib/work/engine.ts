@@ -7,6 +7,7 @@ import { callModelJSON } from "@/lib/ai-providers";
 import { unsupportedNumbers } from "@/lib/distribution/engine";
 import { loadProject } from "@/lib/prep/engine";
 import type { WorkSpec } from "@/lib/work/registry";
+import { inventedExperience, inventedTerms } from "@/lib/prep/experienceGuard";
 import { buildPrompt, draftProblems, normalizeWork, readRefined, refinePrompt, revisePrompt, type WorkResult } from "@/lib/work/shape";
 import { loadWorkContext } from "@/lib/work/context";
 
@@ -42,6 +43,9 @@ export async function generateWork(
 export async function refineText(text: string, instruction: string): Promise<string | null> {
   try {
     const raw = await callModelJSON<unknown>([{ role: "user", content: refinePrompt(text, instruction) }], { maxTokens: 1800, prefer: "gemini", geminiTimeoutMs: 14_000, feature: "work_refine" });
-    return readRefined(raw);
+    const refined = readRefined(raw);
+    // A rewrite may reshape the text but must not add experience or terms the original did not have.
+    if (refined && (inventedExperience(refined, text).length || inventedTerms(refined, text).length)) return null;
+    return refined;
   } catch { return null; }
 }

@@ -58,10 +58,14 @@ export function digestHtml(url: string, html: string): PageDigest {
     .replace(/<!--[\s\S]*?-->/g, " ");
   const headings = [...body.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi)].map((m) => strip(m[1])).filter((h) => h.length > 3 && h.length < 140).slice(0, 12);
   const text = strip(body.replace(/<\/(p|div|li|h\d|tr|section)>/gi, ". ")).slice(0, 3500);
+  // A price is an amount with a billing period next to it ("$39/month", "$9 per user"). A bare figure such as
+  // "$12,400" is usually revenue in a demo dashboard, so it is not read as a price, and amounts are never cut short.
   const priceSet = new Set<string>();
-  for (const m of html.matchAll(/(?:[$€£]|GH₵|USD\s?)\s?\d{1,4}(?:[.,]\d{1,2})?\s?(?:\/|per)?\s?(?:mo|month|yr|year|user|seat)?/gi)) {
-    const v = m[0].replace(/\s+/g, " ").trim();
-    if (/\d/.test(v)) priceSet.add(v);
+  const flat = strip(body.replace(/<[^>]+>/g, " "));
+  for (const m of flat.matchAll(/(?:[$€£]|GH₵|USD\s?)\s?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?(?!\d)\s?(?:\/|per\s|a\s|every\s)?\s?(mo(?:nth)?|yr|year|user|seat|week)\b/gi)) {
+    const amount = Number(m[1].replace(/,/g, ""));
+    if (amount > 5000) continue;
+    priceSet.add(m[0].replace(/\s+/g, " ").trim());
     if (priceSet.size >= 6) break;
   }
   const hasPricingPage = /href=["'][^"']*pricing[^"']*["']/i.test(html);

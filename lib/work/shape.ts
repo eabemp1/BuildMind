@@ -3,6 +3,7 @@
  * clean what comes back, and flag anything the founder must check. No network, no database, so it is
  * fully testable. The server half is lib/work/engine.ts.
  */
+import { inventedExperience, inventedTerms, NO_INVENTED_EXPERIENCE } from "@/lib/prep/experienceGuard";
 import { offersMissingProduct, productClaimsRule, productNotBuilt } from "@/lib/prep/senderRule";
 import { voiceBlock, founderBlock } from "@/lib/work/voice";
 import type { PrepNeed, PrepSection, PrepVariant } from "@/lib/prep/kinds";
@@ -51,6 +52,7 @@ RULES
 - Write for the founder's real audience in their real market. Do not assume US conventions, currency or channels.
 - The founder is the SENDER. Anything about the founder, their product, their signups or their milestones belongs to the founder. Never turn it into a fact about the reader (wrong: "I noticed you just signed up two users"; right: "I just got my first two users"). The reader is usually someone the founder has not met.
 - Never say you saw, noticed, read or heard something about the reader unless the BRIEF states exactly that.
+- ${NO_INVENTED_EXPERIENCE}
 - ${productClaimsRule(project.stage, `${project.description ?? ""} ${brief} ${context}`)}
 - Do exactly the job below and nothing else.
 
@@ -144,7 +146,7 @@ const PRESET_TEXT: Record<string, string> = {
 
 export function refinePrompt(text: string, instruction: string): string {
   const how = PRESET_TEXT[instruction] ?? instruction;
-  return `Rewrite the text below following the instruction. Keep every fact in it. Do not add new claims, numbers, names, prices or links. Keep any [add: ...] markers exactly as they are. Change only what the instruction asks for. Keep the same language. Keep the same format unless the instruction changes it (for example a 'Subject:' line stays). Use everyday words and never add marketing words such as leverage, seamless or game-changer.
+  return `Rewrite the text below following the instruction. Keep every fact in it. ${NO_INVENTED_EXPERIENCE} Do not add new claims, numbers, names, prices or links. Keep any [add: ...] markers exactly as they are. Change only what the instruction asks for. Keep the same language. Keep the same format unless the instruction changes it (for example a 'Subject:' line stays). Use everyday words and never add marketing words such as leverage, seamless or game-changer.
 
 INSTRUCTION: ${how}
 
@@ -175,6 +177,11 @@ export function draftProblems(result: WorkResult, spec: WorkSpec, allowed = "", 
     return w.length > 0 && w.filter((x) => known.has(x)).length / w.length < 0.5;
   }));
   if (invented) out.push("it says the sender noticed, saw or read something about the reader that the brief never states; remove that claim and open with a question instead. Facts about the founder stay the founder's (\"I just got...\"), never the reader's");
+  const everything = JSON.stringify([result.variants, result.sections]);
+  const story = inventedExperience(everything, allowed);
+  if (story.length) out.push(`it states experience the founder never gave (${story.slice(0, 2).map((x) => `"${x.slice(0, 60)}"`).join(", ")}); remove it or put an [add: your own example] marker there. Never invent customers, conversations, quotes or mistakes`);
+  const terms = inventedTerms(everything, allowed);
+  if (terms.length) out.push(`it states prices, policies, features or promises the founder never gave (${terms.slice(0, 3).map((x) => `"${x.slice(0, 40)}"`).join(", ")}); replace each with an [add: ...] marker`);
   if (result.needs.some((n) => n.label.startsWith("Swap a few words"))) out.push("it uses marketing words; say it in plain everyday words");
   if (spec.shape === "variants" && result.variants.length > 1) {
     for (let i = 0; i < result.variants.length; i++) for (let j = i + 1; j < result.variants.length; j++) {

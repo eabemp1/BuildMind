@@ -52,6 +52,11 @@ export default function BriefForm({ spec, project, given, busy, error, onSubmit,
             ) : (
               <input id={`f-${f.key}`} maxLength={f.max} value={values[f.key] ?? ""} placeholder={f.placeholder} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })} style={input} />
             )}
+            {f.type !== "choice" && f.max && (values[f.key]?.length ?? 0) >= f.max * 0.7 && (
+              <p aria-live="polite" style={{ ...muted, marginTop: 4, color: (values[f.key]?.length ?? 0) >= f.max ? "var(--bm-red)" : undefined }}>
+                {values[f.key]?.length}/{f.max}{(values[f.key]?.length ?? 0) >= f.max ? " Limit reached. Anything longer is cut off, so shorten this or move detail into a longer box." : ""}
+              </p>
+            )}
           </div>
         ))}
         {error && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{error}</p>}

@@ -83,7 +83,7 @@ export function unsupportedNumbers(text: string, allowed: string): string[] {
   });
 }
 
-export function filterVariants(kind: PrepKind, platform: Platform, variants: PrepVariant[], allowedNumbers?: string): PrepVariant[] {
+export function filterVariants(kind: PrepKind, platform: Platform, variants: PrepVariant[], allowedNumbers?: string, founderText?: string): PrepVariant[] {
   const seen = new Set<string>();
   return variants
     .map((v) => ({ ...v, text: cleanText(v.text, kind === "video_script") }))
@@ -93,6 +93,7 @@ export function filterVariants(kind: PrepKind, platform: Platform, variants: Pre
       seen.add(key);
       if (variantProblems(kind, v.text, platform).length) return false;
       if (allowedNumbers !== undefined && unsupportedNumbers(v.text, allowedNumbers).length) return false;
+      if (founderText !== undefined && (inventedExperience(v.text, founderText).length || inventedTerms(v.text, founderText).length)) return false;
       return true;
     })
     .map((v, i) => ({ ...v, id: `v${i + 1}` }));
@@ -106,8 +107,9 @@ export function keepPastBehaviourQuestions(qs: string[]): string[] {
 // ── Prompts ─────────────────────────────────────────────────────────────────
 
 import { SENDER_RULE, productClaimsRule } from "@/lib/prep/senderRule";
+import { inventedExperience, inventedTerms, NO_INVENTED_EXPERIENCE } from "@/lib/prep/experienceGuard";
 
-const PERSONA = `You prepare first drafts for a solo founder. Use only the facts you are given. Never invent statistics, customers, quotes, testimonials or links. No hype, no flattery, no emojis. Write plainly, in the founder's voice. ${SENDER_RULE} The founder reviews and sends or publishes everything themselves.`;
+const PERSONA = `You prepare first drafts for a solo founder. Use only the facts you are given. ${NO_INVENTED_EXPERIENCE} Never invent statistics, customers, quotes, testimonials or links. No hype, no flattery, no emojis. Write plainly, in the founder's voice. ${SENDER_RULE} The founder reviews and sends or publishes everything themselves.`;
 
 function projectBlock(p: ProjectCtx): string {
   return `PROJECT: ${p.name || "the founder's startup"}
@@ -188,7 +190,7 @@ export async function draftContent(ctx: ContentCtx): Promise<Prepared | null> {
   }
   const base = normalizePrepared(raw, ctx.kind, { platform: ctx.platform, learned: ctx.lessons });
   const allowedNumbers = ctx.kind === "investor_update" ? `${factsText(ctx.facts)} ${ctx.task}` : undefined;
-  let variants = filterVariants(ctx.kind, ctx.platform, base.variants, allowedNumbers);
+  let variants = filterVariants(ctx.kind, ctx.platform, base.variants, allowedNumbers, `${ctx.task} ${ctx.firstStep ?? ""} ${ctx.project.name} ${ctx.project.description} ${ctx.project.problem} ${ctx.project.targetUsers} ${factsText(ctx.facts)} ${ctx.inferred ?? ""}`);
   if (ctx.kind === "seo") variants = variants.filter((v) => { const t = /title:\s*(.+)/i.exec(v.text)?.[1] ?? ""; const m = /meta:\s*(.+)/i.exec(v.text)?.[1] ?? ""; return t.length > 0 && t.length <= 60 && m.length > 0 && m.length <= 155; }).map((v, i) => ({ ...v, id: `v${i + 1}` }));
   const out: Prepared = { ...base, variants, facts: ctx.facts ?? [] };
   if (ctx.kind === "investor_update" && !variants.length && ctx.facts?.length) return { ...investorFallback(ctx.facts, ctx.project, ctx.shipped), learned: ctx.lessons };
@@ -199,6 +201,14 @@ export async function draftContent(ctx: ContentCtx): Promise<Prepared | null> {
 
 // ── Correction (the Distribution Studio's diagnosis) ────────────────────────
 
-export async function correctDraft(text: string, platform: Platform, audience: string, outcome: string): Promise<Diagnosis> {
-  return runDiagnosis({ body: text, platform, audience, outcome });
+/** `founderText` is everything the founder has actually told us (project, brief). Rewrites may not go beyond it and the draft. */
+export async function correctDraft(text: string, platform: Platform, audience: string, outcome: string, founderText = ""): Promise<Diagnosis> {
+  const context = `${NO_INVENTED_EXPERIENCE}${founderText ? ` What the founder has told us: ${founderText.slice(0, 900)}` : ""}`;
+  const d = await runDiagnosis({ body: text, platform, audience, outcome, context });
+  const allowed = `${text} ${founderText}`;
+  const clean = (t: string) => !inventedExperience(t, allowed).length && !inventedTerms(t, allowed).length;
+  const revisions = d.revisions.filter((r) => clean(r.text));
+  const openings = d.openings.filter((o) => clean(o.text));
+  const dropped = d.revisions.length - revisions.length;
+  return { ...d, revisions, openings, note: dropped ? `${d.note ? `${d.note} ` : ""}${dropped} rewrite${dropped === 1 ? " was" : "s were"} removed because ${dropped === 1 ? "it" : "they"} invented experience or promises you have not given. Add your own example and try again.`.trim() : d.note };
 }
