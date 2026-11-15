@@ -96,6 +96,8 @@ export default function ReflectPage() {
   const [confidence, setConfidence] = useState(3);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [undoMsg, setUndoMsg] = useState("");
   const [causality, setCausality] = useState("");
   const [witnessed, setWitnessed] = useState("");
   const [nextAction, setNextAction] = useState("");
@@ -345,6 +347,7 @@ export default function ReflectPage() {
           const d = await res.json();
           const payload = d.data ?? d;
           savedToAccount = payload.notSaved !== true;
+          setSavedId(typeof payload.reflectionId === "string" ? payload.reflectionId : null);
           caus = payload.causality || caus;
           next = payload.nextAction || "";
           witness = payload.witnessed || witness;
@@ -430,6 +433,17 @@ export default function ReflectPage() {
           momentum={celebrationMomentum}
           onDismiss={() => setShowCelebration(false)}
         />
+        {savedId && (
+          <div style={{ marginBottom: 12, fontSize: 13, color: "var(--bm-text3)" }}>
+            Saved by mistake?{" "}
+            <button type="button" style={{ minHeight: 32, textDecoration: "underline", color: "var(--bm-text)" }} onClick={async () => {
+              const r = await fetch("/api/reflections/undo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: savedId }) }).then((x) => x.json()).catch(() => null);
+              if (r?.success) { setSavedId(null); setDone(false); setShowCelebration(false); setUndoMsg(""); } else setUndoMsg(r?.error ?? "Could not undo that.");
+            }}>Undo it</button>
+            <span style={{ display: "block", marginTop: 2 }}>Undo removes the reflection and reopens its task. Your streak count is not rolled back.</span>
+            {undoMsg && <span role="alert" style={{ display: "block", color: "var(--bm-red)" }}>{undoMsg}</span>}
+          </div>
+        )}
         <ReflectionCompletion
           witnessed={sanitizeOutput(witnessed)}
           causality={sanitizeOutput(causality)}
