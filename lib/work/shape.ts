@@ -123,7 +123,8 @@ export function normalizeWork(
   const needs: PrepNeed[] = [];
   const jargon = Array.from(new Set((all.match(JARGON) ?? []).map((w) => w.toLowerCase())));
   if (jargon.length) needs.push({ label: "Swap a few words for plain ones", why: `These can sound like marketing talk and put readers off: ${jargon.slice(0, 6).join(", ")}. Say it the way you would to a friend.` });
-  const gaps = (all.match(/\[add:[^\]]*\]/gi) ?? []).length;
+  // A marker the respondent fills in (an "Other" box in a survey) is not a missing founder fact.
+  const gaps = (all.match(/\[add:[^\]]*\]/gi) ?? []).filter((m) => !/^\[add:\s*(?:other|please specify|specify|your answer|respondent|their|answer)\b/i.test(m)).length;
   if (gaps > 0) needs.push({ label: `Fill ${gaps} gap${gaps === 1 ? "" : "s"} marked [add: ...]`, why: "BuildMind did not have these facts, so it left a marker instead of guessing. Replace each one with something true before you use this." });
   if (spec.claims) {
     const odd = figuresToCheck(all, allowedText, unsupported);

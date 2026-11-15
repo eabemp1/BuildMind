@@ -14,7 +14,7 @@ const inputCls = "min-h-[44px] w-full rounded-lg border border-[var(--bm-border2
 
 interface Page { code: string; headline: string | null; path: string; signups: number; pending: number }
 
-function SignupPage({ projectId, problem }: { projectId: string; problem: string }) {
+function SignupPage({ projectId, problem, found }: { projectId: string; problem: string; found: number }) {
   const [headline, setHeadline] = useState(`Get early access: ${problem}`.slice(0, 120));
   const [pitch, setPitch] = useState("");
   const [pages, setPages] = useState<Page[]>([]);
@@ -43,7 +43,7 @@ function SignupPage({ projectId, problem }: { projectId: string; problem: string
   return (
     <div className="mt-5 border-t border-[var(--bm-border)] pt-4">
       <h3 className="text-[15px] font-semibold text-[var(--bm-text)]">Turn this into a sign-up page</h3>
-      <p className="mt-1 text-[13px] leading-relaxed text-[var(--bm-text3)]">A simple page where people leave their email to hear when it is ready. Nobody is asked to pay. Share the link where you found these posts.</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-[var(--bm-text3)]">A simple page where people leave their email to hear when it is ready. Nobody is asked to pay. {found > 0 ? "Share the link where you found these posts." : "No public posts turned up, so share it where your customers already gather, such as a local group or your own contacts."}</p>
       <label className="mt-3 block text-[13px] text-[var(--bm-text3)]">Headline
         <input className={`${inputCls} mt-1`} value={headline} onChange={(e) => setHeadline(e.target.value)} maxLength={120} />
       </label>
@@ -136,7 +136,7 @@ export function DemandCheck({ projectId, country, city, customer, defaultProblem
               </li>
             ))}
           </ul>
-          <SignupPage projectId={projectId} problem={problem} />
+          <SignupPage projectId={projectId} problem={problem} found={result.signals.length} />
         </div>
       )}
     </Card>

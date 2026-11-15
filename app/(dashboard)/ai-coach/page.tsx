@@ -254,7 +254,7 @@ function AICoachPageInner() {
   const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
   const activeProjectId = useActiveProjectId();
   const activeProject = selectActiveProject(summaries, activeProjectId);
-  const { data: overview } = useDashboardOverviewQuery(activeProject?.id);
+  const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery(activeProject?.id);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -549,10 +549,12 @@ function AICoachPageInner() {
               <Sparkles size={22} color="var(--bm-intel2)" />
             </div>
             <h2 className="m-0 text-[24px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--bm-text)] sm:text-[36px]" style={{ fontFamily: "'Syne', sans-serif" }}>
-              {greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
+              {overviewLoading ? "Reading your project…" : greetingName ? "Where do things stand?" : "Day one. Let’s get oriented."}
             </h2>
             <p className="mt-2.5 max-w-[560px] text-[14px] leading-[1.65] text-[var(--bm-text2)] sm:mt-3 sm:text-[16px] sm:leading-[1.7]">
-              {greetingName
+              {overviewLoading
+                ? "One moment while I load your tasks, reflections and settings."
+                : greetingName
                 ? "I know your blockers, your streak and the tasks you keep skipping. Tell me what you are stuck on, or ask what to do next. I will answer directly."
                 : "You do not have a track record with me yet, so I will not pretend to know your patterns. Tell me what you are stuck on or what you are building, and I will give you a direct read."}
             </p>
