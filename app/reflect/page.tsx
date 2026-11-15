@@ -296,6 +296,7 @@ export default function ReflectPage() {
 
   // Set synchronously, so a fast double tap cannot save the same reflection twice before the button disables.
   const submitLock = useRef(false);
+  const [saveError, setSaveError] = useState("");
   async function handleSubmit() {
     if (!canSubmit || submitLock.current) return;
     submitLock.current = true;
@@ -311,6 +312,9 @@ export default function ReflectPage() {
       let caus = buildFallbackCausality(outcome, blocker.trim(), confidence);
       let next = "";
       let witness = buildFallbackWitness(outcome, whatTried);
+      // Only true when the server confirmed the reflection reached the account.
+      let savedToAccount = false;
+      setSaveError("");
       try {
         const res = await fetch("/api/ai/reflect-action", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -340,6 +344,7 @@ export default function ReflectPage() {
           window.dispatchEvent(new CustomEvent("bm:pulse-refresh"));
           const d = await res.json();
           const payload = d.data ?? d;
+          savedToAccount = payload.notSaved !== true;
           caus = payload.causality || caus;
           next = payload.nextAction || "";
           witness = payload.witnessed || witness;
@@ -356,6 +361,11 @@ export default function ReflectPage() {
           if (payload.confidenceAdjustment) setConfidenceAdjustment(payload.confidenceAdjustment);
         }
       } catch {}
+      if (!savedToAccount) {
+        // Keep what the founder wrote and say so; do not mark anything done or count it.
+        setSaveError("This did not reach your account, so it is not saved yet. What you wrote is still here. Check your connection and press Save again.");
+        return;
+      }
       setCausality(caus);
       setWitnessed(witness);
       setNextAction(next);
@@ -533,6 +543,7 @@ export default function ReflectPage() {
         style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0", borderRadius: 8, border: "none", background: !canSubmit ? "var(--bm-bg4)" : "var(--bm-accent)", color: !canSubmit ? "var(--bm-text3)" : "#fff", fontWeight: 700, fontSize: 14, cursor: !canSubmit || submitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
         {submitting ? "Saving reflection…" : <>Save reflection <ArrowRight size={16} /></>}
       </motion.button>
+      {saveError && <p role="alert" style={{ margin: "10px 0 0", fontSize: 13, lineHeight: 1.5, color: "var(--bm-red)" }}>{saveError}</p>}
     </div>
   );
                                 }

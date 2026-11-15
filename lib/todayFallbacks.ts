@@ -34,6 +34,16 @@ type Variant = (i: FallbackInput) => KindFallback;
 /** Yesterday ended blocked: today is about that block, not a repeat of the same ask. */
 const NO_CONTACT = /\b(?:(?:don'?t|do not|dont|didn'?t|never)\s+(?:know|have)|no(?:\s+one|body)?\s+(?:to|i)\b|know\s+(?:no\s*one|nobody|none)|no\s+(?:contacts?|leads?))/i;
 
+/** The first of the latest few blockers that says the founder knows no one to talk to, else null. */
+export function lacksContacts(blockers: string[] | undefined): string | null {
+  return (blockers ?? []).slice(0, 3).find((b) => NO_CONTACT.test(b)) ?? null;
+}
+
+/** True when a task sends the founder to someone they already know. */
+export function assumesContact(text: string): boolean {
+  return /\b(?:someone|anyone|people|one|a (?:shop|owner|person|friend)) (?:you|that you|who you) (?:already )?know\b|\byou (?:already )?know\b|\b(?:a |your )?(?:friends?|family|relatives?)\b|\byour (?:existing |current )?(?:contacts?|network|connections?)\b/i.test(text);
+}
+
 function aroundBlocker(blocker: string, userType = ""): KindFallback {
   const b = blocker.trim().replace(/\s+/g, " ").slice(0, 120).replace(/[."]+$/, "");
   // Not knowing anyone is solved by finding someone, not by brainstorming.
@@ -311,9 +321,13 @@ function safeFallback(i: FallbackInput): KindFallback {
 export function fallbackForKind(kind: MissionKind, input: FallbackInput, seed = "", ledger?: Ledger): KindFallback {
   const variants = BANK[kind] ?? BANK.reset;
   const start = hash(seed || `${kind}:${input.stage}`) % variants.length;
+  const noContact = !!input.blocker && NO_CONTACT.test(input.blocker);
   for (let n = 0; n < variants.length; n++) {
     const v = variants[(start + n) % variants.length](input);
+    // The founder said they know no one: never send them to "someone you know".
+    if (noContact && assumesContact(`${v.action} ${v.first_step}`)) continue;
     if (!ledger || guardRules(`${v.action} ${v.first_step}`, ledger, v.message).length === 0) return v;
   }
+  if (noContact && input.blocker) return aroundBlocker(input.blocker, input.userType);
   return safeFallback(input);
 }
