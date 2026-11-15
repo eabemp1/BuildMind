@@ -31,11 +31,24 @@ export function evidenceBlock(rows: NoteRow[], now = Date.now()): string {
   return lines.length ? `THE FOUNDER'S OWN NOTES (real things that happened to the FOUNDER, in their words; they are about the sender, never about the people being written to). Use them so the draft fits where the founder is. Never present them as facts about the reader. Do not invent anything beyond them:\n${lines.join("\n")}` : "";
 }
 
+/** Pure: the competitors the founder chose themselves. Briefs use this list instead of finding their own. */
+export function competitorBlock(rows: Array<{ name: string; url: string }>): string {
+  if (!rows.length) return "";
+  return `COMPETITORS THE FOUNDER CHOSE (their reviewed list; use exactly these, do not add or swap companies, and say so if you would need another):\n${rows.slice(0, 5).map((r) => `- ${clip(clean(r.name), 60)} (${clip(clean(r.url), 120)})`).join("\n")}`;
+}
+
 export async function loadWorkContext(admin: SupabaseClient, userId: string, projectId?: string | null): Promise<string> {
   try {
     let q = admin.from("reflections").select("outcome,what_tried,what_happened,what_learned,blocker,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(12);
     if (projectId) q = q.or(`project_id.eq.${projectId},project_id.is.null`);
     const [{ data }, record] = await Promise.all([q, loadInferredContext(admin, userId)]);
-    return [evidenceBlock((data ?? []) as NoteRow[]), record, factsBlock(await loadFacts(admin, userId, projectId))].filter(Boolean).join("\n\n");
+    let comps = "";
+    try {
+      if (projectId) {
+        const { data: c } = await admin.from("market_watch_competitors").select("name, url").eq("user_id", userId).eq("project_id", projectId).order("created_at", { ascending: true }).limit(5);
+        comps = competitorBlock((c ?? []) as Array<{ name: string; url: string }>);
+      }
+    } catch { /* table may not exist yet */ }
+    return [evidenceBlock((data ?? []) as NoteRow[]), record, factsBlock(await loadFacts(admin, userId, projectId)), comps].filter(Boolean).join("\n\n");
   } catch { return ""; }
 }

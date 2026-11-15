@@ -54,6 +54,8 @@ export interface AgentFinding {
   action_hint:  string;
   /** URLs from the live search results that this finding actually relies on. */
   sources?:          string[];
+  /** An exact passage from the search results that backs this finding. Dropped when it is not really there. */
+  quote?:            string | null;
   /** What argues against this finding, or what was checked and not found. */
   counter_evidence?: string | null;
   /** Conditions under which the finding holds. */
@@ -340,6 +342,7 @@ Each finding must follow this exact structure:
   "evidence": "cite specific search results by title/URL where possible. If using reasoning, explain why. Never vague.",
   "source_type": "${searchContext ? "web_search" : "reasoning"}",
   "sources": ["URLs from the search results that this finding relies on; [] if none"],
+  "quote": "an exact sentence copied from the search results that backs this finding; null if none",
   "counter_evidence": "what argues against this, or what you checked and did not find",
   "assumptions": "the conditions under which this finding holds",
   "action_hint": "one concrete action the founder should take based on this finding"
@@ -371,12 +374,14 @@ export function sanitizeFinding(f: AgentFinding, searchContext: string): AgentFi
   const known = (u: string) => searchContext.includes(u);
   const sources = (Array.isArray(f.sources) ? f.sources : []).filter(u => typeof u === "string" && known(u)).slice(0, 8);
   const evidence = String(f.evidence ?? "").replace(/https?:\/\/[^\s)\]>"']+/gi, u => (known(u) ? u : "[unverified link]"));
+  const quote = typeof f.quote === "string" && f.quote.trim().length >= 20 && searchContext.toLowerCase().includes(f.quote.trim().toLowerCase().slice(0, 200)) ? f.quote.trim().slice(0, 300) : null;
   return {
     ...f,
-    evidence,
+    evidence: quote ? `${evidence} Source says: "${quote}"` : evidence,
     confidence: Math.max(0, Math.min(1, Number(f.confidence) || 0.4)),
     source_type: (searchContext ? "web_search" : "reasoning") as AgentFinding["source_type"],
     sources,
+    quote,
     counter_evidence: f.counter_evidence ? String(f.counter_evidence).slice(0, 500) : null,
     assumptions: f.assumptions ? String(f.assumptions).slice(0, 400) : null,
   };
