@@ -4,6 +4,7 @@
  */
 import { PLAN_DAILY_LIMITS, PLAN_MONTHLY_LIMITS, CORE_DAILY_LIMITS, CORE_MONTHLY_LIMITS } from "@/lib/aiLimits";
 import { PLAN_LIMITS } from "@/lib/plan";
+import { HEAVY_DAILY_LIMITS } from "@/lib/heavyRuns";
 
 export interface TrialSummary {
   included: string[];
@@ -20,6 +21,7 @@ export function trialSummary(): TrialSummary {
     limits: [
       `Daily task generation: up to ${CORE_DAILY_LIMITS.trial} a day and ${CORE_MONTHLY_LIMITS.trial} over the trial.`,
       `Coach, searches and other AI tools share ${PLAN_DAILY_LIMITS.trial} uses a day and ${PLAN_MONTHLY_LIMITS.trial} over the trial. A Find Customers or Demand Check search uses one.`,
+      `Deep searches (Find Customers and Demand Check share them): ${HEAVY_DAILY_LIMITS.trial} a day on the trial, ${HEAVY_DAILY_LIMITS.builder} a day on Builder. They are separate from the AI uses above.`,
       "A paid Builder plan has higher limits.",
     ],
     afterwards: [

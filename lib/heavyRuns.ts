@@ -40,7 +40,7 @@ export function decideHeavy(i: {
   const limit = HEAVY_DAILY_LIMITS[i.tier] ?? 0;
   if (limit === 0) return { allowed: false, reason: "Deep searches are part of the Builder plan." };
   if (i.usedToday >= limit) {
-    return { allowed: false, reason: `You have used your ${limit} deep ${limit === 1 ? "search" : "searches"} for today. They reset at midnight UTC.` };
+    return { allowed: false, reason: `You have used your ${limit} deep ${limit === 1 ? "search" : "searches"} for today. Find Customers and Demand Check share ${limit === 1 ? "it" : "them"}, and ${limit === 1 ? "it resets" : "they reset"} at midnight UTC. Coach, Today and your other tools are not affected.` };
   }
   if (i.runningNow >= i.maxConcurrent) {
     return { allowed: false, reason: "Deep searches are busy right now. Try again in a few minutes. Today, Coach and everything else are unaffected.", retryAfterMinutes: 3 };

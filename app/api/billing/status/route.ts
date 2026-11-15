@@ -22,6 +22,8 @@ export async function GET() {
 
   const freshUser = await getFreshAuthUser(user);
   const basePlan = planFromUserMetadata(freshUser);
+  // A paying customer is not on a trial, even if the original trial window is still open (same rule as getPlanContext).
+  let payingSubscriber = false;
   let subscriptionStatus: string | null = null;
   let subscriptionProvider: string | null = null;
   let subscriptionPeriodEnd: string | null = null;
@@ -39,10 +41,11 @@ export async function GET() {
     const admin = createAdminClient();
     const { data: sub } = await admin
       .from("subscriptions")
-      .select("status, provider, current_period_end, canceled_at")
+      .select("plan, status, provider, current_period_end, canceled_at")
       .eq("user_id", user.id)
       .maybeSingle();
 
+    payingSubscriber = sub?.plan === "builder" && ["active", "grace"].includes(String(sub?.status ?? "").toLowerCase());
     subscriptionStatus = typeof sub?.status === "string" ? sub.status : null;
     subscriptionProvider = typeof sub?.provider === "string" ? sub.provider : null;
     subscriptionPeriodEnd = typeof sub?.current_period_end === "string" ? sub.current_period_end : null;
@@ -161,6 +164,11 @@ export async function GET() {
     }
   } catch {
     // Non-fatal — fall through with trial fields as false
+  }
+
+  if (payingSubscriber) {
+    trialActive = false;
+    trialDaysRemaining = 0;
   }
 
   // Effective plan: active trial grants Builder; otherwise use canonical
