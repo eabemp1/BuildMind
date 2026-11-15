@@ -344,7 +344,16 @@ export async function GET(req: Request) {
   if (existing) {
     // Reconstruct gaps from raw_context for cached briefings
     const cachedGaps = (existing.raw_context as { gaps?: unknown[] } | null)?.gaps ?? [];
-    return NextResponse.json({ ok: true, data: { ...existing, gaps: cachedGaps }, cached: true });
+    // If Today replaced the overnight task (it re-checks tasks when you open it), the briefing must show
+    // the task Today shows, so the two screens never give different instructions.
+    let action = existing.action;
+    try {
+      const { data: row } = await admin.from("user_behavior_state").select("value, updated_at").eq("user_id", user.id).eq("key", "today_action_cache").maybeSingle();
+      const cached = row?.value as { data?: { action?: string } } | null;
+      const newer = row?.updated_at && new Date(row.updated_at).getTime() > new Date(existing.created_at).getTime();
+      if (newer && cached?.data?.action && cached.data.action !== existing.action) action = cached.data.action;
+    } catch { /* keep the briefing's own action */ }
+    return NextResponse.json({ ok: true, data: { ...existing, action, gaps: cachedGaps }, cached: true });
   }
 
   // Generate a fresh one

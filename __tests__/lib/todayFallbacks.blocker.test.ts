@@ -31,3 +31,27 @@ describe("blocked yesterday", () => {
     expect(out.reasons[0]).toMatch(/middle of the night/);
   });
 });
+
+import { assumesContact, lacksContacts } from "@/lib/todayFallbacks";
+
+describe("a founder who knows no one", () => {
+  it("is detected from the latest blockers only", () => {
+    expect(lacksContacts(["I don't know any bike-shop owners.", "x"])).toMatch(/don't know/);
+    expect(lacksContacts(["fine", "fine", "fine", "I know nobody"])).toBeNull();
+    expect(lacksContacts(undefined)).toBeNull();
+  });
+  it("recognises tasks that send them to someone they know", () => {
+    expect(assumesContact("Call one bike shop you know and ask about missed pickups.")).toBe(true);
+    expect(assumesContact("Message 3 friends who ride bikes.")).toBe(true);
+    expect(assumesContact("Find 5 bike shops on Google Maps and note each phone number.")).toBe(false);
+  });
+  it("no fallback for any kind sends them to someone they know", () => {
+    const input = { userType: "independent bike shops", problemDesc: "missed pickups", productName: "RepairBoard", stage: "Validation", blocker: "I don't know any bike shop owners." };
+    for (const kind of ["interview", "outreach", "follow_up", "build", "unblock", "reset"] as const) {
+      for (const seed of ["a", "b", "c", "d", "e"]) {
+        const f = fallbackForKind(kind, input, seed);
+        expect(assumesContact(`${f.action} ${f.first_step}`), `${kind}/${seed}: ${f.action}`).toBe(false);
+      }
+    }
+  });
+});

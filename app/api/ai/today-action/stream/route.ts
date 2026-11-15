@@ -55,7 +55,7 @@ import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta } from "@/lib/todayMission";
 import { ALLOWED_PLATFORMS, composeConcreteTask, type StructuredAction } from "@/lib/today/compose";
-import { fallbackForKind } from "@/lib/todayFallbacks";
+import { fallbackForKind, lacksContacts, assumesContact } from "@/lib/todayFallbacks";
 import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
 import { loadSavedStrike } from "@/lib/server/savedStrike";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
@@ -526,7 +526,7 @@ export async function POST(request: Request) {
           swapPlan ? [swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n") : "",
           personalisationCtx.recoveryBlock ?? "",
         ].filter(Boolean).join("\n\n");
-        const fallbackInput = { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage, blocker: recentTasks[0]?.outcome === "blocked" ? personalisationCtx.recurringBlockers[0] : undefined };
+        const fallbackInput = { userType: inferProjectAudience(targetUsers, title, description, problem), problemDesc: inferProjectProblem(problem, title, description), productName: title?.trim() || "your product", stage, blocker: recentTasks[0]?.outcome === "blocked" ? personalisationCtx.recurringBlockers[0] : (lacksContacts(personalisationCtx.recurringBlockers) ?? undefined) };
         const fallbackSeed = `${userId}:${new Date().toISOString().slice(0, 10)}`;
         // A new founder's first task comes from the hand-written bank (lib/todayFirstRun.ts), not free-form generation.
         const curated = isFirstRun(recentTasks) && !fallbackInput.blocker ? firstRunTask(stage, fallbackInput, fallbackSeed, personalisationCtx.ledger, excludeAction, await loadSavedStrike(userId)) : null;
@@ -820,6 +820,7 @@ ${JSON.stringify(structuredA)}`,
         const founderLimits = hasAdminEnv() ? await loadConstraints(createAdminClient(), userId) : null;
         if (spendsAgainstBudget(agentCFields.task, founderLimits)) swapIssues.push("budget_zero_spend");
     if (echoesTestScenario(agentCFields.task) || echoesTestScenario(agentCFields.done_when ?? "")) swapIssues.push("echoes_test_scenario");
+    if (lacksContacts(personalisationCtx.recurringBlockers) && assumesContact(agentCFields.task)) swapIssues.push("assumes_contact");
         if (swapIssues.length) preScreen.failed_checks = [...preScreen.failed_checks, ...swapIssues.map((i) => `swap_${i}`)];
         if (curated) preScreen.failed_checks = ["first_run_curated", ...preScreen.failed_checks];
         const wasHardFallback = Boolean(curated) || preScreen.fails || swapIssues.length > 0;
