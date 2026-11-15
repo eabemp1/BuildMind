@@ -9,11 +9,14 @@ const when = (iso: string) => { const d = Math.floor((Date.now() - Date.parse(is
 const STATUS: Record<string, string> = { draft: "Draft", used: "Used", sent: "Sent" };
 
 export default function Library({ rows, setup, onOpen }: { rows: LibraryRow[]; setup: boolean; onOpen: (id: string) => void }) {
+  const [all, setAll] = React.useState(false);
   if (setup) return <p style={muted}>Saving isn't switched on yet. Run the latest database migration.</p>;
   if (!rows.length) return <p style={muted}>Nothing saved yet. Prepare something and it appears here.</p>;
+  const shown = all ? rows : rows.slice(0, 30);
   return (
     <div className="wk-list">
-      {rows.map((r) => (
+      <p style={{ ...muted, margin: "0 0 8px" }}>Everything you prepare is saved here, in your BuildMind account, newest first.</p>
+      {shown.map((r) => (
         <button key={r.id} type="button" className="wk-row" onClick={() => onOpen(r.id)}>
           <span style={{ minWidth: 0 }}>
             <span style={{ display: "block", fontSize: 14.5, fontWeight: 600, color: "var(--bm-text)", overflowWrap: "anywhere" }}>{r.title}</span>
@@ -22,6 +25,9 @@ export default function Library({ rows, setup, onOpen }: { rows: LibraryRow[]; s
           <span style={{ fontSize: 12, fontWeight: 600, color: r.status === "draft" ? "var(--bm-text3)" : "var(--bm-green)", flexShrink: 0 }}>{STATUS[r.status] ?? r.status}</span>
         </button>
       ))}
+      {!all && rows.length > 30 && (
+        <button type="button" className="wk-row" onClick={() => setAll(true)} style={{ justifyContent: "center", minHeight: 44 }}>Show {rows.length - 30} older</button>
+      )}
     </div>
   );
 }

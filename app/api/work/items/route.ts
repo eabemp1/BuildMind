@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     return data ? NextResponse.json({ ok: true, item: data }) : NextResponse.json({ ok: false }, { status: 404 });
   }
   const [{ data, error }, project] = await Promise.all([
-    admin.from("work_items").select("id, kind, title, status, updated_at").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(60),
+    admin.from("work_items").select("id, kind, title, status, updated_at").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(300),
     loadProject(admin, user.userId, null),
   ]);
   return NextResponse.json({ ok: true, setup: Boolean(error), items: error ? [] : data ?? [], project: { name: project.name, targetUsers: project.targetUsers, problem: project.problem, description: project.description, stage: project.stage } });
