@@ -58,6 +58,7 @@ export function classifyFinding(f: EvidenceInput): Classified {
   const needed = isAbsence ? 3 : 2;
   const caveats: string[] = [];
 
+  if (priceUnverified(f)) caveats.push("Price not verified: no source page was read for it.");
   if (isAbsence) caveats.push("Absence of evidence in search is not evidence of absence. People may use different words or find solutions elsewhere.");
   if (f.signal_type === "pivot_candidate") caveats.push("An opportunity to test, not a recommendation to pivot.");
 
@@ -195,3 +196,53 @@ export const CLAIM_STATUS_LABEL: Record<ClaimStatus, string> = {
   mixed: "Sources disagree",
   unverified: "Could not be verified",
 };
+
+// ── Evidence ladder ─────────────────────────────────────────────────────────
+// How close a finding is to someone actually paying. Read from the finding's own text, never guessed by a model.
+export type Rung = "adjacent_clue" | "direct_pain" | "stated_willingness" | "paid_pilot" | "repeat_payment";
+export const RUNGS: Rung[] = ["adjacent_clue", "direct_pain", "stated_willingness", "paid_pilot", "repeat_payment"];
+export const RUNG_LABEL: Record<Rung, string> = {
+  adjacent_clue: "Adjacent clue: related, but not about this problem",
+  direct_pain: "Direct pain: someone describes this exact problem",
+  stated_willingness: "Stated willingness: someone says they would pay or switch",
+  paid_pilot: "Paid pilot: someone has paid",
+  repeat_payment: "Repeat payment: someone paid again",
+};
+
+export function evidenceRung(text: string): Rung {
+  const t = text.toLowerCase();
+  if (/\b(?:renew(?:ed|al)|paid again|repeat (?:customer|purchase|payment)|re-?subscribed|second (?:month|payment|order))\b/.test(t)) return "repeat_payment";
+  if (/\b(?:paid|pre-?paid|bought|purchased|deposit|signed up and paid|paying customer)\b/.test(t) && !/\b(?:would|might|could|if)\s+(?:\w+\s+){0,2}pay/.test(t)) return "paid_pilot";
+  if (/\b(?:would pay|willing to pay|i'd pay|i would buy|would switch|would use it|take my money|sign me up|waitlist)\b/.test(t)) return "stated_willingness";
+  if (/\b(?:i struggle|i hate|we struggle|frustrat|pain point|wish there was|problem is|no way to|can't find|annoying|waste(?:s)? (?:of )?time)\b/.test(t)) return "direct_pain";
+  return "adjacent_clue";
+}
+
+/** The highest rung any finding reaches. */
+export function topRung(texts: string[]): Rung {
+  return texts.map(evidenceRung).reduce<Rung>((a, b) => (RUNGS.indexOf(b) > RUNGS.indexOf(a) ? b : a), "adjacent_clue");
+}
+
+/** Drop findings that say the same thing. Keeps the one with more sources, then higher confidence. */
+export function dedupeFindings<T extends { title: string; confidence: number; sources?: string[] | null }>(list: T[]): T[] {
+  const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 3));
+  const same = (a: Set<string>, b: Set<string>) => {
+    if (!a.size || !b.size) return false;
+    let n = 0; for (const w of a) if (b.has(w)) n++;
+    return n / Math.min(a.size, b.size) >= 0.7;
+  };
+  const kept: Array<{ f: T; w: Set<string> }> = [];
+  for (const f of list) {
+    const w = words(f.title);
+    const i = kept.findIndex((k) => same(k.w, w));
+    if (i < 0) { kept.push({ f, w }); continue; }
+    const better = (f.sources?.length ?? 0) > (kept[i].f.sources?.length ?? 0) || ((f.sources?.length ?? 0) === (kept[i].f.sources?.length ?? 0) && f.confidence > kept[i].f.confidence);
+    if (better) kept[i] = { f, w };
+  }
+  return kept.map((k) => k.f);
+}
+
+/** True when a finding quotes a price or number but names no source page for it. */
+export function priceUnverified(f: { evidence?: string; sources?: string[] | null }): boolean {
+  return /(?:[$£€]|\bGHS\b|\bUSD\b)\s?\d|\d\s?(?:\/\s?(?:mo|month|yr|year)|per month)/i.test(f.evidence ?? "") && !(f.sources && f.sources.length);
+}

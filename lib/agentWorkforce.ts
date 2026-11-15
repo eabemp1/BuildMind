@@ -25,7 +25,7 @@ import { echoesTestScenario } from "@/lib/testMode";
 import { webSearch, discussionSearch, newsSearch, competitorSearch, type SearchResult } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emitPulse } from "@/lib/pulse";
-import { classifyFinding, runReadiness, frameVerdict, claimStatus, type ClaimStatus } from "@/lib/evidence";
+import { classifyFinding, runReadiness, frameVerdict, claimStatus, dedupeFindings, topRung, RUNG_LABEL, type ClaimStatus } from "@/lib/evidence";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -329,6 +329,7 @@ ${prevSummary}
 
 Iteration ${iteration} of ${input.maxIterations}.
 
+If a search result is about a different company or product that only shares a name with the founder's, ignore it.
 Produce 3–5 findings grounded in the search results above where available.
 Each finding must follow this exact structure:
 {
@@ -415,6 +416,7 @@ Return ONLY valid JSON. No markdown.`;
   const userPrompt = `Startup: ${input.startupTitle}
 Agent: ${AGENT_IDENTITY[input.agentType].name}
 Evidence readiness: ${readiness.level} — ${readiness.reason}
+Strongest evidence rung reached: ${RUNG_LABEL[topRung(allFindings.map(f => f.evidence))]}. Do not call demand proven below "paid pilot".
 Rule: do not recommend pivot or kill unless readiness is "decide". Otherwise recommend the cheapest test that would settle the question, and say which claims are only signals.
 Stage: ${input.stage}
 Score: ${Math.max(0, Math.min(100, score))}/100
@@ -622,7 +624,7 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
     }).eq("id", input.runId);
 
     const iterFindings = await runIteration(input, i, allFindings);
-    allFindings.push(...iterFindings);
+    allFindings.splice(0, allFindings.length, ...dedupeFindings([...allFindings, ...iterFindings]));
 
     // Persist findings to isolation layer
     if (iterFindings.length > 0) {
