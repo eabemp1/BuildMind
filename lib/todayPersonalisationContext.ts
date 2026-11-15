@@ -37,6 +37,8 @@ export interface TodayPersonalisationContext {
   ledger?: Ledger;
   /** Prompt-ready text for the ledger ("" when nothing to say). */
   factsBlock?: string;
+  /** The founder marked this account as a test run (Settings). */
+  testMode?: boolean;
   /** Follow-ups the founder asked to be reminded about that are now due. */
   dueLoops?: Loop[];
 }
@@ -199,7 +201,8 @@ export async function buildTodayPersonalisationContext(
     const loopRows = loopsResult.status === "fulfilled" && !loopsResult.value.error ? ((loopsResult.value.data ?? []) as Loop[]) : [];
     const { due: dueLoops } = partitionLoops(loopRows);
     const radarBlock = await radarPromptBlock(supabase, userId, projectId).catch(() => "");
-    const limitsBlock = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(await loadTestMode(supabase, userId))].filter(Boolean).join("\n\n");
+    const testMode = await loadTestMode(supabase, userId);
+    const limitsBlock = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(testMode)].filter(Boolean).join("\n\n");
     const factsBlock = [factsPromptBlock(ledger), loopsPromptBlock(dueLoops), radarBlock, limitsBlock].filter(Boolean).join("\n\n");
 
     return {
@@ -211,6 +214,7 @@ export async function buildTodayPersonalisationContext(
       activeGoals,
       ledger,
       factsBlock,
+      testMode,
       dueLoops,
     };
   } catch {

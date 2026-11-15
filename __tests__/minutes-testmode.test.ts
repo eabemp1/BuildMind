@@ -48,3 +48,16 @@ describe("zero budget", () => {
     }
   });
 });
+
+import { echoesTestScenario } from "@/lib/testMode";
+describe("echoesTestScenario", () => {
+  it("catches test-scenario wording in a task", () => {
+    expect(echoesTestScenario("Done when: Severe Founder Avoidance of Core Distribution is tested.")).toBe(true);
+    expect(echoesTestScenario("Testing the app's handling of a blocked founder.")).toBe(true);
+    expect(echoesTestScenario("This is a test of the briefing.")).toBe(true);
+  });
+  it("leaves real tasks alone", () => {
+    expect(echoesTestScenario("Find 5 bike shops on Google Maps and note each phone number.")).toBe(false);
+    expect(echoesTestScenario("Test the price with one shop owner by asking what they pay today.")).toBe(false);
+  });
+});

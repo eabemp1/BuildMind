@@ -1,6 +1,7 @@
 import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { summarizeReflection } from "@/lib/today/reflectionSummary";
 import { taskMinutes } from "@/lib/today/minutes";
+import { echoesTestScenario } from "@/lib/testMode";
 import { loadConstraints, spendsAgainstBudget } from "@/lib/constraints";
 import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { saysBuilt } from "@/lib/today/builtClaim";
@@ -661,7 +662,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       saysBuilt: saysBuilt(`${projectDescription} ${problem}`),
       stage,
       recentTasks: recentTasksParsed,
-      avoidance: cognitionAvoidanceSignals,
+      avoidance: personalisationCtx.testMode ? [] : cognitionAvoidanceSignals,
       blockers: personalisationCtx.recurringBlockers,
       activeGoals: personalisationCtx.activeGoals,
       cognitiveLoad: (["fresh", "drained", "autopilot"] as string[]).includes(String(cognitionCognitiveLoad)) ? (cognitionCognitiveLoad as "fresh" | "drained" | "autopilot") : "fresh",
@@ -676,7 +677,7 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
     const mission = fitMissionToState(swapped, tctx.founderState);
     // A new founder gets the hand-written or strike task (below), so the lookup would be wasted.
     const missionGrounding = wantsGrounding(mission.kind) && projectId && !isFirstRun(recentTasksParsed) ? await groundTargetUsers({ key: projectId, targetUsers, problem }) : [];
-    lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
+    lastReflectionContext += `\n\n${missionPromptBlock(mission, { targetUsers, avoidance: personalisationCtx.testMode ? [] : cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers })}`;
     if (swapPlan) lastReflectionContext += `\n\n${[swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n")}`;
     if (missionGrounding.length) lastReflectionContext += `\n\n${groundingPromptBlock(missionGrounding)}`;
     const fallbackInput = { userType: inferProjectAudience(targetUsers, title, projectContext, problem), problemDesc: inferProjectProblem(problem, title, projectContext), productName: title?.trim() || "your product", stage, blocker: recentTasksParsed[0]?.outcome === "blocked" ? personalisationCtx.recurringBlockers[0] : undefined };
@@ -1013,13 +1014,14 @@ INSTRUCTION: Use what_tried and what_happened as the primary signal for today's 
       ledger: personalisationCtx.ledger,
       title, targetUsers, problem,
       blockers: personalisationCtx.recurringBlockers,
-      avoidance: cognitionAvoidanceSignals,
+      avoidance: personalisationCtx.testMode ? [] : cognitionAvoidanceSignals,
       activeGoals: personalisationCtx.activeGoals,
       recentTasks: recentTasksParsed,
     });
     const swapIssues = swapProblems(finalResult.action, swapPlan);
     const founderLimits = hasAdminEnv() ? await loadConstraints(createAdminClient(), userId) : null;
     if (spendsAgainstBudget(finalResult.action, founderLimits)) swapIssues.push("budget_zero_spend");
+    if (echoesTestScenario(finalResult.action)) swapIssues.push("echoes_test_scenario");
     if (swapIssues.length) preScreen.failed_checks.push(...swapIssues.map((i) => `swap_${i}`));
     if (curated) preScreen.failed_checks = ["first_run_curated", ...preScreen.failed_checks];
     const wasHardFallback = Boolean(curated) || preScreen.fails || swapIssues.length > 0;

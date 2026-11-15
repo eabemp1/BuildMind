@@ -25,3 +25,8 @@ export async function loadTestMode(admin: SupabaseClient, userId: string): Promi
     return false;
   }
 }
+
+/** True when generated task text repeats test-scenario wording instead of giving the founder real work. */
+export function echoesTestScenario(text: string): boolean {
+  return /\b(?:severe\s+)?founder\s+avoidance\b|\b(?:qa|test)\s+(?:scenario|persona|script)\b|\bsimulated\s+founder\b|\btest(?:ing)?\s+(?:the\s+)?(?:app|buildmind|system|product\s+behaviou?r)\b|\bthis\s+is\s+a\s+test\b/i.test(text);
+}
