@@ -13,6 +13,7 @@
  */
 
 import { taskMinutes } from "@/lib/today/minutes";
+import { echoesTestScenario } from "@/lib/testMode";
 import { loadConstraints, spendsAgainstBudget } from "@/lib/constraints";
 import { inferProjectProblem } from "@/lib/today/problemPhrase";
 import { NextResponse } from "next/server";
@@ -501,7 +502,7 @@ export async function POST(request: Request) {
           saysBuilt: saysBuilt(`${description} ${problem}`),
           stage,
           recentTasks,
-          avoidance: cognitionAvoidanceSignals,
+          avoidance: personalisationCtx.testMode ? [] : cognitionAvoidanceSignals,
           blockers: personalisationCtx.recurringBlockers,
           activeGoals: personalisationCtx.activeGoals,
           cognitiveLoad,
@@ -521,7 +522,7 @@ export async function POST(request: Request) {
           : [];
         const groundingBlock = groundingPromptBlock(grounding);
         const missionBlock = [
-          missionPromptBlock(mission, { targetUsers, avoidance: cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers }),
+          missionPromptBlock(mission, { targetUsers, avoidance: personalisationCtx.testMode ? [] : cognitionAvoidanceSignals, blockers: personalisationCtx.recurringBlockers }),
           swapPlan ? [swapPromptBlock(swapPlan, mission), swapHistoryNote(swapHistory)].filter(Boolean).join("\n") : "",
           personalisationCtx.recoveryBlock ?? "",
         ].filter(Boolean).join("\n\n");
@@ -534,7 +535,7 @@ export async function POST(request: Request) {
           ledger: personalisationCtx.ledger,
           title, targetUsers, problem,
           blockers: personalisationCtx.recurringBlockers,
-          avoidance: cognitionAvoidanceSignals,
+          avoidance: personalisationCtx.testMode ? [] : cognitionAvoidanceSignals,
           activeGoals: personalisationCtx.activeGoals,
           recentTasks,
           stalled: personalisationCtx.recovery?.stalled ?? [],
@@ -818,6 +819,7 @@ ${JSON.stringify(structuredA)}`,
         const swapIssues = swapProblems(agentCFields.task, swapPlan);
         const founderLimits = hasAdminEnv() ? await loadConstraints(createAdminClient(), userId) : null;
         if (spendsAgainstBudget(agentCFields.task, founderLimits)) swapIssues.push("budget_zero_spend");
+    if (echoesTestScenario(agentCFields.task) || echoesTestScenario(agentCFields.done_when ?? "")) swapIssues.push("echoes_test_scenario");
     if (lacksContacts(personalisationCtx.recurringBlockers) && assumesContact(agentCFields.task)) swapIssues.push("assumes_contact");
         if (swapIssues.length) preScreen.failed_checks = [...preScreen.failed_checks, ...swapIssues.map((i) => `swap_${i}`)];
         if (curated) preScreen.failed_checks = ["first_run_curated", ...preScreen.failed_checks];
