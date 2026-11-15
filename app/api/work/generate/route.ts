@@ -2,6 +2,7 @@
  * POST /api/work/generate — prepare one piece of work from the Work catalogue.
  * Body: { kind, inputs, projectId?, regenerateId? }. Returns the saved item. Nothing is sent or posted.
  */
+import { withJobCost, setJobUser } from "@/lib/jobCost";
 import { NextResponse } from "next/server";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
@@ -20,9 +21,10 @@ export const maxDuration = 60;
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
-export async function POST(request: Request) {
+async function postInner(request: Request) {
   const user = await getRouteUser();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  setJobUser(user.userId);
   const body = (await request.json().catch(() => ({}))) as { kind?: string; inputs?: unknown; projectId?: string | null; regenerateId?: string | null };
   const spec = body.kind ? SPEC_BY_ID[body.kind] : undefined;
   if (!spec) return NextResponse.json({ ok: false, error: "Unknown kind of work." }, { status: 400 });
@@ -69,4 +71,8 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: true, saved: false, item: { id: null, ...row } });
   }
+}
+
+export async function POST(request: Request) {
+  return withJobCost("work_draft", () => postInner(request));
 }

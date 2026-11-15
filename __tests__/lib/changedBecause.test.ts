@@ -13,3 +13,14 @@ describe("changedBecause", () => {
     expect(changedBecause(["assumes_contact"], null)).toBe("");
   });
 });
+
+import { markTestRun, isTestRun } from "@/lib/testMode";
+describe("test run marker", () => {
+  it("marks once and detects", () => {
+    expect(markTestRun("did it")).toBe("[test run] did it");
+    expect(markTestRun(markTestRun("did it"))).toBe("[test run] did it");
+    expect(isTestRun("[test run] x")).toBe(true);
+    expect(isTestRun("x")).toBe(false);
+    expect(isTestRun(null)).toBe(false);
+  });
+});

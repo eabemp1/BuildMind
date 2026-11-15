@@ -2,6 +2,7 @@
  * POST /api/leads/find — run the Lead Finder for one founder and save what it found.
  * Builder plan; counts against the AI allowance like every agent run.
  */
+import { withJobCost, setJobUser } from "@/lib/jobCost";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
@@ -23,9 +24,10 @@ const Body = z.object({
   problem: z.string().max(240).optional().default(""),
 });
 
-export async function POST(req: NextRequest) {
+async function postInner(req: NextRequest) {
   const auth = await getRouteUser();
   if (!auth) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  setJobUser(auth.userId);
   if (auth.plan === "free") return NextResponse.json({ ok: false, error: "The Lead Finder is part of the Builder plan." }, { status: 403 });
   let body: z.infer<typeof Body>;
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -110,4 +112,8 @@ export async function POST(req: NextRequest) {
     }
   });
   return NextResponse.json({ ok: true, runId: row.id, status: "running" });
+}
+
+export async function POST(req: NextRequest) {
+  return withJobCost("leads_find", () => postInner(req));
 }

@@ -9,7 +9,7 @@
  * Returns a single formatted string ready to inject into the system prompt.
  */
 
-import { loadTestMode, testModeRule } from "@/lib/testMode";
+import { isTestRun, loadTestMode, testModeRule } from "@/lib/testMode";
 import { factsBlock, loadFacts } from "@/lib/projectFacts";
 import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { isShownTaskRow } from "@/lib/recommendationRows";
@@ -106,7 +106,7 @@ export async function assembleCoachContext(
         const when = relativeDate(r.created_at);
         const conf = r.confidence ? ` (confidence: ${r.confidence}/5)` : "";
         const blocker = r.blocker_category ? ` | blocker: ${r.blocker_category}` : r.blocker ? ` | blocker: ${r.blocker}` : "";
-        lines.push(`[${when}] outcome: ${r.outcome}${conf}${blocker}`);
+        lines.push(`[${when}]${isTestRun(r.note) ? " [test run, not real evidence]" : ""} outcome: ${r.outcome}${conf}${blocker}`);
         if (r.what_tried)    lines.push(`  tried: ${truncate(r.what_tried)}`);
         if (r.what_happened) lines.push(`  happened: ${truncate(r.what_happened)}`);
         if (r.what_learned)  lines.push(`  learned: ${truncate(r.what_learned)}`);

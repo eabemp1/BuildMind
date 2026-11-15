@@ -4,10 +4,11 @@
  * knows this is written for where they actually are. It is context for relevance, never a source of new facts.
  */
 import { factsBlock, loadFacts } from "@/lib/projectFacts";
+import { isTestRun } from "@/lib/testMode";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadInferredContext } from "@/lib/prep/context";
 
-export interface NoteRow { outcome: string | null; what_tried?: string | null; what_happened?: string | null; what_learned?: string | null; blocker?: string | null; created_at: string }
+export interface NoteRow { note?: string | null; outcome: string | null; what_tried?: string | null; what_happened?: string | null; what_learned?: string | null; blocker?: string | null; created_at: string }
 
 const DAY = 86_400_000;
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trim()}…` : s);
@@ -18,6 +19,7 @@ const ago = (iso: string, now: number) => { const d = Math.max(0, Math.floor((no
 export function evidenceBlock(rows: NoteRow[], now = Date.now()): string {
   const lines: string[] = [];
   for (const r of rows) {
+    if (isTestRun(r.note)) continue; // made during a test run: not the founder's real record
     const happened = clean(r.what_happened), learned = clean(r.what_learned), blocker = clean(r.blocker);
     if (happened.length < 12 && learned.length < 12 && blocker.length < 12) continue;
     const parts = [
@@ -39,7 +41,7 @@ export function competitorBlock(rows: Array<{ name: string; url: string }>): str
 
 export async function loadWorkContext(admin: SupabaseClient, userId: string, projectId?: string | null): Promise<string> {
   try {
-    let q = admin.from("reflections").select("outcome,what_tried,what_happened,what_learned,blocker,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(12);
+    let q = admin.from("reflections").select("note,outcome,what_tried,what_happened,what_learned,blocker,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(12);
     if (projectId) q = q.or(`project_id.eq.${projectId},project_id.is.null`);
     const [{ data }, record] = await Promise.all([q, loadInferredContext(admin, userId)]);
     let comps = "";

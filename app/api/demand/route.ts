@@ -2,6 +2,7 @@
  * POST /api/demand — start a Demand Check in the background (Builder plan, counts against the AI allowance).
  * GET  /api/demand?projectId= — the latest check for that project.
  */
+import { withJobCost, setJobUser } from "@/lib/jobCost";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
@@ -23,9 +24,10 @@ const Body = z.object({
   problem: z.string().min(3).max(240),
 });
 
-export async function POST(req: NextRequest) {
+async function postInner(req: NextRequest) {
   const auth = await getRouteUser();
   if (!auth) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  setJobUser(auth.userId);
   if (auth.plan === "free") return NextResponse.json({ ok: false, error: "The Demand Check is part of the Builder plan." }, { status: 403 });
   let body: z.infer<typeof Body>;
   try { body = Body.parse(await req.json()); } catch { return NextResponse.json({ ok: false, error: "Add your country and what people need." }, { status: 400 }); }
@@ -81,4 +83,8 @@ export async function GET(req: NextRequest) {
   const run = data && data.status === "running" && Date.now() - new Date(data.created_at).getTime() > 6 * 60_000
     ? { ...data, status: "failed", error: "The check was cut off. Try again." } : data;
   return NextResponse.json({ ok: true, run: run ?? null });
+}
+
+export async function POST(req: NextRequest) {
+  return withJobCost("demand_check", () => postInner(req));
 }

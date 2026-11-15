@@ -30,3 +30,11 @@ export async function loadTestMode(admin: SupabaseClient, userId: string): Promi
 export function echoesTestScenario(text: string): boolean {
   return /\b(?:severe\s+)?founder\s+avoidance\b|\b(?:qa|test)\s+(?:scenario|persona|script)\b|\bsimulated\s+founder\b|\btest(?:ing)?\s+(?:the\s+)?(?:app|buildmind|system|product\s+behaviou?r)\b|\bthis\s+is\s+a\s+test\b/i.test(text);
 }
+
+export const TEST_RUN_TAG = "[test run]";
+/** Marks one saved event as made during a test run. Idempotent. */
+export function markTestRun(text: string): string {
+  const t = (text ?? "").trim();
+  return t.startsWith(TEST_RUN_TAG) ? t : `${TEST_RUN_TAG} ${t}`.trim();
+}
+export const isTestRun = (text: string | null | undefined): boolean => (text ?? "").trim().startsWith(TEST_RUN_TAG);

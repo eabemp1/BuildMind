@@ -12,6 +12,7 @@
  * Plan gate: builder only.
  */
 
+import { withJobCost, setJobUser } from "@/lib/jobCost";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { gateFeature } from "@/lib/server/featureGate";
 import { NextRequest, NextResponse } from "next/server";
@@ -35,12 +36,13 @@ const BodySchema = z.object({
   idea: z.string().min(8).max(800).optional(),
 });
 
-export async function POST(req: NextRequest) {
+async function postInner(req: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const auth = await getRouteUser();
   if (!auth) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  setJobUser(auth.userId);
   if (auth.plan === "free") {
     return NextResponse.json(
       { ok: false, error: "Agent Workforce requires the Builder plan." },
@@ -197,4 +199,8 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+export async function POST(req: NextRequest) {
+  return withJobCost("agent_run", () => postInner(req));
 }
