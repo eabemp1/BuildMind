@@ -187,7 +187,7 @@ export function EvidenceLedger({ mix }: { mix: EvidenceMix }) {
       </div>
       <div style={{ display: "flex", gap: 10 }}>{mix.byCycle.map((c) => <div key={c.cycle} style={{ ...label, flex: 1, textAlign: "center" }}>C{c.cycle}</div>)}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px dashed var(--bm-border)" }}>
-        {[{ k: "Pending", v: mix.pending, c: "var(--bm-accent)" }, { k: "Confirmed", v: mix.confirmed, c: "var(--bm-green)" }, { k: "Rejected", v: mix.rejected, c: "var(--bm-red)" }].map((x) => (
+        {[{ k: "Awaiting your review", v: mix.pending, c: "var(--bm-accent)" }, { k: "Confirmed", v: mix.confirmed, c: "var(--bm-green)" }, { k: "Rejected", v: mix.rejected, c: "var(--bm-red)" }].map((x) => (
           <div key={x.k} style={{ minWidth: 0 }}><div style={{ fontFamily: MONO, fontSize: 14, fontWeight: 600, color: x.c }}>{x.v}</div><div style={{ ...label, overflowWrap: "anywhere" }}>{x.k}</div></div>
         ))}
       </div>
