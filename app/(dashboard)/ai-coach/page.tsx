@@ -1,5 +1,6 @@
 "use client";
 
+import { useSidePane } from "@/components/layout/side-pane-context";
 import { FactsCard } from "@/components/coach/FactsCard";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -256,7 +257,10 @@ function AICoachPageInner() {
   const activeProjectId = useActiveProjectId();
   const activeProject = selectActiveProject(summaries, activeProjectId);
   const { data: overview, isLoading: overviewLoading } = useDashboardOverviewQuery(activeProject?.id);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // One conversation, shared with the side Coach pane.
+  const { coachMessages, setCoachMessages } = useSidePane();
+  const messages = coachMessages as ChatMessage[];
+  const setMessages = setCoachMessages as React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [personality, setPersonality] = useState<"direct" | "supportive" | "challenger">("direct");

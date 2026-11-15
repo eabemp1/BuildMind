@@ -63,7 +63,7 @@ export default function CoachPane({ req }: { req: CoachReq }) {
     if (!project?.id) { fail("Create or select a project first so I can coach against real context."); return; }
 
     setInput("");
-    const history = messages.filter((m) => !m.pending && !m.error).slice(-10).map((m) => ({ id: m.id, role: m.role, content: m.content, phase: "done" }));
+    const history = messages.filter((m) => !m.pending && m.phase !== "thinking" && !m.error && m.content.trim()).slice(-10).map((m) => ({ id: m.id, role: m.role, content: m.content, phase: "done" }));
     const pendingId = `p${Date.now()}`;
     setMessages((p) => [...p, { id: `u${Date.now()}`, role: "user", content: msg }, { id: pendingId, role: "assistant", content: "", pending: true }]);
     setBusy(true);
@@ -125,15 +125,16 @@ export default function CoachPane({ req }: { req: CoachReq }) {
           if (m.role === "user") {
             return <div key={m.id} style={{ alignSelf: "flex-end", maxWidth: "88%", background: "var(--bm-bg3)", border: "1px solid var(--bm-border)", borderRadius: "16px 16px 4px 16px", padding: "8px 12px", fontSize: 13.5, lineHeight: 1.5, color: "var(--bm-text)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.content}</div>;
           }
-          const parsed = m.pending || m.error ? { text: m.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] } : parseReplyLinks(m.content);
+          const parsed = m.pending || m.phase === "thinking" || m.error ? { text: m.content, links: [] as ReturnType<typeof parseReplyLinks>["links"] } : parseReplyLinks(m.content);
           return (
             <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <span style={{ width: 24, height: 24, borderRadius: 99, flexShrink: 0, display: "grid", placeItems: "center", background: "var(--bm-intel-dim)", border: "1px solid var(--bm-intel-bd)" }}><Sparkles size={12} color="var(--bm-intel2)" /></span>
               <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                {m.pending ? <span style={{ fontSize: 13, color: "var(--bm-text3)" }}>Thinking…</span>
+                {m.pending || m.phase === "thinking" ? <span style={{ fontSize: 13, color: "var(--bm-text3)" }}>Thinking…</span>
                   : m.error ? <span style={{ fontSize: 13, color: "var(--bm-red)" }}>{m.content}</span>
                   : <Markdown textSize={13.5}>{sanitizeMarkdown(parsed.text)}</Markdown>}
                 {m.actionResult && <CoachActionResultCard result={m.actionResult} />}
+                {m.proposal && <button type="button" onClick={() => router.push("/ai-coach")} style={{ alignSelf: "flex-start", fontSize: 12.5, textDecoration: "underline", color: "var(--bm-text)", minHeight: 32 }}>Open Coach to confirm this change</button>}
                 {parsed.links.length > 0 && (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {parsed.links.map((l, i) => l.kind === "open" && (

@@ -11,6 +11,7 @@
  * render in tests and in places that are not inside the app shell.
  */
 
+import type { ProposalCard } from "@/lib/coachWrites/server";
 import type { CoachActionResult } from "@/lib/coachActions/types";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
@@ -40,6 +41,13 @@ export interface CoachChatMessage {
   error?: boolean;
   /** A Coach Action result (data card, drawn visual, downloads). */
   actionResult?: CoachActionResult;
+  // The full Coach page keeps more on each message. It shares this one conversation with the side pane.
+  reasoning?: string[];
+  phase?: "thinking" | "writing" | "done";
+  confidence_score?: number | null;
+  recommendedAction?: { what_to_do: string; why_now: string; expected_evidence?: string };
+  proposal?: ProposalCard;
+  sources?: Array<{ n: number; title: string; url: string; host: string; read: boolean }>;
 }
 
 interface SidePaneApi {
