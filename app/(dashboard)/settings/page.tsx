@@ -11,6 +11,7 @@ import { PLAN_NAMES, setStoredPlan, fetchAndSyncStoredPlanFromBillingStatus } fr
 
 import { formatAccessDate } from "@/lib/billing/cancellation";
 import { usePlan } from "@/lib/usePlan";
+import { TrialDetails } from "@/components/TrialDetails";
 import { storage } from "@/lib/storage";
 import { clearFounderInsight } from "@/lib/founderMemory";
 import { fetchBehaviorState, persistBehaviorState } from "@/lib/userBehaviorState";
@@ -556,6 +557,8 @@ function BillingTab() {
         </div>
       </div>
 
+      {trialOnly && <TrialDetails endsLabel={facts.trialEndsAt && !Number.isNaN(new Date(facts.trialEndsAt).getTime()) ? new Date(facts.trialEndsAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }) : null} />}
+
       {!trialOnly && <div style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 16, padding: isMobile ? "18px" : "22px 24px" }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--bm-text2)", marginBottom: 4 }}>Manage subscription</div>
         <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 16 }}>Cancel any time. You keep Builder until the end of the period you paid for.</div>
@@ -631,6 +634,7 @@ function SettingsContent() {
   const initialIntegrationStatus = searchParams.get("integration");
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window !== "undefined" && searchParams.get("tab") === "integrations") return "integrations";
+    if (searchParams.get("tab") === "billing") return "billing";
     if (initialIntegrationStatus) return "integrations";
     return "profile";
   });
