@@ -57,3 +57,15 @@ describe("wired into drafting", () => {
     expect(draftProblems(result, spec, "price undecided", "idea").join(" ")).toMatch(/prices, policies/);
   });
 });
+
+import { digestHtml } from "@/lib/pageReader";
+describe("price reading", () => {
+  it("reads real prices and ignores dashboard revenue", () => {
+    const html = "<html><body><h1>Plans</h1><p>Pro is $39/month or $390 per year.</p><div class='demo'>Revenue this quarter $12,400 and $8,250</div></body></html>";
+    const d = digestHtml("https://x.test", html);
+    expect(d.prices).toEqual(["$39/month", "$390 per year"]);
+  });
+  it("does not cut an amount short", () => {
+    expect(digestHtml("https://x.test", "<p>Teams pay $1,200 per year</p>").prices).toEqual(["$1,200 per year"]);
+  });
+});

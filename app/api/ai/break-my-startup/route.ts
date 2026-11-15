@@ -583,7 +583,7 @@ export async function POST(request: Request) {
           reasoning: [
             `Parsed idea into structured schema: ${parsed.category}`,
             focusAreas.length ? `Prioritized selected focus areas: ${focusAreas.join(", ")}` : "No focus areas selected",
-            `5-agent pipeline completed in ${agentPipeline.duration_ms}ms`,
+            `${agentPipeline.agents_succeeded} of 5 analysis steps completed${agentPipeline.agents_succeeded < 5 ? ` (${5 - agentPipeline.agents_succeeded} used a built-in default: ${(Object.entries(agentPipeline.agent_statuses) as [string, string][]).filter(([, st]) => st !== "success").map(([n]) => n).join(", ")})` : ""} in ${agentPipeline.duration_ms}ms`,
             `Found ${competitors.length} competitor(s) via ${competitor_data_source}`,
             `Viability score: ${viabilityResult.viability_score}/100 (${viabilityResult.verdict})`,
           ],
@@ -976,7 +976,7 @@ export async function POST(request: Request) {
         reasoning: [
           `Read ${completedTasks}/${totalTasks} tasks and ${completedMilestones}/${totalMilestones} milestones`,
           focusAreas.length ? `Prioritized selected focus areas: ${focusAreas.join(", ")}` : "No focus areas selected",
-          `5-agent pipeline completed in ${agentPipeline.duration_ms}ms`,
+          `${agentPipeline.agents_succeeded} of 5 analysis steps completed${agentPipeline.agents_succeeded < 5 ? ` (${5 - agentPipeline.agents_succeeded} used a built-in default: ${(Object.entries(agentPipeline.agent_statuses) as [string, string][]).filter(([, st]) => st !== "success").map(([n]) => n).join(", ")})` : ""} in ${agentPipeline.duration_ms}ms`,
           `Found ${competitors.length} competitor(s) via live web scan`,
           `Viability score: ${viabilityResult.viability_score}/100 — ${viabilityResult.verdict}`,
         ],
