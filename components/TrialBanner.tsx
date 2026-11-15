@@ -118,6 +118,8 @@ export function TrialBanner({ daysRemaining }: TrialBannerProps) {
           </button>
         </div>
 
+        <a href="/settings?tab=billing" style={{ display: "inline-block", marginTop: 6, minHeight: 24, fontSize: 12, color: urgencyColor, textDecoration: "underline" }}>See what your trial includes</a>
+
         {/* Feature list — only show when not last day to keep it concise */}
         {!isLastDay && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
