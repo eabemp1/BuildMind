@@ -285,6 +285,7 @@ export async function POST(request: Request) {
     // Set when the reflection could not be written to the database, so the page never says "saved" when it was not.
     let reflectionNotSaved = false;
     let reflectionSaved = false;
+    let savedReflectionId: string | undefined;
 
     let projectContext = "";
     // Hoisted so the AI prompt below (outside the Supabase try/catch) can
@@ -395,6 +396,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           }
           reflectionRow = ins.data ?? null;
           if (reflectionRow) reflectionSaved = true;
+          if (typeof reflectionRow?.id === "string") savedReflectionId = reflectionRow.id;
           if (!reflectionRow) {
             reflectionNotSaved = true;
             logError("reflect-action/reflection-insert", ins.error ?? new Error("insert returned no row"), { verifiedUserId });
@@ -811,6 +813,7 @@ ${projectContext}`,
           ? { before: momentumBefore, after: momentumAfter }
           : undefined,
         notSaved: reflectionNotSaved || undefined,
+        reflectionId: savedReflectionId,
         confidenceAdjustment,
         autoSignalNote,
         signalTrustNote,
