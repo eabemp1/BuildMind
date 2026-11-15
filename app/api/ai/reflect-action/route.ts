@@ -282,6 +282,9 @@ export async function POST(request: Request) {
 
     // Use the server-verified userId from auth, fall back to body for backwards compat
     const verifiedUserId = routeUser.userId ?? userId;
+    // Set when the reflection could not be written to the database, so the page never says "saved" when it was not.
+    let reflectionNotSaved = false;
+    let reflectionSaved = false;
 
     let projectContext = "";
     // Hoisted so the AI prompt below (outside the Supabase try/catch) can
@@ -375,6 +378,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
         };
         let reflectionRow: { id?: unknown } | null = duplicateReflectionId ? { id: duplicateReflectionId } : null;
         let isDuplicateSubmit = Boolean(duplicateReflectionId);
+        if (duplicateReflectionId) reflectionSaved = true;
         if (!reflectionRow) {
           // The idempotency key is the exact guard (unique index); the 60s match above covers old clients.
           const withKey = body.idempotencyKey ? { ...reflectionRowValues, idempotency_key: body.idempotencyKey } : reflectionRowValues;
@@ -390,6 +394,11 @@ Target users: ${project.target_users ?? "Not specified"}`;
             }
           }
           reflectionRow = ins.data ?? null;
+          if (reflectionRow) reflectionSaved = true;
+          if (!reflectionRow) {
+            reflectionNotSaved = true;
+            logError("reflect-action/reflection-insert", ins.error ?? new Error("insert returned no row"), { verifiedUserId });
+          }
         }
         // The same reflection arriving twice must not run its side effects twice (momentum, streak,
         // XP, task status, patterns, the learning comparison). Jump to the response; the catch
@@ -744,7 +753,8 @@ Target users: ${project.target_users ?? "Not specified"}`;
           // Feed publish failed — never block the reflect response
         }
       } catch {
-        // DB unavailable — continue with local data
+        // DB unavailable — continue with local data, but only claim it was saved if the row was written.
+        if (!reflectionSaved) reflectionNotSaved = true;
       }
     }
 
@@ -800,6 +810,7 @@ ${projectContext}`,
         momentum: momentumBefore !== undefined && momentumAfter !== undefined
           ? { before: momentumBefore, after: momentumAfter }
           : undefined,
+        notSaved: reflectionNotSaved || undefined,
         confidenceAdjustment,
         autoSignalNote,
         signalTrustNote,
