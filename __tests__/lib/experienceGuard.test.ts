@@ -69,3 +69,11 @@ describe("price reading", () => {
     expect(digestHtml("https://x.test", "<p>Teams pay $1,200 per year</p>").prices).toEqual(["$1,200 per year"]);
   });
 });
+
+import { cleanQuery } from "@/lib/agentWorkforce";
+describe("cleanQuery", () => {
+  it("keeps the real problem and drops QA wording", () => {
+    expect(cleanQuery("Bike shops miss pickups. This is a fictional QA test of severe founder avoidance.")).toBe("Bike shops miss pickups.");
+    expect(cleanQuery("Independent bike shops in Bristol")).toBe("Independent bike shops in Bristol");
+  });
+});

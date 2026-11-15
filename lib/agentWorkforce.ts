@@ -21,6 +21,7 @@
  */
 
 import { callModelJSON } from "@/lib/ai-providers";
+import { echoesTestScenario } from "@/lib/testMode";
 import { webSearch, discussionSearch, newsSearch, competitorSearch, type SearchResult } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emitPulse } from "@/lib/pulse";
@@ -210,6 +211,8 @@ CRITICAL RULES:
 8. Do not turn one observation into a market verdict. Thin search results for a phrase do not show low demand; people may use other words or other channels.
 9. pivot_candidate means "an opportunity worth testing", never "the founder should pivot".
 10. Only list URLs in "sources" that appear in the search results provided. Never invent a URL.
+11. A result counts only if it is about THIS customer, THIS problem and THIS place. A business that merely shares the startup's name, software for a different industry, or a general market report is not evidence; ignore it and say what you could not find. Evidence from an adjacent market is a clue, never proof that these customers feel the pain or will pay.
+12. A figure only counts when its label shows what it is. A number on a demo dashboard or a case study is not a price.
 
 Return ONLY valid JSON. No markdown fences.`;
 }
@@ -218,10 +221,20 @@ Return ONLY valid JSON. No markdown fences.`;
 // Each agent type runs different search queries to get real market data.
 // Results are injected into the AI prompt as grounded evidence.
 
+/** Search text without the founder's test/QA wording, so a QA project does not search for software-testing pages. */
+export function cleanQuery(text: string): string {
+  return String(text ?? "")
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !echoesTestScenario(sentence) && !/\b(?:fictional|simulated|qa|dummy|synthetic)\b/i.test(sentence))
+    .join(" ")
+    .trim();
+}
+
 async function fetchSearchContext(input: AgentRunInput, iteration: number): Promise<string> {
-  const { startupTitle, targetUsers, agentType } = input;
+  const { startupTitle, agentType } = input;
+  const targetUsers = cleanQuery(input.targetUsers);
   // A focused check searches for the claim itself, not the whole problem.
-  const problem = input.focus ? input.focus : input.problem;
+  const problem = cleanQuery(input.focus ? input.focus : input.problem);
 
   try {
     if (agentType === "research") {
@@ -254,7 +267,7 @@ async function fetchSearchContext(input: AgentRunInput, iteration: number): Prom
       // Competitor agent: direct competitor search + recent news
       const [comps, news] = await Promise.allSettled([
         competitorSearch(startupTitle, problem),
-        newsSearch(`${startupTitle} ${problem} startup competitor launch 2025`, 6),
+        newsSearch(`${cleanQuery(problem)} ${cleanQuery(targetUsers)} alternatives software`, 6),
       ]);
       const compResults = comps.status === "fulfilled" ? comps.value.results : [];
       const newsResults = news.status  === "fulfilled" ? news.value.results  : [];
@@ -440,14 +453,17 @@ Return:
       { maxTokens: 700 },
     );
 
-    const verdict = r?.verdict ?? "inconclusive";
+    const said = r?.verdict ?? "inconclusive";
     const rec = r?.recommended_action ?? "Inconclusive — gather more data.";
+    // "Proceed" needs the same evidence as "pivot" or "kill": a few signals, or adjacent-market clues, are not a green light.
+    const tooThinToProceed = readiness.level !== "decide" && said === "proceed";
+    const verdict: AgentVerdict = tooThinToProceed ? "inconclusive" : said;
     const needsTest = readiness.level !== "decide" && (verdict === "pivot" || verdict === "kill");
     return {
       verdict,
       topFindings:       [r?.top_finding_1 ?? "", r?.top_finding_2 ?? "", r?.top_finding_3 ?? ""],
       topRisk:           r?.top_risk ?? "",
-      recommendedAction: needsTest ? `Test before acting — ${rec}` : rec,
+      recommendedAction: tooThinToProceed ? `Not enough evidence to proceed yet — ${rec.replace(/^proceed\s*[—:-]\s*/i, "")}` : needsTest ? `Test before acting — ${rec}` : rec,
       confidencePct:     Math.round(avgConf * 100),
     };
   } catch {
