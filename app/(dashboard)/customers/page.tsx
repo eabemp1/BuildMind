@@ -196,8 +196,8 @@ export default function CustomersPage() {
 
       {project && groups.length > 0 && !running && (
         <div className="mt-5">
-          <Button variant="secondary" disabled={busy || !ready} onClick={() => void start(true)} style={{ minHeight: 44 }}>{busy ? "Searching…" : "Find more, skipping pages I already have"}</Button>
-          <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Uses the same place and customer. A search that stopped early can be continued this way.</p>
+          <Button variant="secondary" disabled={busy || !ready} onClick={() => void start(true)} style={{ minHeight: 44 }}>{busy ? "Searching…" : run?.reason?.includes("ran out of time") ? "Continue the search that stopped early" : "Find more, skipping pages I already have"}</Button>
+          <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Uses the same place and customer. It skips the pages you already have and the searches already tried.</p>
         </div>
       )}
 

@@ -208,7 +208,7 @@ export function thinReason(found: number, st: { resultsFound: number; pagesRead:
 /** Filled in after every round, so a caller that has to stop the search early still has what was found so far. */
 export interface LeadSink { leads: Lead[]; stats: LeadRun["stats"] | null; queries: string[] }
 
-export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink, known: string[] = []): Promise<LeadRun> {
+export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink, known: string[] = [], tried: string[] = []): Promise<LeadRun> {
   const i = cleanInput(input);
   const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, modelFailed: 0, followed: 0, modelError: undefined as string | undefined };
   const maxRounds = light ? 1 : 3;

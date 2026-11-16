@@ -90,15 +90,20 @@ async function postInner(req: NextRequest) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       // "Find more": skip every page already saved for this project, so the search goes somewhere new.
       let known: string[] = [];
+      let tried: string[] = [];
       if (body.more === true) {
         const { data: have } = await admin.from("lead_results").select("lead_url").eq("user_id", auth.userId).eq("project_id", body.projectId ?? "").limit(400);
         known = (have ?? []).map((r) => String((r as { lead_url?: string }).lead_url ?? "")).filter(Boolean);
+        // Resume: also skip the searches the last run already tried.
+        const { data: last } = await admin.from("lead_runs").select("stats").eq("user_id", auth.userId).eq("project_id", body.projectId ?? "").neq("id", row.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        const q = (last?.stats as { queries?: unknown } | null)?.queries;
+        tried = Array.isArray(q) ? q.filter((x): x is string => typeof x === "string").slice(0, 40) : [];
       }
       const sink: LeadSink = { leads: [], stats: null, queries: [] };
       let run: Awaited<ReturnType<typeof findLeads>>;
       try {
         run = await Promise.race([
-          findLeads(input, Date.now() + HARD_LIMIT_MS - 30_000, admit.light, sink, known),
+          findLeads(input, Date.now() + HARD_LIMIT_MS - 30_000, admit.light, sink, known, tried),
           new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The search took too long and was stopped. Try again.")), HARD_LIMIT_MS); }),
         ]);
       } catch (e) {
@@ -122,7 +127,7 @@ async function postInner(req: NextRequest) {
         await admin.from("lead_runs").update({ status: "failed", error: "Leads were found but could not be saved. Has the lead_results table been created?", stats: run.stats, finished_at: new Date().toISOString() }).eq("id", row.id);
         return;
       }
-      await admin.from("lead_runs").update({ status: "done", stats: run.stats, lead_count: run.leads.length, reason: run.reason, finished_at: new Date().toISOString() }).eq("id", row.id);
+      await admin.from("lead_runs").update({ status: "done", stats: { ...run.stats, queries: run.queries.slice(0, 40) }, lead_count: run.leads.length, reason: run.reason, finished_at: new Date().toISOString() }).eq("id", row.id);
     } catch (e) {
       await refundAIUsage(auth.userId, "general"); // the search failed on our side: give the request back
             await admin.from("lead_runs").update({ status: "failed", error: String((e as Error)?.message ?? e).slice(0, 300), finished_at: new Date().toISOString() }).eq("id", row.id);
