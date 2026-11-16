@@ -13,6 +13,16 @@ const EXPERIENCE: RegExp[] = [
   /\b(?:i|we)(?:'ve| have| had)?\s+(?:spoken|talked|chatted|met|interviewed|heard from)\s+(?:to |with )?(?:\d+|several|many|a few|some|dozens of|a number of)?\s*(?:shop owners?|owners?|customers?|users?|founders?|people|businesses|shops)\b/gi,
   /\b(?:shop owners?|owners?|customers?|users?|founders?|people)\s+(?:i(?:'ve| have)?|we(?:'ve| have)?)\s+(?:spoken|talked|chatted|met|interviewed)\s+(?:to|with)\b/gi,
   /\b(?:my|our)\s+(?:customers?|clients?|users?|beta testers?|first customers?)\b/gi,
+  // "I was chatting with a friend who runs a bike shop", "I recently spoke with a shop owner", "we met a customer"
+  /\b(?:i|we)(?:'ve| have| had| was| were)?\s+(?:recently |just |actually |also )?(?:chat(?:ted|ting)|talk(?:ed|ing)|spok(?:e|en|ing)|speak(?:ing)?|met|meeting|catch(?:ing)? up|sat down|bump(?:ed|ing) into|ran into|caught up|texted|messaged|emailed|called|phoned|asked)\s+(?:to |with )?(?:a|an|my|one|some|the|two|three|several|a few)\s+[^.?!\n]{0,40}/gi,
+  // "a friend who runs a bike shop", "my cousin, who owns a garage", "one of my contacts said"
+  /\b(?:a|an|my|one of my|the)\s+(?:close |old |good |longtime |long-time )?(?:friend|buddy|neighbou?r|cousin|uncle|aunt|brother|sister|colleague|mentor|acquaintance|contact|relative|classmate)\b[^.?!\n]{0,30}\b(?:who|that|whose|runs|owns|ran|owned|told|said|mentioned|complained|shared)\b[^.?!\n]{0,40}/gi,
+  // "a shop owner I know", "an owner I met", "someone I know who runs a shop"
+  /\b(?:a|an|one|some(?:one)?)\s+[^.?!\n]{0,25}\b(?:owner|manager|customer|client|user|founder|person|someone)\s+(?:that |who )?(?:i|we)\s+(?:know|knew|met|spoke|talked|worked)\b[^.?!\n]{0,40}/gi,
+  /\bsomeone (?:i|we) know\b[^.?!\n]{0,40}/gi,
+  // Things the founder claims to have seen: "I noticed a shop owner struggling", "I watched a customer wait"
+  /\b(?:i|we)\s+(?:saw|noticed|watched|observed|overheard|witnessed|visited|walked into|stopped by)\s+(?:a|an|the|one|some|two|three|several)\s+[^.?!\n]{0,40}\b(?:owner|customer|shop|store|staff|queue|line|client|user)\b[^.?!\n]{0,30}/gi,
+  /\b(?:the other day|a few (?:days|weeks|months) ago|a while (?:back|ago)|last (?:time|night)|yesterday)\b[^.?!\n]{0,40}\b(?:i|we)\s+(?:was|were|saw|noticed|met|spoke|talked|chatted|heard|visited)\b[^.?!\n]{0,40}/gi,
   /\b(?:i|we)\s+(?:made|learned|learnt|lost|messed up|failed)\b[^.?!\n]{0,40}\b(?:mistake|lesson)\b/gi,
 ];
 

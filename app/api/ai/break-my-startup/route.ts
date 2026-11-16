@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { constraintsRule, loadConstraints } from "@/lib/constraints";
+import { constraintsRule, loadConstraints, withinBudget, spendsAgainstBudget } from "@/lib/constraints";
 import { z } from "zod";
 import { enforceAndTrackAIUsage, groqJSON, groqReasoningJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -252,16 +252,17 @@ Stage: ${ctx.stage}
 Viability score: ${viabilityScore}/100
 Build an execution plan that is specific to this startup. Name exact platforms, user types, and timelines.`,
     );
+    const free = ctx.zeroBudget === true;
     return {
-      mvp_roadmap: Array.isArray(result?.mvp_roadmap) && result.mvp_roadmap.length >= 5
+      mvp_roadmap: withinBudget(Array.isArray(result?.mvp_roadmap) && result.mvp_roadmap.length >= 5
         ? result.mvp_roadmap.slice(0, 5)
-        : fallback.mvp_roadmap,
-      first_10_actions: Array.isArray(result?.first_10_actions) && result.first_10_actions.length >= 10
+        : fallback.mvp_roadmap, free, fallback.mvp_roadmap),
+      first_10_actions: withinBudget(Array.isArray(result?.first_10_actions) && result.first_10_actions.length >= 10
         ? result.first_10_actions.slice(0, 10)
-        : fallback.first_10_actions,
-      gtm_plan: Array.isArray(result?.gtm_plan) && result.gtm_plan.length >= 5
+        : fallback.first_10_actions, free, fallback.first_10_actions),
+      gtm_plan: withinBudget(Array.isArray(result?.gtm_plan) && result.gtm_plan.length >= 5
         ? result.gtm_plan.slice(0, 5)
-        : fallback.gtm_plan,
+        : fallback.gtm_plan, free, fallback.gtm_plan),
     };
   } catch {
     return fallback;
@@ -801,7 +802,7 @@ export async function POST(request: Request) {
       focusAreas,
       founderCognitiveLoad: (founderCtxRow?.cognitive_load as "fresh" | "drained" | "autopilot") ?? undefined,
       founderAvoidanceZones: founderCtxRow?.avoidance_zones ?? [],
-      founderLimits: constraintsRule(await loadConstraints(supabase, userId)) || undefined,
+      ...(await (async () => { const lim = await loadConstraints(supabase, userId); return { founderLimits: constraintsRule(lim) || undefined, zeroBudget: lim?.monthlyBudget === 0 }; })()),
       founderTopicsRepeated: founderCtxRow?.topics_repeated ?? [],
       founderDaysInactive: founderCtxRow?.days_inactive ?? undefined,
       isOwnProject: true,

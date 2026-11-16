@@ -24,3 +24,15 @@ describe("test run marker", () => {
     expect(isTestRun(null)).toBe(false);
   });
 });
+
+import { projectSaysSimulated } from "@/lib/testMode";
+describe("projectSaysSimulated", () => {
+  it("catches explicit wording", () => {
+    expect(projectSaysSimulated("QueuePilot is a fictional startup for QA")).toBe(true);
+    expect(projectSaysSimulated("This is a test account")).toBe(true);
+  });
+  it("leaves real products alone", () => {
+    expect(projectSaysSimulated("A QA testing tool for mobile teams")).toBe(false);
+    expect(projectSaysSimulated("Booking software for bike shops")).toBe(false);
+  });
+});

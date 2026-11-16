@@ -282,7 +282,7 @@ export default function ProjectsPage() {
 
                       <div className="mt-4 rounded-[10px] p-3.5" style={{ background: "var(--bm-bg3)" }}>
                         <p className="text-[12px] font-medium text-[var(--bm-text3)]">
-                          {next.kind === "task" ? "Next step" : next.kind === "done" ? "All done" : "Get started"}
+                          {next.kind === "task" ? "Next roadmap task" : next.kind === "done" ? "All done" : "Get started"}
                         </p>
                         <p className="mt-1 break-words text-[14px] leading-relaxed text-[var(--bm-text)] line-clamp-3">{next.text}</p>
                       </div>

@@ -54,3 +54,12 @@ const SPENDS_MONEY = /\b(?:run|launch|set up|create|buy|pay for|paying for|purch
 export function spendsAgainstBudget(action: string, c: Constraints | null): boolean {
   return !!c && c.monthlyBudget === 0 && SPENDS_MONEY.test(action);
 }
+
+/** Drops anything that spends money when the budget is zero, then tops the list back up from `pool` (free actions) so its length is kept. */
+export function withinBudget(list: string[], zeroBudget: boolean, pool: string[] = []): string[] {
+  if (!zeroBudget) return list;
+  const kept = list.filter((x) => !SPENDS_MONEY.test(x));
+  if (kept.length === list.length) return list;
+  for (const extra of pool) { if (kept.length >= list.length) break; if (!SPENDS_MONEY.test(extra) && !kept.includes(extra)) kept.push(extra); }
+  return kept;
+}

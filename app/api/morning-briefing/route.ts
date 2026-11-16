@@ -22,6 +22,7 @@ import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { buildTodayActionCacheFromBriefing, upsertTodayActionCache } from "@/lib/todayActionCache";
 import { checkExecutionDebtSuppression } from "@/lib/executionDebtGate";
 import { recordActionShown } from "@/lib/learning";
+import { loadTestMode } from "@/lib/testMode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -193,14 +194,16 @@ export async function GET(req: Request) {
           .limit(1)
           .maybeSingle();
 
+        // A test run's history is made up: no avoidance or repeated-topic reading from it.
+        const testRun = await loadTestMode(admin, ctx.user_id);
         const reflexionCtx = {
           // Prefer project-level startup_summary (kept up-to-date when project fields change).
           // founder_context.startup_summary is never written by the app and will always be NULL.
           startupSummary: activeProject?.startup_summary ?? ctx.startup_summary ?? "",
           stage: ctx.current_stage ?? "Idea",
           momentumScore: ctx.momentum_score ?? 50,
-          avoidanceSignals: ctx.avoidance_zones ?? [],
-          topicsRepeated: ctx.topics_mentioned_repeatedly ?? [],
+          avoidanceSignals: testRun ? [] : ctx.avoidance_zones ?? [],
+          topicsRepeated: testRun ? [] : ctx.topics_mentioned_repeatedly ?? [],
           cognitiveLoad: ctx.cognitive_load ?? "fresh",
           yesterdayTask: lastReflection?.today_action ?? undefined,
           completedYesterday: lastReflection?.outcome === "completed",
@@ -416,14 +419,15 @@ export async function GET(req: Request) {
     .limit(1)
     .maybeSingle();
 
+  const testRun = await loadTestMode(admin, user.id);
   const reflexionCtx = {
     // Prefer project-level startup_summary (kept up-to-date when project fields change).
     // founder_context.startup_summary is never written by the app and will always be NULL.
     startupSummary: activeProject?.startup_summary ?? ctx?.startup_summary ?? "",
     stage: ctx?.current_stage ?? "Idea",
     momentumScore: ctx?.momentum_score ?? 50,
-    avoidanceSignals: ctx?.avoidance_zones ?? [],
-    topicsRepeated: ctx?.topics_mentioned_repeatedly ?? [],
+    avoidanceSignals: testRun ? [] : ctx?.avoidance_zones ?? [],
+    topicsRepeated: testRun ? [] : ctx?.topics_mentioned_repeatedly ?? [],
     cognitiveLoad: ctx?.cognitive_load ?? "fresh",
     yesterdayTask: lastReflection?.today_action ?? undefined,
     completedYesterday: lastReflection?.outcome === "completed",

@@ -16,7 +16,7 @@ import { draftLabel, type DraftShape } from "@/lib/today/draftLine";
 import { moodFor, MOOD_META, isCalm, nextTick } from "@/lib/today/mood";
 import MoodStrip from "@/components/today/MoodStrip";
 import RadarToday from "@/components/radar/RadarToday";
-import TodaySlot from "@/components/today/TodaySlot";
+import StatusTicker from "@/components/today/StatusTicker";
 import RadarBar, { useRadarSignal, markUndone } from "@/components/today/RadarBar";
 import RadarItemCard from "@/components/radar/RadarItemCard";
 import EveningCloseout from "@/components/today/EveningCloseout";
@@ -496,6 +496,12 @@ function TodayContent() {
   const [aiAction, setAiAction] = useState<ActionData | null>(null);
   // Radar: always-on status, and the takeover when something cannot wait (lib/radar/urgency.ts).
   const radar = useRadarSignal(project?.id ?? null);
+  // Radar keeps its own bar only when there is something to act on (set-up needed, due soon, or it took over the task).
+  // The quiet states, watching or empty, become one line in the status ticker.
+  const radarNeedsBar = radar.setup || radar.signal.level === "takeover" || radar.signal.level === "soon" || Boolean(aiAction?.radarItemId);
+  const radarQuiet = radarNeedsBar || radar.items === null ? null
+    : radar.signal.level === "watching" ? { text: `Radar watching · ${radar.signal.tracked} tracked`, href: "/radar", cta: "Open" }
+    : { text: "Radar is empty. Add a grant, event, meeting or person and it will start shaping Today.", href: "/radar", cta: "Add one" };
   const [radarOriginal, setRadarOriginal] = useState<ActionData | null>(null);
   const [recentOutcomes, setRecentOutcomes] = useState<Array<{ action_shown: string; outcome: string; outcome_note: string | null; evidence_match_score: number | null; outcome_recorded_at: string | null }>>([]);
   const [debtSuppression, setDebtSuppression] = useState<DebtSuppression | null>(null);
@@ -2215,7 +2221,7 @@ function TodayContent() {
           onLighten={() => handlePreTaskReplace({ reason: "no_motivation", mode: "shrink" })}
         />
       )}
-      {firstRun ? null : <TodaySlot projectId={project?.id} cogLoad={cogLoad} recoveryActive={recoveryActive} />}
+      {firstRun ? null : <StatusTicker projectId={project?.id} cogLoad={cogLoad} recoveryActive={recoveryActive} radar={radarQuiet} />}
       {/* Last night's own first move stays visible in both modes. */}
       {uiMode === "pro" || firstRun ? null : <div className="mood-dim"><TomorrowCarry /></div>}
       {/* Lite (the default) keeps the task first: the other daily cards sit behind one quiet row. Pro shows them in place.
@@ -2223,9 +2229,9 @@ function TodayContent() {
       {firstRun ? null : uiMode === "pro" ? (
         <>
       <div className="mood-secondary"><CompanionBrief /></div>
-      <div style={{ marginBottom: 12 }}>
+      {radarNeedsBar ? <div style={{ marginBottom: 12 }}>
         <RadarBar signal={radar.signal} setup={radar.setup} auto={radar.auto} onAutoChange={radar.reload} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} onCantAttend={cantAttendRadar} />
-      </div>
+      </div> : null}
       <div className="mood-dim"><TomorrowCarry /></div>
       <div className="mood-dim"><FollowUpCard /><WeeklyNote /><PathCard projectId={project?.id ?? null} /></div>
         </>
@@ -2236,9 +2242,9 @@ function TodayContent() {
         <Fold label="Also today" storageKey="bm_today_also_open">
       <PathCard projectId={project?.id ?? null} />
       <div className="mood-secondary"><CompanionBrief /></div>
-      <div style={{ marginBottom: 12 }}>
+      {radarNeedsBar ? <div style={{ marginBottom: 12 }}>
         <RadarBar signal={radar.signal} setup={radar.setup} auto={radar.auto} onAutoChange={radar.reload} tookOver={Boolean(aiAction?.radarItemId)} onUndo={undoRadarTakeover} onCantAttend={cantAttendRadar} />
-      </div>
+      </div> : null}
         </Fold>
         </>
       )}

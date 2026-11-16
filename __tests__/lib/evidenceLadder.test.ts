@@ -31,3 +31,24 @@ describe("evidence ladder", () => {
     expect(classifyFinding({ signal_type: "competitor", positive: false, confidence: 0.5, evidence: "Costs $20/month", source_type: "reasoning" }).caveat).toMatch(/Price not verified/);
   });
 });
+
+describe("willingness to pay needs someone willing to pay", () => {
+  const base = { signal_type: "willingness_to_pay" as const, positive: true, confidence: 0.8, source_type: "web_search", sources: ["https://a.com", "https://b.com"], counter_evidence: "Looked for owners who refused to pay." };
+  it("free alternatives do not count", () => {
+    const r = classifyFinding({ ...base, title: "t", evidence: "Several free booking tools exist." } as never);
+    expect(r.tier).toBe("signal");
+    expect(r.caveat).toMatch(/free alternatives/);
+  });
+  it("a stated intent can still be decision grade", () => {
+    expect(classifyFinding({ ...base, title: "t", evidence: "Two owners said they would pay $20 a month." } as never).tier).toBe("decision_grade");
+  });
+});
+describe("same statistic twice", () => {
+  it("is one finding", () => {
+    const out = dedupeFindings([
+      { title: "No-shows cost shops revenue", confidence: 0.5, evidence: "Industry reports 30% of appointments are missed." },
+      { title: "Missed appointments hurt service businesses", confidence: 0.5, evidence: "About 30% missed appointments." },
+    ] as never);
+    expect(out).toHaveLength(1);
+  });
+});
