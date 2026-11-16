@@ -5,6 +5,7 @@ import { getActiveProjectId } from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { rollingPlan } from "@/lib/experimentPlan";
 import {
   DECISIONS, DECISION_LABEL, STATE_LABEL, nextMove, receipts, tally,
   type Decision, type EventKind, type Experiment,
@@ -14,6 +15,7 @@ const field: React.CSSProperties = { width: "100%", minHeight: 44, borderRadius:
 const KIND_CHOICES: Array<{ k: EventKind; label: string }> = [
   { k: "prepared", label: "Prepared, not sent" }, { k: "sent", label: "I sent it" }, { k: "replied", label: "They replied" },
   { k: "no_reply", label: "No reply yet" }, { k: "blocked", label: "Blocked" },
+  { k: "would_pay", label: "They said they would pay" }, { k: "paid", label: "They paid" },
 ];
 
 export default function ExperimentsPage() {
@@ -69,7 +71,7 @@ export default function ExperimentsPage() {
 
 function ExperimentCard({ exp, onChange }: { exp: Experiment; onChange: () => void }) {
   const evs = exp.events ?? [];
-  const t = tally(evs); const move = nextMove(t); const rows = receipts(evs);
+  const t = tally(evs); const move = nextMove(t); const rows = receipts(evs); const plan = rollingPlan(exp);
   const [who, setWho] = useState(""); const [kind, setKind] = useState<EventKind>("sent"); const [detail, setDetail] = useState("");
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
@@ -108,6 +110,26 @@ function ExperimentCard({ exp, onChange }: { exp: Experiment; onChange: () => vo
         <p className="text-[13px] font-semibold">{move.headline}</p>
         <p className="mt-1 text-[12px] text-[var(--bm-text3)]">{move.why}</p>
         <p className="mt-2 text-[12px] text-[var(--bm-text3)]">{t.people} {t.people === 1 ? "person" : "people"} · {t.sent} sent · {t.replied} replied · {t.noReply} no reply · {t.blocked} blocked · {t.prepared} prepared</p>
+      </div>
+
+      <div className="rounded-[10px] border border-[var(--bm-border)] p-3">
+        <p className="text-[13px] font-semibold">30-day direction</p>
+        <p className="mt-1 text-[12px] text-[var(--bm-text3)]">{plan.summary}</p>
+        <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
+          {plan.milestones.map((m) => (
+            <li key={m.id} className="flex items-baseline gap-2 text-[13px]">
+              <span aria-hidden="true">{m.done ? "✓" : "○"}</span>
+              <span className={m.done ? "text-[var(--bm-text)]" : "text-[var(--bm-text2)]"}>{m.label}{m.done ? " (done)" : ""}</span>
+            </li>
+          ))}
+        </ul>
+        {plan.quiet && <p className="mt-2 text-[12px] text-[var(--bm-text3)]">{plan.quiet.note}</p>}
+        {exp.status !== "decided" && (
+          <>
+            <p className="mt-3 text-[12px] font-semibold">Next</p>
+            <ol className="m-0 mt-1 list-decimal pl-5 text-[13px] text-[var(--bm-text2)]">{plan.next.map((a) => <li key={a}>{a}</li>)}</ol>
+          </>
+        )}
       </div>
 
       {rows.length > 0 && (
