@@ -18,14 +18,15 @@ const HOW: Record<PrepKind, { heading: string; bullets: string[] }> = {
   launch_plan: { heading: "What the launch needs", bullets: ["Three plain titles, no hype, 80 characters or fewer.", "A first comment from you: who built it, why, and one thing you want feedback on.", "Reply to every comment in the first hour.", "Never ask for upvotes."] },
   pricing_test: { heading: "How to test a price", bullets: ["Ask what they pay today for the problem and what they tried before.", "Show one price and watch what they say, not what they promise.", "A real signal is a card, a deposit or a booked follow-up."] },
   prospects: { heading: "How to find them", bullets: ["Pick one place where your users already talk about the problem.", "Read the last month of posts and note who describes it in their own words.", "Message one person at a time, about what they wrote."] },
-  action_plan: { heading: "How to start", bullets: ["Do the first move below before anything else.", "Work in one block of 25 minutes, then stop and note what happened.", "Write down one thing you can see that proves it is done."] },
+  action_plan: { heading: "How to start", bullets: ["Do the first move above before anything else.", "Work in one block of 25 minutes, then stop and note what happened.", "Write down one thing you can see that proves it is done."] },
 };
 
 export function fallbackPrep(kind: PrepKind, task: string, firstStep?: string): Prepared {
   const how = HOW[kind] ?? HOW.action_plan;
   const sections = [
     ...(firstStep ? [{ heading: "First move", body: firstStep.slice(0, 300) }] : []),
-    { heading: how.heading, bullets: how.bullets },
+    // Only point at a first move when one is actually shown.
+    { heading: how.heading, bullets: firstStep ? how.bullets : how.bullets.map((b) => b.replace("Do the first move above before anything else.", `Pick the smallest piece of "${task.slice(0, 80)}" you can finish today and do that first.`)) },
     { heading: "Done when", bullets: ["You can point to one thing that now exists or has changed, and say what you learned."] },
   ];
   return {

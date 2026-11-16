@@ -17,6 +17,7 @@ import { draftContent, keepPastBehaviourQuestions, unsupportedNumbers, type Proj
 import { searchPromptBlock, searchSections } from "@/lib/integrations/searchConsole";
 import { fallbackPrep } from "@/lib/prep/fallback";
 import { loadInferredContext } from "@/lib/prep/context";
+import { keepFitting } from "@/lib/competitorFit";
 import { SENDER_RULE } from "@/lib/prep/senderRule";
 import { learnedLessons, type LearnRow } from "@/lib/prep/learning";
 import { PREP_META, hasContent, inferPlatform, normalizePrepared, prepKindFor, type PrepFact, type PrepKind, type Prepared } from "@/lib/prep/kinds";
@@ -103,7 +104,7 @@ export function groundedCompetitors(raw: unknown, hits: Array<{ title: string; u
 export async function competitorBrief(project: ProjectCtx): Promise<Prepared | null> {
   let res;
   try { res = await webSearch(`${project.name} ${project.description.slice(0, 90)} alternatives competitors`.trim(), 6); } catch { return null; }
-  const hits = res.results.filter((r) => /^https?:\/\//.test(r.url)).slice(0, 6);
+  const hits = keepFitting(project, res.results.filter((r) => /^https?:\/\//.test(r.url))).slice(0, 6);
   if (!res.scraped || !hits.length) return null;
   const src = hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url}): ${h.snippet.slice(0, 220)}`).join("\n");
   let raw: unknown;
@@ -200,7 +201,7 @@ export function groundedPrices(raw: unknown, hits: Hit[]): Array<{ name: string;
 }
 
 export async function pricingTest(project: ProjectCtx, task: string, inferred: string): Promise<Prepared | null> {
-  const hits = await search(`${project.name} ${project.description.slice(0, 80)} alternatives pricing plans`, 6);
+  const hits = keepFitting(project, await search(`${project.name} ${project.description.slice(0, 80)} alternatives pricing plans`, 6));
   const src = hits.map((h, i) => `[${i + 1}] ${h.title} (${h.url}): ${h.snippet.slice(0, 240)}`).join("\n");
   let raw: unknown;
   try {

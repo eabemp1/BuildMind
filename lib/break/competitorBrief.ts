@@ -42,6 +42,24 @@ export function matchScraped(name: string, url: string | undefined, scraped: Scr
   });
 }
 
+const NEG = /\b(?:doesn'?t|does not|don'?t|do not|didn'?t|lacks?|lacking|without|no|not|never|fails? to|missing)\b/i;
+const FILLER = new Set(("their they them the and for with that this from have has are was not its into than then very more most also only about those these such other what when where which while does doesn don lack lacks lacking without never fails fail missing highlight highlights highlighted offer offers offered mention mentions mentioned have support supports feature features product page site website customers customer users user").split(" "));
+const stems = (t: string) => (t.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !FILLER.has(w)).map((w) => w.replace(/(ing|ers|er|es|s|ed|ly|ion)$/, "").slice(0, 6));
+
+/**
+ * Drops any "they lack X" sentence when the same row (or their own page text) says they do X.
+ * A weakness that contradicts the facts next to it is worse than none.
+ */
+export function dropContradictedWeakness(weakness: string, positive: string): string {
+  const pos = new Set(stems(positive));
+  const kept = weakness.split(/(?<=[.!?])\s+/).filter((sent) => {
+    if (!NEG.test(sent)) return true;
+    const after = sent.slice(sent.search(NEG));
+    return !stems(after).some((w) => pos.has(w));
+  });
+  return kept.join(" ").trim();
+}
+
 export function normalizeCompetitors(raw: Raw[] | undefined, scraped: ScrapedCompetitor[]): BriefCompetitor[] {
   if (!Array.isArray(raw)) return [];
   const out: BriefCompetitor[] = [];
@@ -65,8 +83,8 @@ export function normalizeCompetitors(raw: Raw[] | undefined, scraped: ScrapedCom
       targetCustomer: s(r.target_customer, 140) || undefined,
       pricing,
       strength: s(r.strength) || undefined,
-      weakness: s(r.weakness) || "No specific gap identified yet.",
-      howYouLose: s(r.how_you_lose) || undefined,
+      weakness: dropContradictedWeakness(s(r.weakness), `${s(r.what_they_do, 400)} ${s(r.strength, 400)} ${hit?.snippet ?? ""}`) || "No specific gap identified yet.",
+      howYouLose: dropContradictedWeakness(s(r.how_you_lose), `${s(r.what_they_do, 400)} ${s(r.strength, 400)} ${hit?.snippet ?? ""}`) || undefined,
       threat_level: t === "high" || t === "low" ? t : "medium",
       siteRead,
     });

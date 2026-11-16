@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { keepFitting } from "@/lib/competitorFit";
+import { stripUnsourcedResearch } from "@/lib/break/unsourced";
 import { constraintsRule, loadConstraints, withinBudget, spendsAgainstBudget } from "@/lib/constraints";
 import { z } from "zod";
 import { enforceAndTrackAIUsage, groqJSON, groqReasoningJSON, hasAdminEnv, logReflexionQuality } from "@/app/api/ai/_utils";
@@ -423,7 +425,7 @@ export async function POST(request: Request) {
         scrapeCompetitors(`${idea} startup tool software competitors`),
         lookupNamedCompetitors(knownCompetitorNames),
       ]);
-      const competitors = await enrichCompetitors([...namedCompetitors, ...scrapeResult.results]);
+      const competitors = await enrichCompetitors([...namedCompetitors, ...keepFitting({ description: idea }, scrapeResult.results)]);
       const competitors_scraped = scrapeResult.scraped || namedCompetitors.length > 0;
       const competitor_data_source = scrapeResult.source ?? "none";
 
@@ -551,8 +553,8 @@ export async function POST(request: Request) {
       // ONLY the areas the founder actually picked (never invents a tag for
       // an unselected area) and summarize what got addressed vs. didn't.
       // Idea-only mode has no behavioural history, so character claims about the founder are dropped.
-      const killReasons = stripUnsupportedTraitClaims(signals.all_risks.map(r => r.description), false).slice(0, 3);
-      const surviveReasons = signals.all_opportunities.slice(0, 2);
+      const killReasons = stripUnsourcedResearch(stripUnsupportedTraitClaims(signals.all_risks.map(r => r.description), false)).slice(0, 3);
+      const surviveReasons = stripUnsourcedResearch(signals.all_opportunities).slice(0, 2);
       const differentiationPlan = agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
         ?? ["Identify the gap no competitor is addressing", "Own one specific niche", "Price differently"];
       const killReasonTags = tagFocusAreasForList(killReasons, focusAreas);
@@ -749,10 +751,14 @@ export async function POST(request: Request) {
       lookupNamedCompetitors(knownCompetitorNames),
     ]);
 
-    const rawCompetitors = [
-      ...(directResults.status === "fulfilled" ? directResults.value.results : []),
-      ...(broadResults.status === "fulfilled" ? broadResults.value.results : []),
-    ];
+    // Search results from other markets (a different product with the same name, or only a shared word like "testing") are dropped before any agent sees them.
+    const rawCompetitors = keepFitting(
+      { name: project.name ?? project.title, description: project.description, problem: project.problem, targetUsers: project.target_users },
+      [
+        ...(directResults.status === "fulfilled" ? directResults.value.results : []),
+        ...(broadResults.status === "fulfilled" ? broadResults.value.results : []),
+      ],
+    );
     const namedCompetitorList = namedCompetitors.status === "fulfilled" ? namedCompetitors.value : [];
     const competitors_scraped =
       (directResults.status === "fulfilled" && directResults.value.scraped) ||
@@ -934,8 +940,8 @@ export async function POST(request: Request) {
 
     // ── Visible focus-area tagging — see the idea-mode pipeline above for
     // why this exists; same treatment, project mode's own field names.
-    const killReasons = stripUnsupportedTraitClaims(signals.all_risks.map(r => r.description), completedTasks + completedMilestones >= 15).slice(0, 3);
-    const surviveReasons = signals.all_opportunities.slice(0, 2);
+    const killReasons = stripUnsourcedResearch(stripUnsupportedTraitClaims(signals.all_risks.map(r => r.description), completedTasks + completedMilestones >= 15)).slice(0, 3);
+    const surviveReasons = stripUnsourcedResearch(signals.all_opportunities).slice(0, 2);
     const differentiationPlan = agentPipeline.competitor?.differentiation_opportunities?.slice(0, 3)
       ?? ["Identify the gap no competitor addresses", "Own one specific niche for 60 days", "Price based on outcomes, not features"];
     const killReasonTags = tagFocusAreasForList(killReasons, focusAreas);
