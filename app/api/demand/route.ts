@@ -5,6 +5,7 @@
 import { withJobCost, setJobUser } from "@/lib/jobCost";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { refundAIUsage } from "@/lib/server/aiUsageRefund";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -67,6 +68,7 @@ async function postInner(req: NextRequest) {
       ]).finally(() => clearTimeout(timer));
       await admin.from("demand_runs").update({ status: "done", result: run, signal_count: run.signals.length, finished_at: new Date().toISOString() }).eq("id", row.id);
     } catch (e) {
+      await refundAIUsage(auth.userId, "general"); // the check failed on our side: give the request back
       await admin.from("demand_runs").update({ status: "failed", error: String((e as Error)?.message ?? e).slice(0, 300), finished_at: new Date().toISOString() }).eq("id", row.id);
     }
   });

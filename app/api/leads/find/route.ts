@@ -5,6 +5,7 @@
 import { withJobCost, setJobUser } from "@/lib/jobCost";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { refundAIUsage } from "@/lib/server/aiUsageRefund";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -116,7 +117,8 @@ async function postInner(req: NextRequest) {
       }
       await admin.from("lead_runs").update({ status: "done", stats: run.stats, lead_count: run.leads.length, reason: run.reason, finished_at: new Date().toISOString() }).eq("id", row.id);
     } catch (e) {
-      await admin.from("lead_runs").update({ status: "failed", error: String((e as Error)?.message ?? e).slice(0, 300), finished_at: new Date().toISOString() }).eq("id", row.id);
+      await refundAIUsage(auth.userId, "general"); // the search failed on our side: give the request back
+            await admin.from("lead_runs").update({ status: "failed", error: String((e as Error)?.message ?? e).slice(0, 300), finished_at: new Date().toISOString() }).eq("id", row.id);
     }
   });
   return NextResponse.json({ ok: true, runId: row.id, status: "running" });
