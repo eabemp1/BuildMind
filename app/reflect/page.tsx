@@ -440,7 +440,7 @@ export default function ReflectPage() {
               const r = await fetch("/api/reflections/undo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: savedId }) }).then((x) => x.json()).catch(() => null);
               if (r?.success) { setSavedId(null); setDone(false); setShowCelebration(false); setUndoMsg(""); } else setUndoMsg(r?.error ?? "Could not undo that.");
             }}>Undo it</button>
-            <span style={{ display: "block", marginTop: 2 }}>Undo removes the reflection and reopens its task. Your streak count is not rolled back.</span>
+            <span style={{ display: "block", marginTop: 2 }}>Undo removes the reflection, reopens its task and puts your streak back. Momentum and the learning log are not rolled back.</span>
             {undoMsg && <span role="alert" style={{ display: "block", color: "var(--bm-red)" }}>{undoMsg}</span>}
           </div>
         )}

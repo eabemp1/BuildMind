@@ -46,6 +46,8 @@ export const EXPORT_CATEGORIES: ReadonlyArray<ExportCategory> = [
   { table: "break_runs", ownerCol: "user_id", group: "work", label: "Break My Startup history (past stress tests)", orderBy: "created_at", aiGenerated: true },
   { table: "demand_runs", ownerCol: "user_id", group: "work", label: "Demand checks you ran", orderBy: "created_at" },
   { table: "job_costs", ownerCol: "user_id", group: "work", label: "Estimated model use per job", orderBy: "created_at" },
+  { table: "customer_experiments", ownerCol: "user_id", group: "work", label: "Customer experiments", orderBy: "created_at" },
+  { table: "experiment_events", ownerCol: "user_id", group: "work", label: "Experiment entries", orderBy: "created_at" },
   { table: "lead_runs", ownerCol: "user_id", group: "work", label: "Customer searches you ran", orderBy: "created_at" },
   { table: "lead_results", ownerCol: "user_id", group: "work", label: "Customers you found and what happened", orderBy: "created_at" },
   { table: "market_watch_snapshots", ownerCol: "user_id", group: "work", label: "Market Watch weekly scans", orderBy: "created_at" },

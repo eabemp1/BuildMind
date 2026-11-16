@@ -208,13 +208,14 @@ export function thinReason(found: number, st: { resultsFound: number; pagesRead:
 /** Filled in after every round, so a caller that has to stop the search early still has what was found so far. */
 export interface LeadSink { leads: Lead[]; stats: LeadRun["stats"] | null; queries: string[] }
 
-export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink): Promise<LeadRun> {
+export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink, known: string[] = []): Promise<LeadRun> {
   const i = cleanInput(input);
   const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, modelFailed: 0, followed: 0, modelError: undefined as string | undefined };
   const maxRounds = light ? 1 : 3;
   const maxPages = light ? 6 : MAX_PAGES;
   const allQueries: string[] = [];
-  const seen = new Set<string>();
+  // Pages the founder already has from earlier searches: skipped, so "find more" finds new ones.
+  const seen = new Set<string>(known);
   let leads: Lead[] = [];
   for (let round = 1; round <= maxRounds; round++) {
     if (round > 1 && Date.now() > deadline - 80_000) break; // not enough time left for a whole round

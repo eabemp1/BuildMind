@@ -5,6 +5,7 @@
  */
 import { factsBlock, loadFacts } from "@/lib/projectFacts";
 import { isTestRun } from "@/lib/testMode";
+import { experimentContext } from "@/lib/experimentsServer";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadInferredContext } from "@/lib/prep/context";
 
@@ -51,6 +52,6 @@ export async function loadWorkContext(admin: SupabaseClient, userId: string, pro
         comps = competitorBlock((c ?? []) as Array<{ name: string; url: string }>);
       }
     } catch { /* table may not exist yet */ }
-    return [evidenceBlock((data ?? []) as NoteRow[]), record, factsBlock(await loadFacts(admin, userId, projectId)), comps].filter(Boolean).join("\n\n");
+    return [evidenceBlock((data ?? []) as NoteRow[]), record, factsBlock(await loadFacts(admin, userId, projectId)), await experimentContext(admin, userId, projectId), comps].filter(Boolean).join("\n\n");
   } catch { return ""; }
 }

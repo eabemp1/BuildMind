@@ -94,13 +94,13 @@ export default function CustomersPage() {
     return () => clearInterval(t);
   }, [running, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function start() {
+  async function start(more = false) {
     if (!project) return;
     setBusy(true); setError("");
     try {
       const res = await fetch("/api/leads/find", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, country: country.trim(), city: city.trim(), customer: customer.trim() }),
+        body: JSON.stringify({ projectId: project.id, country: country.trim(), city: city.trim(), customer: customer.trim(), more }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) { setError(json?.error ?? "Something went wrong. Try again."); return; }
@@ -191,6 +191,13 @@ export default function CustomersPage() {
         <div className="mt-5">
           <p className="text-[13px] leading-relaxed text-[var(--bm-text2)]">{run.reason}</p>
           {run.stats && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Searches {run.stats.searches ?? 0}, results {run.stats.resultsFound ?? 0}, pages read {run.stats.pagesRead ?? 0}, map listings {run.stats.places ?? 0}, leads suggested {run.stats.proposed ?? 0}.</p>}
+        </div>
+      )}
+
+      {project && groups.length > 0 && !running && (
+        <div className="mt-5">
+          <Button variant="secondary" disabled={busy || !ready} onClick={() => void start(true)} style={{ minHeight: 44 }}>{busy ? "Searching…" : "Find more, skipping pages I already have"}</Button>
+          <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Uses the same place and customer. A search that stopped early can be continued this way.</p>
         </div>
       )}
 

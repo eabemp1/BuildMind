@@ -3,7 +3,8 @@
  * Removes a reflection the founder just saved by mistake, so every part of BuildMind that reads reflections
  * stops counting it. Allowed for 30 minutes after saving. Reopens the linked task and clears today's "reflected"
  * mark so they can write it again.
- * Not reversed: the streak count, the learning log and the anonymous activity feed event.
+ * The streak is put back from the snapshot taken when the reflection was saved. Not reversed: momentum, the learning log
+ * and the anonymous activity feed event.
  */
 import { NextResponse } from "next/server";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
@@ -29,6 +30,17 @@ export async function POST(request: Request) {
   if (row.task_id && (row.outcome === "completed" || row.outcome === "blocked")) {
     await admin.from("tasks").update({ status: "pending", is_completed: false, completed_at: null }).eq("id", row.task_id).eq("user_id", u.userId);
   }
-  await admin.from("user_behavior_state").update({ value: null, updated_at: new Date().toISOString() }).eq("user_id", u.userId).eq("key", "reflect_done_date");
-  return NextResponse.json({ success: true, reopenedTask: Boolean(row.task_id) });
+  // Put the streak back to what it was before this reflection, but only if this is the reflection that moved it.
+  let streakRestored = false;
+  try {
+    const { data: snap } = await admin.from("user_behavior_state").select("value").eq("user_id", u.userId).eq("key", "reflect_undo_snapshot").maybeSingle();
+    const v = snap?.value as { reflectionId?: string; streak?: number; last_checkin_date?: string | null } | null;
+    if (v?.reflectionId === id && typeof v.streak === "number") {
+      const { error: sErr } = await admin.from("founder_context").update({ streak: v.streak, last_checkin_date: v.last_checkin_date ?? null }).eq("user_id", u.userId);
+      streakRestored = !sErr;
+      await admin.from("user_behavior_state").delete().eq("user_id", u.userId).eq("key", "reflect_undo_snapshot");
+    }
+  } catch { /* the streak stays as it is */ }
+  await admin.from("user_behavior_state").delete().eq("user_id", u.userId).eq("key", "reflect_done_date");
+  return NextResponse.json({ success: true, reopenedTask: Boolean(row.task_id), streakRestored });
 }
