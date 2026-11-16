@@ -29,6 +29,7 @@ import type { ObservedSignal } from "@/lib/signalResolve";
 import { SIGNAL_KINDS, isUnproven, parseOutcomeSignal } from "@/lib/outcomeSignal";
 
 import { z } from "zod";
+import { loadTestMode, markTestRun } from "@/lib/testMode";
 
 // Runtime schema — mirrors the TypeScript interface but enforces types at the
 // network boundary. Prevents type confusion attacks on fields passed to AI prompts.
@@ -285,6 +286,7 @@ export async function POST(request: Request) {
     // Set when the reflection could not be written to the database, so the page never says "saved" when it was not.
     let reflectionNotSaved = false;
     let reflectionSaved = false;
+    let savedReflectionId: string | undefined;
 
     let projectContext = "";
     // Hoisted so the AI prompt below (outside the Supabase try/catch) can
@@ -346,6 +348,8 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // Double-submit guard (double tap, retry after a slow response): an identical
         // reflection from this user in the last 60s is the same reflection, not a new one.
         let duplicateReflectionId: string | null = null;
+        // A test run's reflections are marked on the record itself, so nothing downstream mistakes them for real evidence.
+        const storedNote = (await loadTestMode(supabase, verifiedUserId).catch(() => false)) ? markTestRun(note ?? "") : (note ?? "");
         try {
           const { data: dup } = await supabase
             .from("reflections")
@@ -353,7 +357,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
             .eq("user_id", verifiedUserId)
             .eq("outcome", outcome)
             .eq("today_action", todayAction)
-            .eq("note", note ?? "")
+            .eq("note", storedNote)
             .gte("created_at", new Date(Date.now() - 60_000).toISOString())
             .order("created_at", { ascending: false })
             .limit(1)
@@ -365,7 +369,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           project_id:   projectId,
           task_id:      taskId ?? null,
           outcome,
-          note,
+          note: storedNote,
           // Rich separated fields for aggressive personalisation
           what_tried:    what_tried    ?? null,
           what_happened: what_happened ?? null,
@@ -395,6 +399,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
           }
           reflectionRow = ins.data ?? null;
           if (reflectionRow) reflectionSaved = true;
+          if (typeof reflectionRow?.id === "string") savedReflectionId = reflectionRow.id;
           if (!reflectionRow) {
             reflectionNotSaved = true;
             logError("reflect-action/reflection-insert", ins.error ?? new Error("insert returned no row"), { verifiedUserId });
@@ -811,6 +816,7 @@ ${projectContext}`,
           ? { before: momentumBefore, after: momentumAfter }
           : undefined,
         notSaved: reflectionNotSaved || undefined,
+        reflectionId: savedReflectionId,
         confidenceAdjustment,
         autoSignalNote,
         signalTrustNote,

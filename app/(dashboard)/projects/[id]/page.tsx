@@ -585,17 +585,19 @@ export default function ProjectDetailPage() {
 
   // The action Today already chose for this project, so the roadmap card can say which one comes first.
   const [todaysAction, setTodaysAction] = useState<string | null>(null);
+  const [todaysChange, setTodaysChange] = useState<string | null>(null);
   useEffect(() => {
     if (!id) return;
     fetch("/api/user/behavior-state?keys=today_action_cache", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
-        const c = j?.values?.today_action_cache as { date?: string; projectId?: string; data?: { action?: string } } | undefined;
+        const c = j?.values?.today_action_cache as { date?: string; projectId?: string; data?: { action?: string; why?: string } } | undefined;
         const d = new Date();
         const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         setTodaysAction(c && c.date === today && c.projectId === id && c.data?.action ? c.data.action : null);
+        setTodaysChange(c?.data?.why?.match(/^You said [^\n]*?\.(?=\s|$)/)?.[0] ?? null);
       })
-      .catch(() => setTodaysAction(null));
+      .catch(() => { setTodaysAction(null); setTodaysChange(null); });
   }, [id]);
 
   // Last activity feed (real data — activity_log filtered to this project).
@@ -1330,6 +1332,7 @@ export default function ProjectDetailPage() {
               <a href="/today" className="mb-3 block rounded-[10px] border border-[var(--bm-border)] bg-[var(--bm-bg2)] px-3 py-2 no-underline">
                 <span className="block text-[11px] font-semibold text-[var(--bm-text3)]">Do this first: today&apos;s action</span>
                 <span className="block text-[13px] text-[var(--bm-text)]">{todaysAction}</span>
+                {todaysChange && <span className="mt-1 block text-[12px] text-[var(--bm-text3)]">{todaysChange}</span>}
               </a>
             ) : null}
             <p className="text-[12px] font-semibold text-[var(--bm-accent)]">{next ? "Next roadmap task" : allDone ? "All tasks done" : "Get started"}</p>

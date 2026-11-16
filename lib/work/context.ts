@@ -4,10 +4,11 @@
  * knows this is written for where they actually are. It is context for relevance, never a source of new facts.
  */
 import { factsBlock, loadFacts } from "@/lib/projectFacts";
+import { isTestRun } from "@/lib/testMode";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadInferredContext } from "@/lib/prep/context";
 
-export interface NoteRow { outcome: string | null; what_tried?: string | null; what_happened?: string | null; what_learned?: string | null; blocker?: string | null; created_at: string }
+export interface NoteRow { note?: string | null; outcome: string | null; what_tried?: string | null; what_happened?: string | null; what_learned?: string | null; blocker?: string | null; created_at: string }
 
 const DAY = 86_400_000;
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trim()}…` : s);
@@ -18,6 +19,7 @@ const ago = (iso: string, now: number) => { const d = Math.max(0, Math.floor((no
 export function evidenceBlock(rows: NoteRow[], now = Date.now()): string {
   const lines: string[] = [];
   for (const r of rows) {
+    if (isTestRun(r.note)) continue; // made during a test run: not the founder's real record
     const happened = clean(r.what_happened), learned = clean(r.what_learned), blocker = clean(r.blocker);
     if (happened.length < 12 && learned.length < 12 && blocker.length < 12) continue;
     const parts = [
@@ -31,11 +33,24 @@ export function evidenceBlock(rows: NoteRow[], now = Date.now()): string {
   return lines.length ? `THE FOUNDER'S OWN NOTES (real things that happened to the FOUNDER, in their words; they are about the sender, never about the people being written to). Use them so the draft fits where the founder is. Never present them as facts about the reader. Do not invent anything beyond them:\n${lines.join("\n")}` : "";
 }
 
+/** Pure: the competitors the founder chose themselves. Briefs use this list instead of finding their own. */
+export function competitorBlock(rows: Array<{ name: string; url: string }>): string {
+  if (!rows.length) return "";
+  return `COMPETITORS THE FOUNDER CHOSE (their reviewed list; use exactly these, do not add or swap companies, and say so if you would need another):\n${rows.slice(0, 5).map((r) => `- ${clip(clean(r.name), 60)} (${clip(clean(r.url), 120)})`).join("\n")}`;
+}
+
 export async function loadWorkContext(admin: SupabaseClient, userId: string, projectId?: string | null): Promise<string> {
   try {
-    let q = admin.from("reflections").select("outcome,what_tried,what_happened,what_learned,blocker,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(12);
+    let q = admin.from("reflections").select("note,outcome,what_tried,what_happened,what_learned,blocker,created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(12);
     if (projectId) q = q.or(`project_id.eq.${projectId},project_id.is.null`);
     const [{ data }, record] = await Promise.all([q, loadInferredContext(admin, userId)]);
-    return [evidenceBlock((data ?? []) as NoteRow[]), record, factsBlock(await loadFacts(admin, userId, projectId))].filter(Boolean).join("\n\n");
+    let comps = "";
+    try {
+      if (projectId) {
+        const { data: c } = await admin.from("market_watch_competitors").select("name, url").eq("user_id", userId).eq("project_id", projectId).order("created_at", { ascending: true }).limit(5);
+        comps = competitorBlock((c ?? []) as Array<{ name: string; url: string }>);
+      }
+    } catch { /* table may not exist yet */ }
+    return [evidenceBlock((data ?? []) as NoteRow[]), record, factsBlock(await loadFacts(admin, userId, projectId)), comps].filter(Boolean).join("\n\n");
   } catch { return ""; }
 }

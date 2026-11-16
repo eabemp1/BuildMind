@@ -103,6 +103,7 @@
  *   For Qwen3, use reasoning_format="hidden" and validate JSON locally.
  */
 
+import { noteModelCall } from "@/lib/jobCost";
 import Cerebras from "@cerebras/cerebras_cloud_sdk";
 import type { ChatCompletionCreateParams } from "@cerebras/cerebras_cloud_sdk/resources/chat/completions";
 
@@ -1016,6 +1017,7 @@ export async function callModel(
         approxOutTokens: Math.round(text.length / 4),
         estimate: true,
       }));
+      noteModelCall({ provider: provider.label, ms: Date.now() - callStartedAt, inTokens: Math.round(messages.reduce((n, m) => n + m.content.length, 0) / 4), outTokens: Math.round(text.length / 4) });
       return text;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

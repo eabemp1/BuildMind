@@ -55,7 +55,7 @@ import { buildFirstDaysBrief, countBlockEntries } from "@/lib/firstDaysBrief";
 import { saysBuilt } from "@/lib/today/builtClaim";
 import { planTodayMission, parseRecentTasks, missionPromptBlock, assessTaskQuality, missionMeta } from "@/lib/todayMission";
 import { ALLOWED_PLATFORMS, composeConcreteTask, type StructuredAction } from "@/lib/today/compose";
-import { fallbackForKind, lacksContacts, assumesContact } from "@/lib/todayFallbacks";
+import { fallbackForKind, lacksContacts, assumesContact, changedBecause } from "@/lib/todayFallbacks";
 import { firstRunTask, isFirstRun } from "@/lib/todayFirstRun";
 import { loadSavedStrike } from "@/lib/server/savedStrike";
 import { applySwap, isSwapMode, isSwapReason, swapHistoryNote, swapProblems, swapPromptBlock, type SwapRequest } from "@/lib/today/swap";
@@ -882,7 +882,7 @@ ${JSON.stringify(structuredA)}`,
           qualityScore: wasHardFallback ? undefined : finalQuality.score,
           groundedIn: grounding.map((g) => ({ title: g.title, url: g.url })),
           message: finalDraft,  // ← AI-written DRAFT, unless the hard pre-screen rejected it
-          why: curated ? kindFallback.why : decisionReason ? `${rationale} ${decisionReason}` : rationale,
+          why: [changedBecause(swapIssues, lacksContacts(personalisationCtx.recurringBlockers), founderLimits), curated ? kindFallback.why : decisionReason ? `${rationale} ${decisionReason}` : rationale].filter(Boolean).join(" "),
           stage,
           isAI: true,
           // Confidence as a branch, not a hidden number — see the

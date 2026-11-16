@@ -331,3 +331,10 @@ export function fallbackForKind(kind: MissionKind, input: FallbackInput, seed = 
   if (noContact && input.blocker) return aroundBlocker(input.blocker, input.userType);
   return safeFallback(input);
 }
+
+/** One plain line telling the founder why a task changed, using what they said. Empty when nothing applies. */
+export function changedBecause(swapIssues: string[], noContactQuote: string | null, limits?: { minutesPerDay: number | null; monthlyBudget: number | null } | null): string {
+  if (swapIssues.includes("assumes_contact") && noContactQuote) return `You said "${noContactQuote.slice(0, 90)}", so this task does not depend on people you already know.`;
+  if (swapIssues.includes("budget_zero_spend") && limits?.monthlyBudget === 0) return "You said you have no money to spend, so this task costs nothing.";
+  return "";
+}

@@ -205,7 +205,10 @@ export function thinReason(found: number, st: { resultsFound: number; pagesRead:
   return `I read ${st.pagesRead} pages${st.places ? ` and ${st.places} map listings` : ""}, but only ${found} held a real customer I could check. Try a bigger city, or describe your customers by what they sell or where they work.`;
 }
 
-export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false): Promise<LeadRun> {
+/** Filled in after every round, so a caller that has to stop the search early still has what was found so far. */
+export interface LeadSink { leads: Lead[]; stats: LeadRun["stats"] | null; queries: string[] }
+
+export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink): Promise<LeadRun> {
   const i = cleanInput(input);
   const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, modelFailed: 0, followed: 0, modelError: undefined as string | undefined };
   const maxRounds = light ? 1 : 3;
@@ -230,6 +233,7 @@ export async function findLeads(input: Partial<LeadInput>, deadline = Date.now()
     const have = new Set(leads.map((l) => l.url));
     const haveName = new Set(leads.map((l) => l.name.toLowerCase()));
     leads = [...leads, ...found.filter((l) => !have.has(l.url) && !haveName.has(l.name.toLowerCase()))].slice(0, 12);
+    if (sink) { sink.leads = leads; sink.stats = { ...stats } as LeadRun["stats"]; sink.queries = [...allQueries]; }
     if (leads.length >= 8) break;
   }
   const thin = leads.length < 3;

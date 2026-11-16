@@ -9,7 +9,7 @@
  * Returns a single formatted string ready to inject into the system prompt.
  */
 
-import { loadTestMode, testModeRule } from "@/lib/testMode";
+import { isTestRun, loadTestMode, testModeRule } from "@/lib/testMode";
 import { factsBlock, loadFacts } from "@/lib/projectFacts";
 import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { isShownTaskRow } from "@/lib/recommendationRows";
@@ -29,6 +29,18 @@ export interface CoachBehavioralContext {
     hasBlockerInsight:    boolean;
     hasMemoryData:        boolean;
   };
+}
+
+/** What was actually read for this reply, in plain words. Built from records, never written by a model. */
+export function recordsRead(s: CoachBehavioralContext["signals"]): string[] {
+  const out: string[] = [];
+  if (s.hasRecentReflections) out.push("Read your latest reflections");
+  if (s.hasCompletionPattern) out.push("Read which kinds of tasks you finished in the last 30 days");
+  if (s.hasMomentumData) out.push("Read your streak and recent activity");
+  if (s.hasSkipReasons) out.push("Read the reasons you gave for skipping tasks");
+  if (s.hasBlockerInsight) out.push("Read the blocker insight BuildMind showed you");
+  if (s.hasMemoryData) out.push("Read what BuildMind has observed over time");
+  return out.length ? out : ["Found no reflections or task history yet, so this answer rests on your message and project only"];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,7 +106,7 @@ export async function assembleCoachContext(
         const when = relativeDate(r.created_at);
         const conf = r.confidence ? ` (confidence: ${r.confidence}/5)` : "";
         const blocker = r.blocker_category ? ` | blocker: ${r.blocker_category}` : r.blocker ? ` | blocker: ${r.blocker}` : "";
-        lines.push(`[${when}] outcome: ${r.outcome}${conf}${blocker}`);
+        lines.push(`[${when}]${isTestRun(r.note) ? " [test run, not real evidence]" : ""} outcome: ${r.outcome}${conf}${blocker}`);
         if (r.what_tried)    lines.push(`  tried: ${truncate(r.what_tried)}`);
         if (r.what_happened) lines.push(`  happened: ${truncate(r.what_happened)}`);
         if (r.what_learned)  lines.push(`  learned: ${truncate(r.what_learned)}`);
@@ -318,6 +330,16 @@ export async function assembleCoachContext(
     if (block) sections.push(block);
   } catch { /* optional */ }
 
+  // ── 7c. The task Today is showing right now, so Coach and Today say the same thing ──
+  try {
+    const { data: row } = await supabase.from("user_behavior_state").select("value").eq("user_id", userId).eq("key", "today_action_cache").maybeSingle();
+    const c = row?.value as { date?: string; projectId?: string; data?: { action?: string; time?: string } } | null;
+    const today = new Date().toISOString().slice(0, 10);
+    if (c?.date === today && c.data?.action && (!projectId || !c.projectId || c.projectId === projectId)) {
+      sections.push(`TODAY'S TASK (the one shown on the Today screen; refer to this one, do not invent another):\n${truncate(c.data.action, 240)}${c.data.time ? ` (${c.data.time})` : ""}`);
+    }
+  } catch { /* optional */ }
+
   // ── 8. The founder's own limits (time, money) ───────────────────────────
   try {
     const limits = [constraintsRule(await loadConstraints(supabase, userId)), testModeRule(await loadTestMode(supabase, userId))].filter(Boolean).join("\n\n");
@@ -325,6 +347,16 @@ export async function assembleCoachContext(
   } catch { /* optional */ }
 
   // ── Assemble ──────────────────────────────────────────────────────────────
+
+  // A test run makes up its history. Patterns read from it (avoidance, rhythm, memory) are not the founder's.
+  let testRun = false;
+  try { testRun = await loadTestMode(supabase, userId); } catch { /* optional */ }
+  if (testRun) {
+    const inferred = /^(EXECUTION PATTERN|MOMENTUM & RHYTHM|EXPLICIT SKIP REASONS|ACTIVE BLOCKER INSIGHT|EXECUTION SCORE TREND|FOUNDER MEMORY)/;
+    for (let i = sections.length - 1; i >= 0; i--) if (inferred.test(sections[i])) sections.splice(i, 1);
+    signals.hasCompletionPattern = false;
+    sections.push("TEST RUN: patterns such as avoidance, rhythm or habits are not drawn from this account's history because the history is simulated. Do not tell the founder they avoid anything based on it. Work from what they say in this conversation.");
+  }
 
   const contextBlock = sections.length
     ? "\n\n" + sections.join("\n\n")
