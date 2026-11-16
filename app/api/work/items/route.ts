@@ -30,11 +30,17 @@ export async function GET(request: Request) {
     const { data } = await admin.from("work_items").select("*").eq("id", id).eq("user_id", user.userId).maybeSingle();
     return data ? NextResponse.json({ ok: true, item: data }) : NextResponse.json({ ok: false }, { status: 404 });
   }
-  const [{ data, error }, project] = await Promise.all([
+  const [{ data, error }, project, prepRes] = await Promise.all([
     admin.from("work_items").select("id, kind, title, status, updated_at").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(300),
     loadProject(admin, user.userId, null),
+    // Drafts prepared from a task (a post draft from Today, say) live in prepared_work. Listed here so the Library is the whole list.
+    admin.from("prepared_work").select("id, kind, task_text, status, updated_at, title:payload->>title").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(100),
   ]);
-  return NextResponse.json({ ok: true, setup: Boolean(error), items: error ? [] : data ?? [], project: { name: project.name, targetUsers: project.targetUsers, problem: project.problem, description: project.description, stage: project.stage } });
+  const prepRows = prepRes.error ? [] : (prepRes.data ?? []).map((r: { id: string; kind: string; task_text: string | null; status: string | null; updated_at: string; title: string | null }) => ({
+    id: `prep:${r.id}`, kind: r.kind, title: r.title || (r.task_text ?? "Prepared draft").slice(0, 90), status: r.status === "prepared" || !r.status ? "draft" : r.status, updated_at: r.updated_at, source: "prep" as const, task: r.task_text ?? "",
+  }));
+  const merged = [...(error ? [] : data ?? []), ...prepRows].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  return NextResponse.json({ ok: true, setup: Boolean(error), items: merged, project: { name: project.name, targetUsers: project.targetUsers, problem: project.problem, description: project.description, stage: project.stage } });
 }
 
 export async function PATCH(request: Request) {

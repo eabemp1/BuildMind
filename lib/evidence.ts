@@ -88,13 +88,13 @@ export function classifyFinding(f: EvidenceInput): Classified {
 export const TIER_LABEL: Record<EvidenceTier, string> = {
   signal: "Signal",
   supported: "Supported",
-  decision_grade: "Decision-grade",
+  decision_grade: "Strong, not yet reviewed",
 };
 
 export const TIER_MEANING: Record<EvidenceTier, string> = {
   signal: "Interesting, but thin. Treat as a hypothesis to test.",
   supported: "Two or more independent sources agree.",
-  decision_grade: "Multiple sources, counter-evidence considered, strong confidence.",
+  decision_grade: "Multiple sources, counter-evidence considered, strong confidence. BuildMind has not checked it with you, so read it before you act.",
 };
 
 /** How well supported the whole run is, 0–100. Independent of which way it points. */
@@ -222,7 +222,11 @@ export const RUNG_LABEL: Record<Rung, string> = {
 export function evidenceRung(text: string): Rung {
   const t = text.toLowerCase();
   if (/\b(?:renew(?:ed|al)|paid again|repeat (?:customer|purchase|payment)|re-?subscribed|second (?:month|payment|order))\b/.test(t)) return "repeat_payment";
-  if (/\b(?:paid|pre-?paid|bought|purchased|deposit|signed up and paid|paying customer)\b/.test(t) && !/\b(?:would|might|could|if)\s+(?:\w+\s+){0,2}pay/.test(t)) return "paid_pilot";
+  // A price list is not a payment: "paid plans", "starts at $29/month" describe what is for sale, not that anyone bought it.
+  const forSale = t
+    .replace(/\bpaid (?:plans?|tiers?|versions?|features?|ads?|advertising|options?|products?|apps?|tools?|software|subscriptions?|services?|search|promotion|channels?|acquisition)\b/g, " ")
+    .replace(/\b(?:starts?|starting|priced|pricing|plans?|costs?|from)\s+(?:at|from)?\s*(?:[$£€]|ghs|usd)\s?\d[\d.,]*(?:\s?\/\s?\w+|\s?per \w+)?/g, " ");
+  if (/\b(?:paid|pre-?paid|bought|purchased|deposit|signed up and paid|paying customer)\b/.test(forSale) && !/\b(?:would|might|could|if)\s+(?:\w+\s+){0,2}pay/.test(t)) return "paid_pilot";
   if (/\b(?:would pay|willing to pay|i'd pay|i would buy|would switch|would use it|take my money|sign me up|waitlist)\b/.test(t)) return "stated_willingness";
   if (/\b(?:i struggle|i hate|we struggle|frustrat|pain point|wish there was|problem is|no way to|can't find|annoying|waste(?:s)? (?:of )?time)\b/.test(t)) return "direct_pain";
   return "adjacent_clue";

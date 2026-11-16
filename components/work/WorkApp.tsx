@@ -88,7 +88,8 @@ export default function WorkApp() {
       if (x) setView({ name: "existing", kind, task: x.task });
     } else setView({ name: "brief", specId: e.id });
   }
-  async function openItem(id: string) {
+  async function openItem(id: string, row?: LibraryRow) {
+    if (row?.source === "prep" && row.task) { setTab("new"); setView({ name: "existing", kind: row.kind, task: row.task }); return; }
     const r = await api<{ item: WorkItem }>(`/api/work/items?id=${id}`);
     if (!r.ok || !r.data?.item) { setError(r.error ?? "Could not open that."); return; }
     setTab("new"); setView({ name: "result", item: { ...r.data.item, id } });
@@ -137,7 +138,7 @@ export default function WorkApp() {
         <Catalog entries={entries} recommended={recommended} recent={rows.slice(0, 3).map((r) => ({ id: r.id, title: r.title, kind: r.kind }))} onPick={pick} onOpenItem={(id) => void openItem(id)} />
       )}
       {home && tab === "new" && <VoiceSample />}
-      {home && tab === "library" && <Library rows={rows} setup={setup} onOpen={(id) => void openItem(id)} />}
+      {home && tab === "library" && <Library rows={rows} setup={setup} onOpen={(id, row) => void openItem(id, row)} />}
 
       {view.name === "brief" && SPEC_BY_ID[view.specId] && (
         <BriefForm spec={SPEC_BY_ID[view.specId]} project={project} given={view.given} busy={busy} error={error}

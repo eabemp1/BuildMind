@@ -550,7 +550,7 @@ ${negative.length === 0 ? "_None found._" : negative.map(f =>
 
 function findingMd(f: AgentFinding): string {
   const c = classifyFinding(f);
-  const tier = { signal: "Signal", supported: "Supported", decision_grade: "Decision-grade" }[c.tier];
+  const tier = { signal: "Signal", supported: "Supported", decision_grade: "Strong, not yet reviewed" }[c.tier];
   return `**${f.title}** *(${f.signal_type.replace(/_/g, " ")} · ${tier} · ${Math.round(f.confidence * 100)}% confidence · ${c.sourceCount} source${c.sourceCount === 1 ? "" : "s"})*\n${f.evidence}` +
     (f.assumptions ? `\n*Holds if:* ${f.assumptions}` : "") +
     (f.counter_evidence ? `\n*Against:* ${f.counter_evidence}` : "") +

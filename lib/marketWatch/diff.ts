@@ -15,6 +15,19 @@ export interface MarketChange { kind: ChangeKind; text: string; url?: string }
 
 const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+/**
+ * A price as currency + amount + period, so "£35/mo", "£35/month" and "£35 per month" compare equal.
+ * Falls back to the plain text key when it cannot read one.
+ */
+export function priceKey(p: string): string {
+  const m = p.toLowerCase().match(/([£$€]|usd|gbp|eur|ghs|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:(usd|gbp|eur|ghs|ngn))?\s*(?:\/|per|a|each)?\s*(mo(?:nth(?:ly)?)?|m|yr|year(?:ly)?|annual(?:ly)?|week(?:ly)?|wk|day|user|seat)?\b/);
+  if (!m) return key(p);
+  const cur = ({ "£": "gbp", "$": "usd", "€": "eur" } as Record<string, string>)[m[1] ?? ""] ?? m[1] ?? m[3] ?? "";
+  const amount = String(parseFloat(m[2].replace(/,/g, "")));
+  const per = m[4] ? (/^m/.test(m[4]) ? "month" : /^(y|a)/.test(m[4]) ? "year" : /^w/.test(m[4]) ? "week" : m[4]) : "";
+  return `${cur}${amount}/${per}`;
+}
+
 /** Monday of the week containing `d`, as YYYY-MM-DD (UTC). */
 export function weekStartOf(d: Date): string {
   const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -32,7 +45,7 @@ export function diffSnapshots(prev: MarketSnapshot | null, cur: MarketSnapshot):
     if (!p) { changes.push({ kind: "new_competitor", text: `${c.name} is new in your competitor list.`, url: c.url }); continue; }
     if (p.ok && !c.ok) changes.push({ kind: "page_down", text: `${c.name}'s page did not load this week. It may be a short outage.`, url: c.url });
     else if (!p.ok && c.ok) changes.push({ kind: "page_back", text: `${c.name}'s page loads again.`, url: c.url });
-    if (p.ok && c.ok && p.price && c.price && key(p.price) !== key(c.price)) changes.push({ kind: "price", text: `${c.name} now shows ${c.price} on its page. Last week it showed ${p.price}.`, url: c.url });
+    if (p.ok && c.ok && p.price && c.price && priceKey(p.price) !== priceKey(c.price)) changes.push({ kind: "price", text: `${c.name} now shows ${c.price} on its page. Last week it showed ${p.price}.`, url: c.url });
     if (p.ok && c.ok && p.title && c.title && key(p.title) !== key(c.title)) changes.push({ kind: "headline", text: `${c.name} changed its page title to "${c.title.slice(0, 90)}".`, url: c.url });
   }
   const seen = new Set(prev.threads.map((t) => t.url));

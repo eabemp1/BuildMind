@@ -93,6 +93,7 @@ type Skill = {
 
 type MirrorResponse = {
   ok: boolean;
+  gate?: { gated: boolean; realCount: number; needed: number; reason: "test_run" | "too_few" | null };
   data?: {
     mirror: {
       beliefs: Belief[];
@@ -178,6 +179,7 @@ export default function FounderMirrorPage() {
   const reportUnlocked = planLoading || userPlan !== "free";
   const [data, setData] = useState<MirrorResponse["data"] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [gate, setGate] = useState<MirrorResponse["gate"] | null>(null);
   const [correction, setCorrection] = useState("");
   const [evidenceText, setEvidenceText] = useState("");
   const [correctionNote, setCorrectionNote] = useState<string | null>(null);
@@ -199,6 +201,7 @@ export default function FounderMirrorPage() {
     try {
       const response = await fetch("/api/founder-context/mirror", { cache: "no-store" });
       const json: MirrorResponse = await response.json();
+      setGate(json.gate?.gated ? json.gate : null);
       return json.data ?? null;
     } catch {
       return null;
@@ -308,6 +311,20 @@ export default function FounderMirrorPage() {
             Reading observed behavior
           </p>
         </div>
+      </div>
+    );
+  }
+
+  if (gate?.gated) {
+    return (
+      <div className="mx-auto max-w-[1120px] px-3 py-7 sm:px-6">
+        <EmptyState
+          icon={Eye}
+          title="Founder Mirror is still calibrating"
+          body={gate.reason === "test_run"
+            ? "This account is marked as a test run, so there is no real behaviour to describe yet. The Mirror switches on after 7 real reflections."
+            : `The Mirror describes how you work only after ${gate.needed} reflections. You have ${gate.realCount}. Until then it says nothing about your strengths, habits or avoidance.`}
+        />
       </div>
     );
   }

@@ -8,6 +8,8 @@ import { buildStartupRelationshipGraph, traceRelationshipChain } from "@/lib/fou
 import { getFounderIntelligenceAccuracy } from "@/lib/learningLoop";
 import { loadBehavioralContext } from "@/lib/behavioralLayers";
 import { reconcileFounderModels } from "@/lib/reconcileFounderModels";
+import { mirrorGate } from "@/lib/mirrorGate";
+import { loadTestMode } from "@/lib/testMode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,6 +72,13 @@ export async function GET(request: Request) {
     tasks: settledData(tasksRes as QueryResult<Array<Record<string, any>>>, []),
     reflections: settledData(reflectionsRes as QueryResult<Array<Record<string, any>>>, []),
   };
+
+  // Same bar as Progress: fewer than 7 real reflections (or a test run) means no claims about how this founder behaves.
+  let allNotesQ = admin.from("reflections").select("note").eq("user_id", user.id).limit(1000);
+  if (projectId) allNotesQ = allNotesQ.eq("project_id", projectId);
+  const [{ data: noteRows }, testMode] = await Promise.all([allNotesQ, loadTestMode(admin, user.id)]);
+  const gate = mirrorGate((noteRows ?? []).map((r: { note: string | null }) => r.note), testMode);
+  if (gate.gated) return NextResponse.json({ ok: true, gate });
 
   const state = await loadFounderIntelligence(admin, user.id, projectId || undefined, preloaded);
   const accuracy = await getFounderIntelligenceAccuracy(admin, user.id);
