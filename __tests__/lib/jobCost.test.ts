@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { noteModelCall, setJobUser, withJobCost, emptyTally, tallyRow } from "@/lib/jobCost";
+import { noteModelCall, emptyTally, tallyRow } from "@/lib/jobCost";
+import { setJobUser, withJobCost } from "@/lib/server/jobCost";
 
 describe("jobCost", () => {
   it("adds calls made inside a job and ignores calls outside", async () => {

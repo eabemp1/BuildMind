@@ -12,7 +12,7 @@
  * Plan gate: builder only.
  */
 
-import { withJobCost, setJobUser } from "@/lib/jobCost";
+import { withJobCost, setJobUser } from "@/lib/server/jobCost";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";
 import { gateFeature } from "@/lib/server/featureGate";
 import { NextRequest, NextResponse } from "next/server";

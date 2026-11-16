@@ -2,7 +2,7 @@
  * POST /api/work/generate — prepare one piece of work from the Work catalogue.
  * Body: { kind, inputs, projectId?, regenerateId? }. Returns the saved item. Nothing is sent or posted.
  */
-import { withJobCost, setJobUser } from "@/lib/jobCost";
+import { withJobCost, setJobUser } from "@/lib/server/jobCost";
 import { NextResponse } from "next/server";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { gateAIUsage } from "@/app/api/ai/_usageGate";

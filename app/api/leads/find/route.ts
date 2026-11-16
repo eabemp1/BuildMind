@@ -2,7 +2,7 @@
  * POST /api/leads/find — run the Lead Finder for one founder and save what it found.
  * Builder plan; counts against the AI allowance like every agent run.
  */
-import { withJobCost, setJobUser } from "@/lib/jobCost";
+import { withJobCost, setJobUser } from "@/lib/server/jobCost";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { refundAIUsage } from "@/lib/server/aiUsageRefund";
