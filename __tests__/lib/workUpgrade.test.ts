@@ -49,7 +49,7 @@ describe("draftProblems", () => {
     expect(draftProblems(r, spec).join(" ")).toMatch(/opens with the founder/);
   });
   it("passes a good set", () => {
-    const r = make(["Kwame, how many bookings did you lose last week to no-shows? A voice note is fine.", "Hi, a friend said you run the busiest shop in Osu. What happens when someone just doesn't show up?"]);
+    const r = make(["Kwame, how many bookings did you lose last week to no-shows? A voice note is fine.", "Hi, I found your shop in Osu on Google Maps. What happens when someone just doesn't show up?"]);
     expect(draftProblems(r, spec)).toEqual([]);
   });
   it("the revise prompt lists the problems and forbids new facts", () => {

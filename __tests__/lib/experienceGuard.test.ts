@@ -87,3 +87,27 @@ describe("survey Other boxes", () => {
     expect(r?.needs.some((n) => /Fill \d+ gap/.test(n.label))).toBe(false);
   });
 });
+
+describe("retest phrases (fresh drafts that invented a story)", () => {
+  const bad = [
+    "I was chatting with a friend who runs a bike shop and he said the queue is brutal.",
+    "My cousin, who owns a garage, told me about missed bookings.",
+    "A shop owner I know told me he loses customers every week.",
+    "I recently spoke with a shop owner about this.",
+    "I noticed a shop owner struggling with their queue last week.",
+    "The other day I was in a bike shop and saw the line.",
+    "Someone I know who runs a repair shop complained about no-shows.",
+    "We met a customer who explained how they book.",
+  ];
+  for (const t of bad) it(`flags: ${t.slice(0, 50)}`, () => expect(inventedExperience(t, "").length).toBeGreaterThan(0));
+  it("allows the same story when the founder wrote it", () => {
+    expect(inventedExperience("I was chatting with a friend who runs a bike shop", "I was chatting with a friend who runs a bike shop")).toEqual([]);
+  });
+  const fine = [
+    "Do you run a bike shop? I would like to ask two questions.",
+    "How do you handle missed appointments today?",
+    "If you have talked to a customer lately, what did they say?",
+    "Reply if you want a short demo.",
+  ];
+  for (const t of fine) it(`leaves questions alone: ${t.slice(0, 40)}`, () => expect(inventedExperience(t, "")).toEqual([]));
+});
