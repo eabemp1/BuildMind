@@ -71,6 +71,16 @@ export function classifyFinding(f: EvidenceInput): Classified {
     return { tier: "signal", sourceCount, caveat: caveats.join(" ") };
   }
   const counter = (f.counter_evidence ?? "").trim().length > 10;
+  // Willingness to pay is shown only by someone saying or doing it. Free alternatives, or pain, do not show it.
+  if (f.signal_type === "willingness_to_pay") {
+    const rung = RUNGS.indexOf(evidenceRung(f.evidence ?? ""));
+    if (rung < RUNGS.indexOf("stated_willingness")) {
+      caveats.unshift(/\bfree\b|\bno cost\b|open[- ]source/i.test(f.evidence ?? "")
+        ? "This shows free alternatives exist, not that anyone would pay."
+        : "No one here says they would pay, so this is not evidence of willingness to pay.");
+      return { tier: "signal", sourceCount, caveat: caveats.join(" ") };
+    }
+  }
   const strong = f.confidence >= 0.65 && counter && f.signal_type !== "pivot_candidate";
   return { tier: strong ? "decision_grade" : "supported", sourceCount, caveat: caveats.length ? caveats.join(" ") : null };
 }
@@ -234,7 +244,9 @@ export function dedupeFindings<T extends { title: string; confidence: number; so
   const kept: Array<{ f: T; w: Set<string> }> = [];
   for (const f of list) {
     const w = words(f.title);
-    const i = kept.findIndex((k) => same(k.w, w));
+    const figs = (t: string) => new Set((t.match(/\d+(?:\.\d+)?\s?%/g) ?? []).map((x) => x.replace(/\s/g, "")));
+    const ft = figs(`${f.title} ${(f as { evidence?: string }).evidence ?? ""}`);
+    const i = kept.findIndex((k) => same(k.w, w) || (ft.size > 0 && [...figs(`${k.f.title} ${(k.f as { evidence?: string }).evidence ?? ""}`)].some((x) => ft.has(x)) && new Set([...words(`${f.title} ${(f as { evidence?: string }).evidence ?? ""}`)].filter((x) => words(`${k.f.title} ${(k.f as { evidence?: string }).evidence ?? ""}`).has(x))).size >= 2));
     if (i < 0) { kept.push({ f, w }); continue; }
     const better = (f.sources?.length ?? 0) > (kept[i].f.sources?.length ?? 0) || ((f.sources?.length ?? 0) === (kept[i].f.sources?.length ?? 0) && f.confidence > kept[i].f.confidence);
     if (better) kept[i] = { f, w };

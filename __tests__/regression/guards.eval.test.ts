@@ -59,3 +59,14 @@ describe("dedupeFindings", () => {
   it("keeps distinct findings", () => expect(dedupeFindings([{ title: "Long queues hurt shops", confidence: 0.5 }, { title: "Competitor pricing unclear", confidence: 0.5 }])).toHaveLength(2));
   it("merges repeats", () => expect(dedupeFindings([{ title: "Queues hurt bike shops badly", confidence: 0.5 }, { title: "Queues hurt bike shops badly today", confidence: 0.6 }])).toHaveLength(1));
 });
+
+import { withinBudget } from "@/lib/constraints";
+describe("withinBudget", () => {
+  const plan = ["Interview 8 shop owners in person", "Run a £5 Facebook ad for shop owners", "Post one question in a forum"];
+  it("drops spending and keeps the length when the budget is zero", () => {
+    const out = withinBudget(plan, true, ["Visit one shop and watch the queue"]);
+    expect(out).toHaveLength(3);
+    expect(out.join(" ")).not.toMatch(/Facebook ad/);
+  });
+  it("leaves the list alone with a budget or no limit", () => expect(withinBudget(plan, false)).toEqual(plan));
+});

@@ -105,6 +105,8 @@ export interface StartupContext {
   founderDaysInactive?: number;
   /** The founder's own stated limits (lib/constraints.ts constraintsRule), when set. */
   founderLimits?: string;
+  /** The founder said they have no money to spend: plans must not include anything that costs money. */
+  zeroBudget?: boolean;
   // true when this analysis is running against the founder's own tracked
   // project (projectId present); false when it's a fresh/outside idea
   // pasted into the idea-only flow. Agents should scope how much weight
@@ -225,6 +227,8 @@ export function founderContextLine(ctx: StartupContext): string {
     ctx.founderLimits
       ? ctx.founderLimits
       : "Money and time are limits you were not given unless the idea text states them. Do not recommend paid advertising or any spend, or a daily time commitment, unless stated; prefer free, small actions and say a cost depends on the founder's budget.",
+    "Use one number for how many people to talk to, and use it every time it comes up in this report. Do not give a different count in another section.",
+    "Do not assume a product, users or customers exist unless the idea text says so. If it does not say, treat the product as not built and say that is an assumption.",
     "Do not describe the founder as avoiding, lazy, afraid or unmotivated. Behaviour can only be described from the events listed above, and a worry the founder named is a worry, not avoidance.",
   ];
   if (simulated) {
