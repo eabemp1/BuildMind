@@ -20,10 +20,18 @@ export function testModeRule(on: boolean): string {
 export async function loadTestMode(admin: SupabaseClient, userId: string): Promise<boolean> {
   try {
     const { data } = await admin.from("user_behavior_state").select("value").eq("user_id", userId).eq("key", TEST_MODE_KEY).maybeSingle();
-    return parseTestMode(data?.value).on;
+    if (parseTestMode(data?.value).on) return true;
+    // Not switched on, but the founder's own project text may say it is made up.
+    const { data: ps } = await admin.from("projects").select("name,description,problem").eq("user_id", userId).order("created_at", { ascending: false }).limit(3);
+    return Boolean(ps?.some((p) => projectSaysSimulated(`${p.name ?? ""} ${p.description ?? ""} ${p.problem ?? ""}`)));
   } catch {
     return false;
   }
+}
+
+/** Explicit words only. A product that is about testing or QA is not a test account. */
+export function projectSaysSimulated(text: string): boolean {
+  return /\b(?:fictional|fictitious|simulated|synthetic|dummy (?:data|project|account)|this is (?:a|an) (?:test|simulation|qa)\b|test (?:account|project|run)\b|not a real (?:business|startup|product|company))/i.test(text);
 }
 
 /** True when generated task text repeats test-scenario wording instead of giving the founder real work. */
