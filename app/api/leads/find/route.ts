@@ -19,6 +19,7 @@ export const maxDuration = 300;
 
 const Body = z.object({
   projectId: z.string().uuid().nullable().optional(),
+  more: z.boolean().optional(),
   country: z.string().min(2).max(60),
   city: z.string().max(60).optional().default(""),
   customer: z.string().min(3).max(160),
@@ -87,11 +88,17 @@ async function postInner(req: NextRequest) {
       // with a clear message instead of staying "running" until the page gives up on it.
       const HARD_LIMIT_MS = (maxDuration - 20) * 1000;
       let timer: ReturnType<typeof setTimeout> | undefined;
+      // "Find more": skip every page already saved for this project, so the search goes somewhere new.
+      let known: string[] = [];
+      if (body.more === true) {
+        const { data: have } = await admin.from("lead_results").select("lead_url").eq("user_id", auth.userId).eq("project_id", body.projectId ?? "").limit(400);
+        known = (have ?? []).map((r) => String((r as { lead_url?: string }).lead_url ?? "")).filter(Boolean);
+      }
       const sink: LeadSink = { leads: [], stats: null, queries: [] };
       let run: Awaited<ReturnType<typeof findLeads>>;
       try {
         run = await Promise.race([
-          findLeads(input, Date.now() + HARD_LIMIT_MS - 30_000, admit.light, sink),
+          findLeads(input, Date.now() + HARD_LIMIT_MS - 30_000, admit.light, sink, known),
           new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The search took too long and was stopped. Try again.")), HARD_LIMIT_MS); }),
         ]);
       } catch (e) {

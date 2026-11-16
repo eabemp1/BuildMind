@@ -455,6 +455,13 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // (lib/streak.ts), so a founder can't keep a streak by reporting that
         // nothing happened.
         if (outcome !== "blocked" && outcome !== "abandoned") {
+          // Remember the streak as it was, so "Undo" can put it back (see /api/reflections/undo).
+          try {
+            const { data: pre } = await supabase.from("founder_context").select("streak,last_checkin_date").eq("user_id", verifiedUserId).maybeSingle();
+            if (savedReflectionId && pre) {
+              await supabase.from("user_behavior_state").upsert({ user_id: verifiedUserId, key: "reflect_undo_snapshot", value: { reflectionId: savedReflectionId, streak: pre.streak ?? 0, last_checkin_date: pre.last_checkin_date ?? null }, updated_at: new Date().toISOString() }, { onConflict: "user_id,key" });
+            }
+          } catch { /* undo then leaves the streak as it is */ }
           const { data: streakRpcData, error: streakErr } = await supabase.rpc("update_streak_atomic", {
             p_user_id: verifiedUserId,
             p_project_id: projectId ?? null,
