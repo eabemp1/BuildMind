@@ -9,6 +9,7 @@
  * Returns a single formatted string ready to inject into the system prompt.
  */
 
+import { experimentContext } from "@/lib/experimentsServer";
 import { isTestRun, loadTestMode, testModeRule } from "@/lib/testMode";
 import { factsBlock, loadFacts } from "@/lib/projectFacts";
 import { constraintsRule, loadConstraints } from "@/lib/constraints";
@@ -328,6 +329,12 @@ export async function assembleCoachContext(
   try {
     const block = factsBlock(await loadFacts(supabase, userId, projectId));
     if (block) sections.push(block);
+  } catch { /* optional */ }
+
+  // ── 7d. The experiment the founder is running, and only what they confirmed happened ──
+  try {
+    const exp = await experimentContext(supabase, userId, projectId);
+    if (exp) sections.push(exp);
   } catch { /* optional */ }
 
   // ── 7c. The task Today is showing right now, so Coach and Today say the same thing ──
