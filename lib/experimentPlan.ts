@@ -4,7 +4,7 @@
  * what the founder confirmed. Only the next few actions are spelled out, and they change when a result comes in.
  * A quiet stretch is a valid state: nothing is invented to fill it.
  */
-import { tally, nextMove, type Experiment, type ExperimentEvent } from "@/lib/experiments";
+import { tally, nextMove, effectiveEvents, type Experiment, type ExperimentEvent } from "@/lib/experiments";
 
 export const WINDOW_DAYS = 30;
 export interface Milestone { id: string; label: string; done: boolean; at: string | null }
@@ -22,7 +22,7 @@ const days = (from: string, now: number) => Math.max(0, Math.floor((now - Date.p
 /** The time the Nth distinct person reached a state (any of `kinds`). */
 function nthAt(events: ExperimentEvent[], kinds: string[], n: number): string | null {
   const first = new Map<string, string>();
-  for (const e of [...events].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+  for (const e of effectiveEvents(events).sort((a, b) => a.created_at.localeCompare(b.created_at))) {
     if (e.who && kinds.includes(e.kind) && !first.has(e.who.toLowerCase())) first.set(e.who.toLowerCase(), e.created_at);
   }
   const at = [...first.values()];
@@ -33,11 +33,11 @@ export function rollingPlan(exp: Experiment, now: number = Date.now()): RollingP
   const evs = exp.events ?? [];
   const t = tally(evs);
   const day = Math.min(WINDOW_DAYS, days(exp.created_at, now) + 1);
-  const touched = ["sent", "replied", "no_reply", "would_pay", "paid"];
+  const touched = ["sent", "replied", "no_reply", "conversation", "declined", "pilot_agreed", "would_pay", "paid", "delivered"];
   const milestones: Milestone[] = [
     { id: "ask5", label: "Ask five people", at: nthAt(evs, touched, 5), done: false },
-    { id: "reply1", label: "Get a first reply", at: nthAt(evs, ["replied", "would_pay", "paid"], 1), done: false },
-    { id: "talk3", label: "Talk with three people who replied", at: nthAt(evs, ["replied", "would_pay", "paid"], 3), done: false },
+    { id: "reply1", label: "Get a first reply", at: nthAt(evs, ["replied", "conversation", "pilot_agreed", "would_pay", "paid", "delivered"], 1), done: false },
+    { id: "talk3", label: "Talk with three people who replied", at: nthAt(evs, ["replied", "conversation", "pilot_agreed", "would_pay", "paid", "delivered"], 3), done: false },
     { id: "willing", label: "Someone says they would pay", at: nthAt(evs, ["would_pay", "paid"], 1), done: false },
     { id: "paid", label: "Someone pays for a small pilot", at: nthAt(evs, ["paid"], 1), done: false },
   ].map((m) => ({ ...m, done: m.at !== null }));
