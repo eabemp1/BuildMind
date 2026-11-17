@@ -23,7 +23,7 @@ vi.mock("../../lib/supabase/admin", () => ({
   })),
 }));
 
-import { getEffectivePlan } from "../../lib/server/plan";
+import { getEffectivePlan, getFreshPlanForUser } from "../../lib/server/plan";
 
 describe("getEffectivePlan", () => {
   beforeEach(() => {
@@ -33,6 +33,24 @@ describe("getEffectivePlan", () => {
     mockFounderContext.mockResolvedValue({ data: null, error: null });
     mockSubscription.mockResolvedValue({ data: null, error: null });
     mockGetUserById.mockResolvedValue({ data: { user: { user_metadata: { plan: "free" } } }, error: null });
+  });
+
+  it.each([{ plan: "builder" }, { billing_status: "active" }])(
+    "does not grant paid access from editable metadata %j without a subscription",
+    async (user_metadata) => {
+      const user = { id: "user-123", user_metadata };
+      mockGetUserById.mockResolvedValue({ data: { user }, error: null });
+      await expect(getEffectivePlan(user.id)).resolves.toBe("free");
+      await expect(getFreshPlanForUser(user)).resolves.toBe("free");
+    },
+  );
+
+  it("fails closed when subscription lookup fails even with builder metadata", async () => {
+    mockSubscription.mockResolvedValue({ data: null, error: { message: "unavailable" } });
+    mockGetUserById.mockResolvedValue({
+      data: { user: { id: "user-123", user_metadata: { plan: "builder" } } }, error: null,
+    });
+    await expect(getEffectivePlan("user-123")).resolves.toBe("free");
   });
 
   it("grants builder during an active trial", async () => {
