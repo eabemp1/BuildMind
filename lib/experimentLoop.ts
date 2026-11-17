@@ -125,13 +125,14 @@ export function knowledge(stage: LoopStage, evidence: Evidence[], offer: Offer |
 export interface LoopNext { headline: string; why: string; because: string[] }
 
 /** One next step, with the records it rests on. Outcome rules come from nextMove; this adds what must exist before them. */
-export function loopNext(stage: LoopStage, evidence: Evidence[], offer: Offer | null, events: ExperimentEvent[]): LoopNext {
+export function loopNext(stage: LoopStage, evidence: Evidence[], offer: Offer | null, events: ExperimentEvent[], milestoneTitle?: string | null): LoopNext {
   const ev = eligibleEvidence(evidence);
   const t = tally(events);
   const real = effectiveEvents(events).length;
   const solid = ev.filter((e) => e.status !== "assumption").length;
   const because: string[] = [
     `Stage: ${LOOP_STAGE_LABEL[stage]}`,
+    ...(milestoneTitle ? [`Milestone: ${milestoneTitle}`] : []),
     `${solid} evidence ${solid === 1 ? "entry" : "entries"} you reported or observed, ${ev.length - solid} assumption${ev.length - solid === 1 ? "" : "s"}`,
     offer ? `Offer version ${offer.version}` : "No offer yet",
     `${real} confirmed outcome${real === 1 ? "" : "s"} recorded`,

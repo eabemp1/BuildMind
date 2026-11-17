@@ -163,3 +163,17 @@ describe("what Coach sees", () => {
     expect(experimentBlock(e)).toMatch(/Paid: 0/);
   });
 });
+
+describe("milestone link", () => {
+  it("names the milestone in the reasoning and in what Coach sees, and never claims it completes one", () => {
+    expect(loopNext("validation", [evd()], null, [], "Talk to 5 shop owners").because.join(" ")).toMatch(/Milestone: Talk to 5 shop owners/);
+    const e = { id: "x", goal: "g", hypothesis: "", audience: "", plan: "", status: "running", decision: null, decision_note: "", created_at: "1", updated_at: "1", events: [], milestone: { id: "m", title: "Talk to 5 shop owners", stage: "Validation", done: false } } as Experiment;
+    const b = experimentBlock(e);
+    expect(b).toMatch(/Part of milestone: "Talk to 5 shop owners" \(not completed\)/);
+    expect(b).toMatch(/Only the founder completes a milestone/);
+  });
+  it("no link, no line", () => {
+    const e = { id: "x", goal: "g", hypothesis: "", audience: "", plan: "", status: "running", decision: null, decision_note: "", created_at: "1", updated_at: "1", events: [] } as Experiment;
+    expect(experimentBlock(e)).not.toMatch(/milestone/i);
+  });
+});

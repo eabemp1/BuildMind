@@ -8,14 +8,14 @@ import { Button } from "@/components/ui/button";
 import { rollingPlan } from "@/lib/experimentPlan";
 import {
   DECISIONS, DECISION_LABEL, STATE_LABEL, effectiveEvents, receipts, tally,
-  type Decision, type EventKind, type Experiment,
+  type Decision, type EventKind, type Experiment, type MilestoneRef,
 } from "@/lib/experiments";
 import {
   EVIDENCE_KINDS, EVIDENCE_KIND_LABEL, EVIDENCE_STATUS_LABEL, LOOP_STAGES, LOOP_STAGE_LABEL, OFFER_GUIDE,
   isStale, knowledge, loopNext, type Evidence, type LoopStage, type Offer, type OfferFields,
 } from "@/lib/experimentLoop";
 
-type LoopExperiment = Experiment & { evidence?: Evidence[]; offers?: Offer[]; loop_stage?: LoopStage; project_stage?: string | null };
+type LoopExperiment = Experiment & { evidence?: Evidence[]; offers?: Offer[]; loop_stage?: LoopStage; project_stage?: string | null; milestones?: MilestoneRef[] };
 /** A retry key: pressing Save twice, or a retried request, records the thing once. */
 const newKey = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `k${Date.now()}${Math.random().toString(36).slice(2, 10)}`);
 const post = (url: string, body: unknown, method = "POST") => fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((x) => x.json()).catch(() => ({ ok: false, error: "Could not reach the server." }));
@@ -60,7 +60,7 @@ export default function ExperimentsPage() {
     <div className="flex flex-col gap-6 pb-10">
       <PageHeader title="Experiments" subtitle="One question you are testing with real people, and what actually happened. Only what you confirm is counted." />
       {err && <p role="alert" className="text-[13px] text-[var(--bm-red)]">{err}</p>}
-      {setup && <Card className="p-4 text-[13px]">Experiments need one database step before they can save. Run <code>20261116000000_customer_experiments.sql</code> in Supabase, then reload. For evidence, offers and corrections, also run <code>20261117000000_experiment_loop.sql</code>.</Card>}
+      {setup && <Card className="p-4 text-[13px]">Experiments need one database step before they can save. Run <code>20261116000000_customer_experiments.sql</code> in Supabase, then reload. For evidence, offers and corrections, also run <code>20261117000000_experiment_loop.sql</code>, and for milestone links <code>20261117010000_experiment_milestone.sql</code>.</Card>}
 
       <Card className="flex flex-col gap-3 p-4">
         <h2 className="text-[15px] font-semibold">Start an experiment</h2>
@@ -87,7 +87,7 @@ function ExperimentCard({ exp, onChange }: { exp: LoopExperiment; onChange: () =
   const evs = exp.events ?? [];
   const stage: LoopStage = exp.loop_stage ?? "idea";
   const evidence = exp.evidence ?? []; const offers = exp.offers ?? []; const offer = offers.length ? offers[offers.length - 1] : null;
-  const t = tally(evs); const move = loopNext(stage, evidence, offer, evs); const rows = receipts(evs); const plan = rollingPlan(exp);
+  const t = tally(evs); const move = loopNext(stage, evidence, offer, evs, exp.milestone?.title); const rows = receipts(evs); const plan = rollingPlan(exp);
   const know = knowledge(stage, evidence, offer, evs); const guide = OFFER_GUIDE[stage];
   const counted = new Set(effectiveEvents(evs).map((e) => e.id));
   const replacedIds = new Set(evs.map((e) => e.corrects_id).filter(Boolean));
@@ -139,6 +139,10 @@ function ExperimentCard({ exp, onChange }: { exp: LoopExperiment; onChange: () =
       offerKey.current = newKey(); onChange();
     } finally { setBusy(false); }
   }
+  async function setMilestone(v: string) {
+    const r = await post("/api/experiments", { id: exp.id, milestone_id: v || null }, "PATCH");
+    if (!r.ok) setErr(r.error ?? "Could not save that."); else onChange();
+  }
   async function setStage(v: string) {
     const r = await post("/api/experiments", { id: exp.id, stage: v }, "PATCH");
     if (!r.ok) setErr(r.error ?? "Could not save that."); else onChange();
@@ -169,6 +173,16 @@ function ExperimentCard({ exp, onChange }: { exp: LoopExperiment; onChange: () =
           </select>
         </label>
       </div>
+
+      {(exp.milestones?.length ?? 0) > 0 && (
+        <label className="flex flex-col gap-1 text-[12.5px]">Part of milestone
+          <select style={field} value={exp.milestone_id ?? ""} onChange={(e) => void setMilestone(e.target.value)} aria-label="Milestone">
+            <option value="">Not linked to a milestone</option>
+            {exp.milestones!.map((m) => <option key={m.id} value={m.id}>{m.title}{m.done ? " (completed)" : ""}</option>)}
+          </select>
+          <span className="text-[12px] text-[var(--bm-text3)]">{exp.milestone ? `${exp.milestone.done ? "This milestone is completed." : "This milestone is not completed."} ` : ""}Results here never complete a milestone. You do that yourself on the project page.</span>
+        </label>
+      )}
 
       <div className="rounded-[10px] border border-[var(--bm-border)] p-3">
         <p className="text-[13px] font-semibold">{move.headline}</p>

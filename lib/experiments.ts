@@ -11,10 +11,12 @@ export type Decision = (typeof DECISIONS)[number];
 
 /** corrects_id: this entry replaces an earlier one, which stays in the history. synthetic: made during a test run, never counted. */
 export interface ExperimentEvent { id?: string; who: string; kind: EventKind; detail: string; created_at: string; corrects_id?: string | null; synthetic?: boolean }
+/** The project milestone an experiment belongs to. Read-only here: nothing in an experiment completes a milestone. */
+export interface MilestoneRef { id: string; title: string; stage: string | null; done: boolean }
 export interface Experiment {
   id: string; goal: string; hypothesis: string; audience: string; plan: string;
   status: "running" | "decided" | "archived"; decision: Decision | null; decision_note: string;
-  created_at: string; updated_at: string; events?: ExperimentEvent[]; stage?: string | null;
+  created_at: string; updated_at: string; events?: ExperimentEvent[]; stage?: string | null; project_id?: string | null; milestone_id?: string | null; milestone?: MilestoneRef | null;
 }
 
 const clip = (v: unknown, n: number) => (typeof v === "string" ? v.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim().slice(0, n) : "");
@@ -113,6 +115,7 @@ export function experimentBlock(e: Experiment | null): string {
     `Goal: ${e.goal}`,
     e.hypothesis ? `Hypothesis: ${e.hypothesis}` : "",
     e.audience ? `Audience: ${e.audience}` : "",
+    e.milestone ? `Part of milestone: "${e.milestone.title}" (${e.milestone.done ? "completed" : "not completed"}). Only the founder completes a milestone; this experiment does not.` : "",
     `People recorded: ${t.people}. Prepared: ${t.prepared}. Sent: ${t.sent}. Replied: ${t.replied}. Conversations: ${t.conversations}. Said no: ${t.declined}. Agreed to a pilot (unpaid): ${t.pilotAgreed}. Said they would pay: ${t.wouldPay}. Paid: ${t.paid}. Delivered: ${t.delivered}. No reply yet: ${t.noReply}. Blocked: ${t.blocked}.`,
     e.status === "decided" && e.decision ? `Decision: ${DECISION_LABEL[e.decision]}${e.decision_note ? ` (${e.decision_note})` : ""}` : "",
     "No reply is not the same as no interest. Do not claim anyone was contacted unless it says Sent.",
