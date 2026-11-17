@@ -18,7 +18,7 @@ import { AGENT_IDENTITY, type AgentType } from "@/lib/agentWorkforce";
 import { RadialGauge } from "@/components/charts";
 import { OpenBesideButton } from "@/components/layout/OpenBesideButton";
 import { computeCrewStats, computeEvidenceMix, caseNumber } from "@/lib/agentWorkspace";
-import { classifyFinding, runReadiness, frameVerdict, evidenceStrength, scoreExplainer, TIER_LABEL, TIER_MEANING } from "@/lib/evidence";
+import { classifyFinding, runReadiness, frameVerdict, evidenceStrength, scoreExplainer, TIER_MEANING, tierLabel as tierName, kindLabel, verdictIncomplete } from "@/lib/evidence";
 import { AGENT_THEME, AgentsHeader, AgentEmblem, CaseArchive, CrewCard, Dossier, EvidenceLedger, OpsConsole, VERDICT_THEME, VerdictStamp } from "@/components/agents/parts";
 
 interface AgentRun {
@@ -68,17 +68,18 @@ const lbl: React.CSSProperties = { fontFamily: MONO, fontSize: 9.5, letterSpacin
 // ── Finding card ──
 
 function FindingCard({
-  finding, onConfirm,
+  finding, onConfirm, runIncomplete = false,
 }: {
   finding: AgentFinding;
+  runIncomplete?: boolean;
   onConfirm: (id: string, confirmed: boolean, opts?: { verifiedByFounder?: boolean }) => void;
 }) {
   const [acting, setActing] = useState(false);
   const [checked, setChecked] = useState(false);
   const cls = useMemo(() => classifyFinding(finding), [finding]);
   const isOpp = finding.signal_type === "pivot_candidate";
-  const tierLabel = isOpp ? "Opportunity to test" : TIER_LABEL[cls.tier];
-  const tierColor = cls.tier === "decision_grade" ? "var(--bm-green)" : cls.tier === "supported" ? "var(--bm-accent)" : "var(--bm-amber)";
+  const tierLabel = isOpp ? "Opportunity to test" : tierName(cls.tier, runIncomplete);
+  const tierColor = cls.tier === "decision_grade" && !runIncomplete ? "var(--bm-green)" : cls.tier === "supported" ? "var(--bm-accent)" : "var(--bm-amber)";
 
   const handle = (confirmed: boolean) => {
     setActing(true);
@@ -144,7 +145,7 @@ function FindingCard({
           </div>
           <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: 9, color: "var(--bm-text4)", fontFamily: "'DM Mono', monospace" }}>
-              {finding.signal_type.replace(/_/g, " ")}
+              {kindLabel(finding.signal_type, cls.tier)}
             </span>
             <span title={TIER_MEANING[cls.tier]} style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: tierColor, border: `1px solid ${tierColor}`, borderRadius: 4, padding: "0 5px" }}>
               {tierLabel}
@@ -222,7 +223,8 @@ function CaseFile({ run, pendingCount, findings }: { run: AgentRun; pendingCount
   const v = VERDICT_THEME[run.verdict ?? "inconclusive"];
   const tops = [run.top_finding_1, run.top_finding_2, run.top_finding_3].filter(Boolean) as string[];
   const mix = useMemo(() => computeEvidenceMix(findings), [findings]);
-  const readiness = useMemo(() => runReadiness(findings), [findings]);
+  const incomplete = useMemo(() => verdictIncomplete(run), [run]);
+  const readiness = useMemo(() => runReadiness(findings, { incomplete }), [findings, incomplete]);
   const strength = useMemo(() => evidenceStrength(findings), [findings]);
   const framed = useMemo(() => frameVerdict(run.verdict ?? "inconclusive", readiness), [run.verdict, readiness]);
   return (
@@ -511,7 +513,7 @@ export default function AgentsPage() {
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 24 }}>
             <div style={{ ...lbl, marginBottom: 12 }}>Findings · review each signal</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {findings.map((f) => <FindingCard key={f.id} finding={f} onConfirm={handleConfirm} />)}
+              {findings.map((f) => <FindingCard key={f.id} finding={f} onConfirm={handleConfirm} runIncomplete={activeRun ? verdictIncomplete(activeRun) : false} />)}
             </div>
           </motion.div>
         )}

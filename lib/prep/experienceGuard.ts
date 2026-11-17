@@ -65,4 +65,24 @@ export function inventedTerms(text: string, allowed = ""): string[] {
   return unsupported(text, allowed, TERMS);
 }
 
+const PRIVACY_TOPIC = /\b(?:privacy|private|confidential\w*|personal (?:data|information)|data|gdpr|ccpa|encrypt\w*|secur(?:e|ely|ity)|stor(?:e|es|ed|age)|retain\w*|retention|delet\w+|erase\w*|sell|sells|sold|share|shares|shared|sharing|third[- ]part\w+|cookies?|consent|opt[- ]out|anonymi[sz]\w*)\b/i;
+const PRIVACY_MARKER = "[add: your privacy answer]";
+
+/**
+ * Any sentence that makes a statement about privacy, data handling or security is the founder's promise to make.
+ * Questions, [add: ...] markers and topics the founder's own text already covers are left alone.
+ */
+export function scrubPrivacyPromises(text: string, allowed = ""): string {
+  if (!text) return text;
+  const known = allowed.toLowerCase();
+  return text.replace(/[^.!?\n]+(?:[.!?]+|$)/g, (sentence) => {
+    const t = sentence.trim();
+    if (!t || t.includes("[add:") || t.endsWith("?")) return sentence;
+    const hits = t.toLowerCase().match(new RegExp(PRIVACY_TOPIC.source, "gi")) ?? [];
+    if (!hits.length || hits.every((h) => known.includes(h))) return sentence;
+    const lead = sentence.match(/^\s*/)?.[0] ?? "";
+    return `${lead}${PRIVACY_MARKER}`;
+  });
+}
+
 export const NO_INVENTED_EXPERIENCE = "Never invent the founder's own experience, customers, conversations, quotes, mistakes or results, and never state a price, policy, feature or privacy promise the founder has not given. Where one is needed, leave an [add: ...] marker for the founder to fill in, or write it as a question.";

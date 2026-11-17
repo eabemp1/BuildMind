@@ -33,6 +33,7 @@
  *   const pipeline = await runAgentPipeline({ idea, stage, competitors, ... });
  */
 
+import { INTERVIEW_TARGET } from "@/lib/interviewTarget";
 import { reportsNothingReal } from "@/lib/realness";
 import { callModelJSON, hasAIProvider } from "@/lib/ai-providers";
 import { buildFounderStylePromptBlock, type FounderStyleProfile } from "@/lib/founderStyle";
@@ -658,7 +659,7 @@ Identify the real risks. Be specific and brutal. If founder behavioral context s
         title: "Unvalidated demand",
         description: "No confirmed evidence that target users will pay for this solution",
         severity: "high",
-        mitigation: "Run 5 user interviews with willingness-to-pay questions this week",
+        mitigation: `Run ${INTERVIEW_TARGET} user interviews with willingness-to-pay questions this week`,
       },
       {
         title: "Execution bandwidth",

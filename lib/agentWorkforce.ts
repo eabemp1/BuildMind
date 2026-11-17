@@ -22,10 +22,12 @@
 
 import { callModelJSON } from "@/lib/ai-providers";
 import { echoesTestScenario } from "@/lib/testMode";
+import { keepFitting } from "@/lib/competitorFit";
 import { webSearch, discussionSearch, newsSearch, competitorSearch, type SearchResult } from "@/lib/search";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emitPulse } from "@/lib/pulse";
-import { classifyFinding, runReadiness, frameVerdict, claimStatus, dedupeFindings, topRung, RUNG_LABEL, type ClaimStatus } from "@/lib/evidence";
+import { constraintsRule, freeIfZeroBudget, loadConstraints, type Constraints } from "@/lib/constraints";
+import { classifyFinding, tierLabel, kindLabel, runReadiness, frameVerdict, claimStatus, dedupeFindings, topRung, RUNG_LABEL, type ClaimStatus } from "@/lib/evidence";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,8 @@ export interface AgentRunInput {
   maxIterations:  number;
   /** One specific claim to check. When set, searches and findings are about this claim only. */
   focus?:         string;
+  /** The founder's own limits (time, money). Loaded by the runner. */
+  limits?:        Constraints | null;
 }
 
 export interface AgentRunResult {
@@ -273,7 +277,8 @@ async function fetchSearchContext(input: AgentRunInput, iteration: number): Prom
       ]);
       const compResults = comps.status === "fulfilled" ? comps.value.results : [];
       const newsResults = news.status  === "fulfilled" ? news.value.results  : [];
-      const all = [...compResults, ...newsResults].slice(0, 14);
+      const fit = { name: startupTitle, description: `${input.problem} ${input.targetUsers ?? ""}` };
+      const all = keepFitting(fit, [...compResults, ...newsResults]).slice(0, 14);
       if (all.length === 0) return "";
       return formatSearchContext(all, comps.status === "fulfilled" ? comps.value.provider : "none");
     }
@@ -320,7 +325,8 @@ async function runIteration(
   const focusBlock = input.focus
     ? `\nFOCUS: check ONLY this claim from the founder's stress test: "${input.focus}"\nEvery finding must bear directly on it, supporting or contradicting. If the search results do not settle it, say so and keep confidence low.\n`
     : "";
-  const userPrompt = `Startup: ${input.startupTitle}
+  const limitsBlock = constraintsRule(input.limits ?? null);
+  const userPrompt = `${limitsBlock ? `${limitsBlock}\n\n` : ""}Startup: ${input.startupTitle}
 Problem: ${input.problem}
 Summary: ${input.startupSummary}
 Target users: ${input.targetUsers}
@@ -552,16 +558,12 @@ ${negative.length === 0 ? "_None found._" : negative.map(f =>
 *${identity.name} synthesises from patterns and reasoning. Validate the strongest signals through direct user conversations.*`;
 }
 
-/** When the verdict step failed, nothing was weighed against the findings, so the strongest label is withheld. */
-export function tierLabel(tier: "signal" | "supported" | "decision_grade", verdictFailed = false): string {
-  if (tier === "decision_grade" && verdictFailed) return "Supported (verdict not completed)";
-  return { signal: "Signal", supported: "Supported", decision_grade: "Strong, not yet reviewed" }[tier];
-}
+export { tierLabel };
 
 function findingMd(f: AgentFinding, verdictFailed = false): string {
   const c = classifyFinding(f);
   const tier = tierLabel(c.tier, verdictFailed);
-  const kind = f.signal_type === "demand_confirmed" && c.tier === "signal" ? "demand claimed, not confirmed" : f.signal_type.replace(/_/g, " ");
+  const kind = kindLabel(f.signal_type, c.tier);
   return `**${f.title}** *(${kind} · ${tier} · ${Math.round(f.confidence * 100)}% confidence · ${c.sourceCount} source${c.sourceCount === 1 ? "" : "s"})*\n${f.evidence}` +
     (f.assumptions ? `\n*Holds if:* ${f.assumptions}` : "") +
     (f.counter_evidence ? `\n*Against:* ${f.counter_evidence}` : "") +
@@ -617,8 +619,10 @@ async function persistFindings(admin: Admin, input: AgentRunInput, iteration: nu
 
 // ── Main orchestrator ─────────────────────────────────────────────────────────
 
-export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunResult> {
+export async function runAgentWorkforce(rawInput: AgentRunInput): Promise<AgentRunResult> {
   const admin = createAdminClient();
+  // The founder's own limits bind every agent: a zero money budget means no ads or paid tools in any recommended step.
+  const input: AgentRunInput = { ...rawInput, limits: await loadConstraints(admin, rawInput.userId) };
   const identity = AGENT_IDENTITY[input.agentType];
   const stageFocus = getStageFocus(input.stage);
   const allFindings: AgentFinding[] = [];
@@ -639,7 +643,7 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
       updated_at:     new Date().toISOString(),
     }).eq("id", input.runId);
 
-    const iterFindings = await runIteration(input, i, allFindings);
+    const iterFindings = (await runIteration(input, i, allFindings)).map((f) => ({ ...f, action_hint: freeIfZeroBudget(f.action_hint, input.limits ?? null) }));
     allFindings.splice(0, allFindings.length, ...dedupeFindings([...allFindings, ...iterFindings]));
 
     // Persist findings to isolation layer
@@ -674,7 +678,8 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
     if (i >= 2 && score >= stageFocus.proceedThreshold + 15) break;
   }
 
-  const verdictResult = await buildVerdict(input, allFindings);
+  const verdictRaw = await buildVerdict(input, allFindings);
+  const verdictResult = { ...verdictRaw, recommendedAction: freeIfZeroBudget(verdictRaw.recommendedAction, input.limits ?? null) };
 
   const reportMarkdown = buildReport(
     input,

@@ -7,9 +7,21 @@ import { callModelJSON } from "@/lib/ai-providers";
 import { unsupportedNumbers } from "@/lib/distribution/engine";
 import { loadProject } from "@/lib/prep/engine";
 import type { WorkSpec } from "@/lib/work/registry";
-import { inventedExperience, inventedTerms } from "@/lib/prep/experienceGuard";
+import { inventedExperience, inventedTerms, scrubPrivacyPromises } from "@/lib/prep/experienceGuard";
 import { buildPrompt, draftProblems, normalizeWork, readRefined, refinePrompt, revisePrompt, type WorkResult } from "@/lib/work/shape";
 import { loadWorkContext } from "@/lib/work/context";
+
+/** Privacy and data-handling statements are the founder's to make: replaced with a marker unless they wrote them. */
+export function scrubWork(w: WorkResult | null, allowed: string): WorkResult | null {
+  if (!w) return w;
+  const fix = (t: string) => scrubPrivacyPromises(t, allowed);
+  return {
+    ...w,
+    summary: fix(w.summary),
+    variants: w.variants.map((v) => ({ ...v, text: fix(v.text) })),
+    sections: w.sections.map((x) => ({ ...x, body: x.body ? fix(x.body) : x.body, bullets: x.bullets?.map(fix) })),
+  };
+}
 
 export async function generateWork(
   admin: SupabaseClient,
@@ -25,7 +37,7 @@ export async function generateWork(
     raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], opts);
   } catch { return null; }
   const allowed = [...Object.values(input.values), project.name, project.description, project.problem, project.targetUsers].join(" ");
-  const first = normalizeWork(raw, input.spec, allowed, unsupportedNumbers);
+  const first = scrubWork(normalizeWork(raw, input.spec, allowed, unsupportedNumbers), allowed);
   if (!first) return null;
 
   // One fix-up pass when the draft has problems a second look can fix. If it fails, the first draft stands.
@@ -33,7 +45,7 @@ export async function generateWork(
   if (problems.length > 0 && Date.now() < deadlineMs - 12_000) {
     try {
       const fixedRaw = await callModelJSON<unknown>([{ role: "user", content: revisePrompt(JSON.stringify(raw), input.spec, problems) }], { ...opts, feature: "work_revise" });
-      const fixed = normalizeWork(fixedRaw, input.spec, allowed, unsupportedNumbers);
+      const fixed = scrubWork(normalizeWork(fixedRaw, input.spec, allowed, unsupportedNumbers), allowed);
       if (fixed && draftProblems(fixed, input.spec, allowed, project.stage).length < problems.length) return fixed;
     } catch { /* keep the first draft */ }
   }
