@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { planFromUserMetadata, TRIAL_DURATION_DAYS } from "@/lib/plan";
-import { getEffectivePlan, getFreshAuthUser } from "@/lib/server/plan";
+import { type Plan, TRIAL_DURATION_DAYS } from "@/lib/plan";
+import { getEffectivePlan } from "@/lib/server/plan";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { claimTrial, spentTrialRow } from "@/lib/server/trialGuard";
 
@@ -20,14 +20,14 @@ export async function GET() {
     return NextResponse.json({ ok: false, authenticated: false, plan: "free" });
   }
 
-  const freshUser = await getFreshAuthUser(user);
-  const basePlan = planFromUserMetadata(freshUser);
+  let basePlan: Plan = "free";
   // A paying customer is not on a trial, even if the original trial window is still open (same rule as getPlanContext).
   let payingSubscriber = false;
   let subscriptionStatus: string | null = null;
   let subscriptionProvider: string | null = null;
   let subscriptionPeriodEnd: string | null = null;
   let subscriptionCanceledAt: string | null = null;
+  let subscriptionUpdatedAt: string | null = null;
 
   // ── Free Trial: read from founder_context (server-authoritative) ──────────
   // If the auth callback missed trial creation, bootstrap it here so a new
@@ -39,30 +39,38 @@ export async function GET() {
 
   try {
     const admin = createAdminClient();
-    const { data: sub } = await admin
+    const { data: sub, error: subError } = await admin
       .from("subscriptions")
-      .select("plan, status, provider, current_period_end, canceled_at")
+      .select("plan, status, provider, current_period_end, grace_period_ends_at, canceled_at, updated_at")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    payingSubscriber = sub?.plan === "builder" && ["active", "grace"].includes(String(sub?.status ?? "").toLowerCase());
+    if (subError) throw subError; // A read failure must not look like trial eligibility.
+    const status = String(sub?.status ?? "").toLowerCase();
+    const periodValid = !sub?.current_period_end || new Date(sub.current_period_end).getTime() > Date.now();
+    const graceValid = sub?.grace_period_ends_at ? new Date(sub.grace_period_ends_at).getTime() > Date.now() : false;
+    payingSubscriber = sub?.plan === "builder" && (
+      (status === "active" && periodValid) || (status === "grace" && graceValid)
+    );
+    basePlan = payingSubscriber ? "builder" : "free";
+    subscriptionUpdatedAt = typeof sub?.updated_at === "string" ? sub.updated_at : null;
     subscriptionStatus = typeof sub?.status === "string" ? sub.status : null;
     subscriptionProvider = typeof sub?.provider === "string" ? sub.provider : null;
     subscriptionPeriodEnd = typeof sub?.current_period_end === "string" ? sub.current_period_end : null;
 
     subscriptionCanceledAt = typeof sub?.canceled_at === "string" ? sub.canceled_at : null;
 
-    const { data: ctx } = await admin
+    const { data: ctx, error: ctxError } = await admin
       .from("founder_context")
       .select("trial_started_at, trial_ends_at, trial_expired")
       .eq("user_id", user.id)
       .maybeSingle();
 
+    if (ctxError) throw ctxError;
     let trialRow = ctx;
-    const metaEndsAt = freshUser.user_metadata?.trial_ends_at;
     // One trial per real person (verified, non-disposable, normalised email).
     // Only evaluated when this request would otherwise bootstrap a trial.
-    const wouldBootstrap = !trialRow?.trial_started_at && !metaEndsAt && basePlan !== "builder" && !freshUser.user_metadata?.billing_status;
+    const wouldBootstrap = !trialRow?.trial_started_at && !trialRow?.trial_ends_at && !trialRow?.trial_expired && basePlan !== "builder" && (!subscriptionStatus || subscriptionStatus === "free");
     const trialDecision = wouldBootstrap ? await claimTrial(admin, user) : null;
     if (trialDecision?.action === "deny") {
       await admin.from("founder_context").upsert(spentTrialRow(user.id), { onConflict: "user_id", ignoreDuplicates: true });
@@ -110,37 +118,10 @@ export async function GET() {
         trialRow = existing;
       }
 
-      await admin.auth.admin.updateUserById(user.id, {
-        user_metadata: {
-          ...((freshUser.user_metadata as Record<string, unknown>) ?? {}),
-          trial_started_at: trialStartedAt,
-          trial_ends_at: trialEndsAtNew,
-        },
-      });
-    } else if (!trialRow?.trial_ends_at && metaEndsAt) {
-      const trialStartedAt = freshUser.user_metadata?.trial_started_at ?? new Date(
-        new Date(metaEndsAt).getTime() - TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
-      ).toISOString();
-
-      await admin
-        .from("founder_context")
-        .update({
-          trial_started_at: trialStartedAt,
-          trial_ends_at: metaEndsAt,
-          trial_expired: false,
-        })
-        .eq("user_id", user.id)
-        .is("trial_ends_at", null);
-
-      trialRow = {
-        trial_started_at: trialStartedAt,
-        trial_ends_at: metaEndsAt,
-        trial_expired: false,
-      };
     }
 
-    const effectiveEndsAt = trialRow?.trial_ends_at ?? metaEndsAt;
-    if (effectiveEndsAt) {
+    const effectiveEndsAt = trialRow?.trial_ends_at;
+    if (effectiveEndsAt && Number.isFinite(new Date(effectiveEndsAt).getTime())) {
       trialEndsAt = effectiveEndsAt;
       const now = new Date();
       const ends = new Date(effectiveEndsAt);
@@ -188,15 +169,15 @@ export async function GET() {
       endsAt: trialEndsAt,
       durationDays: TRIAL_DURATION_DAYS,
     },
-    billingProvider: subscriptionProvider ?? freshUser.user_metadata?.billing_provider ?? null,
-    billingStatus: subscriptionStatus ?? freshUser.user_metadata?.billing_status ?? null,
-    currentPeriodEnd: subscriptionPeriodEnd ?? freshUser.user_metadata?.billing_current_period_end ?? null,
+    billingProvider: subscriptionProvider,
+    billingStatus: subscriptionStatus,
+    currentPeriodEnd: subscriptionPeriodEnd,
     // True when the customer has cancelled but is still inside the period they paid for.
     cancelAtPeriodEnd:
       effectivePlan === "builder" &&
       Boolean(subscriptionCanceledAt) &&
       Boolean(subscriptionPeriodEnd) &&
       new Date(subscriptionPeriodEnd as string).getTime() > Date.now(),
-    updatedAt: freshUser.user_metadata?.billing_updated_at ?? null,
+    updatedAt: subscriptionUpdatedAt,
   });
 }

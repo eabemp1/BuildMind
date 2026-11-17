@@ -1,25 +1,6 @@
-/**
- * lib/server/plan.ts — Server-side plan resolution
- *
- * AUDIT FIX C1 + H2:
- *   getEffectivePlan() replaces getFreshPlanForUser() as the single source of
- *   truth for plan resolution in all plan guard and AI usage paths.
- *
- *   Trial users have plan = "free" in their JWT metadata because they haven't
- *   paid. getFreshPlanForUser() reads only user_metadata, so every trial user
- *   was treated as free — blocking them from all builder-gated routes and
- *   applying the 3-call/day free limit instead of unlimited builder limits.
- *
- *   getEffectivePlan() checks founder_context.trial_ends_at first. If the
- *   trial is still active it returns "builder" regardless of JWT metadata.
- *   It falls back to getFreshPlanForUser() for non-trial users.
- *
- * USAGE:
- *   Replace every getFreshPlanForUser() call in planGuard.ts, _planCheck.ts,
- *   and _utils.ts with getEffectivePlan(userId).
- */
+/** Server-side entitlements use protected database records, never user_metadata. */
 
-import { planFromUserMetadata, type Plan } from "@/lib/plan";
+import { type Plan } from "@/lib/plan";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type UserLike = {
@@ -45,8 +26,7 @@ export async function getFreshAuthUser<T extends UserLike>(user: T): Promise<T> 
 }
 
 export async function getFreshPlanForUser(user: UserLike): Promise<Plan> {
-  const freshUser = await getFreshAuthUser(user);
-  return planFromUserMetadata(freshUser);
+  return user?.id ? getEffectivePlan(user.id) : "free";
 }
 
 /**
@@ -56,8 +36,7 @@ export async function getFreshPlanForUser(user: UserLike): Promise<Plan> {
  * Read order:
  *   1. founder_context.trial_ends_at  — active trial → "builder" immediately
  *   2. subscriptions.plan + status    — paid subscription canonical record
- *   3. user_metadata (JWT cache)      — fallback if subscriptions row absent
- *      (e.g. legacy accounts that predated the subscriptions table)
+ *   3. No canonical subscription/trial — free; metadata cannot grant access
  *
  * This eliminates the desync window where a webhook failure left
  * user_metadata on "free" while subscriptions had "builder".
@@ -124,9 +103,9 @@ export async function getPlanContext(userId: string): Promise<{ plan: Plan; tria
       return { plan: "builder", trial: false };
     }
 
-    // 3. Legacy fallback — user_metadata JWT cache (pre-subscriptions accounts)
-    const { data: authUser } = await admin.auth.admin.getUserById(userId);
-    return { plan: planFromUserMetadata(authUser?.user), trial: false };
+    // user_metadata is user-editable, including when freshly fetched by admin.
+    // Backfill legitimate legacy subscriptions from verified payment records.
+    return { plan: "free", trial: false };
   } catch {
     return { plan: "free", trial: false }; // fail closed
   }
