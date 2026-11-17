@@ -81,8 +81,21 @@ export function classifyFinding(f: EvidenceInput): Classified {
       return { tier: "signal", sourceCount, caveat: caveats.join(" ") };
     }
   }
+  // "Demand confirmed" needs a buyer or user saying or doing something. A vendor's marketing, or a finding that itself admits
+  // there is no survey or search-volume data, shows that sellers claim demand, not that it exists.
+  if (f.signal_type === "demand_confirmed" && demandUnbacked(f)) {
+    caveats.unshift("Not confirmed: this rests on vendor marketing or admits missing survey or search-volume data. It shows sellers claim demand, not that buyers want this.");
+    return { tier: "signal", sourceCount, caveat: caveats.join(" ") };
+  }
   const strong = f.confidence >= 0.65 && counter && f.signal_type !== "pivot_candidate";
   return { tier: strong ? "decision_grade" : "supported", sourceCount, caveat: caveats.length ? caveats.join(" ") : null };
+}
+
+const DEMAND_ADMITS_GAP = /\b(?:no|without|lack(?:s|ing)?|absence of|not (?:any|enough))\s+(?:\w+\s+){0,2}(?:survey|search[- ]volume|direct (?:evidence|data|signal)|buyer|customer (?:data|evidence))/i;
+const VENDOR_VOICE = /\b(?:vendor|marketing|case stud(?:y|ies)|testimonial|press release|according to (?:the |its |their )?(?:company|vendor|website)|(?:their|its|the company'?s) (?:own )?(?:site|website|claims?))\b/i;
+export function demandUnbacked(f: Pick<EvidenceInput, "evidence" | "counter_evidence">): boolean {
+  const t = `${f.evidence ?? ""} ${f.counter_evidence ?? ""}`;
+  return DEMAND_ADMITS_GAP.test(t) || VENDOR_VOICE.test(t);
 }
 
 export const TIER_LABEL: Record<EvidenceTier, string> = {
