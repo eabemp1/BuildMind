@@ -35,6 +35,11 @@ const TERMS: RegExp[] = [
   /\b(?:24\/7|round-the-clock)\s+support\b/gi,
   /\bfree (?:trial|plan|tier|forever|setup|onboarding)\b/gi,
   /\b(?:we|your data)\s+(?:never|will never|do not|don't)\s+(?:sell|share|store|track)\b|\b(?:gdpr|hipaa|soc ?2)[- ]?(?:compliant|certified)?\b|\bend-to-end encrypt\w*\b|\bbank-?level (?:security|encryption)\b/gi,
+  // Where, how long or how safely data is kept: a promise the founder has to make, never the model.
+  /\b(?:we|our (?:app|team|system|platform)|the (?:app|platform|system)|BuildMind)\s+(?:store|stores|keep|keeps|retain|retains|delete|deletes|encrypt|encrypts|back up|backs up|host|hosts)\b[^.?!\n]{0,60}\b(?:data|information|records|bookings|messages|details|files)\b/gi,
+  /\b(?:data|information|records|bookings|messages|details|files)\s+(?:is|are|will be|gets|get|stay|stays|remain|remains)\s+(?:securely\s+)?(?:stored|hosted|kept|saved|encrypted|backed up|retained|deleted|processed|private|confidential)\b[^.?!\n]{0,50}/gi,
+  /\b(?:securely|safely|encrypted)\s+(?:stored|hosted|kept|saved)\b[^.?!\n]{0,40}|\b(?:stored|hosted|kept|saved)\s+(?:in|on|within|at)\s+(?:the\s+)?(?:eu|uk|us|europe|ghana|africa|the cloud|aws|google cloud|azure|our servers|secure servers|your (?:device|phone|computer))\b/gi,
+  /\b(?:data\s+(?:retention|residency)|(?:servers?|data ?cent(?:er|re)s?)\s+(?:are\s+)?(?:located\s+)?in)\b[^.?!\n]{0,40}/gi,
   /\b(?:pay|payments?)\s+(?:by|with|via)\s+(?:card|cash|stripe|paypal|mobile money|apple pay)\b/gi,
 ];
 

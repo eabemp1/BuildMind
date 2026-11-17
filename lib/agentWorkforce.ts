@@ -398,6 +398,8 @@ async function buildVerdict(
   topRisk: string;
   recommendedAction: string;
   confidencePct: number;
+  /** True when the model could not write the verdict. Findings then carry no "strong" label: nothing was reviewed. */
+  failed?: boolean;
 }> {
   const stageFocus = getStageFocus(input.stage);
   const positive = allFindings.filter(f => f.positive);
@@ -480,6 +482,7 @@ Return:
       topRisk:           "Could not complete verdict — AI provider unavailable.",
       recommendedAction: "Retry when AI provider is available.",
       confidencePct:     Math.round(avgConf * 100),
+      failed:            true,
     };
   }
 }
@@ -495,6 +498,7 @@ function buildReport(
   topRisk: string,
   recommendedAction: string,
   confidencePct: number,
+  verdictFailed = false,
 ): string {
   const identity = AGENT_IDENTITY[input.agentType];
   const date = new Date().toLocaleDateString("en-US", {
@@ -535,12 +539,12 @@ function buildReport(
 
 ### Positive (${positive.length})
 ${positive.length === 0 ? "_None found._" : positive.map(f =>
-  findingMd(f)
+  findingMd(f, verdictFailed)
 ).join("\n\n")}
 
 ### Negative (${negative.length})
 ${negative.length === 0 ? "_None found._" : negative.map(f =>
-  findingMd(f)
+  findingMd(f, verdictFailed)
 ).join("\n\n")}
 
 ---
@@ -548,10 +552,17 @@ ${negative.length === 0 ? "_None found._" : negative.map(f =>
 *${identity.name} synthesises from patterns and reasoning. Validate the strongest signals through direct user conversations.*`;
 }
 
-function findingMd(f: AgentFinding): string {
+/** When the verdict step failed, nothing was weighed against the findings, so the strongest label is withheld. */
+export function tierLabel(tier: "signal" | "supported" | "decision_grade", verdictFailed = false): string {
+  if (tier === "decision_grade" && verdictFailed) return "Supported (verdict not completed)";
+  return { signal: "Signal", supported: "Supported", decision_grade: "Strong, not yet reviewed" }[tier];
+}
+
+function findingMd(f: AgentFinding, verdictFailed = false): string {
   const c = classifyFinding(f);
-  const tier = { signal: "Signal", supported: "Supported", decision_grade: "Strong, not yet reviewed" }[c.tier];
-  return `**${f.title}** *(${f.signal_type.replace(/_/g, " ")} · ${tier} · ${Math.round(f.confidence * 100)}% confidence · ${c.sourceCount} source${c.sourceCount === 1 ? "" : "s"})*\n${f.evidence}` +
+  const tier = tierLabel(c.tier, verdictFailed);
+  const kind = f.signal_type === "demand_confirmed" && c.tier === "signal" ? "demand claimed, not confirmed" : f.signal_type.replace(/_/g, " ");
+  return `**${f.title}** *(${kind} · ${tier} · ${Math.round(f.confidence * 100)}% confidence · ${c.sourceCount} source${c.sourceCount === 1 ? "" : "s"})*\n${f.evidence}` +
     (f.assumptions ? `\n*Holds if:* ${f.assumptions}` : "") +
     (f.counter_evidence ? `\n*Against:* ${f.counter_evidence}` : "") +
     (c.caveat ? `\n*Caveat:* ${c.caveat}` : "") +
@@ -673,7 +684,13 @@ export async function runAgentWorkforce(input: AgentRunInput): Promise<AgentRunR
     verdictResult.topRisk,
     verdictResult.recommendedAction,
     verdictResult.confidencePct,
+    verdictResult.failed === true,
   );
+
+  // A verdict that never completed leaves nothing "strong": downgrade what was stored per finding too.
+  if (verdictResult.failed) {
+    try { await admin.from("agent_findings").update({ evidence_tier: "supported" }).eq("run_id", input.runId).eq("evidence_tier", "decision_grade"); } catch { /* best effort */ }
+  }
 
   // Write final state
   await admin.from("agent_runs").update({

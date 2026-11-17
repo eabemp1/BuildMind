@@ -23,6 +23,7 @@ import { buildTodayActionCacheFromBriefing, upsertTodayActionCache } from "@/lib
 import { checkExecutionDebtSuppression } from "@/lib/executionDebtGate";
 import { recordActionShown } from "@/lib/learning";
 import { loadTestMode } from "@/lib/testMode";
+import { guardBriefing } from "@/lib/briefingTestGuard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -207,14 +208,14 @@ export async function GET(req: Request) {
           cognitiveLoad: ctx.cognitive_load ?? "fresh",
           yesterdayTask: lastReflection?.today_action ?? undefined,
           completedYesterday: lastReflection?.outcome === "completed",
-          reflectionHistory: reflectionHistory || undefined,
+          reflectionHistory: testRun ? undefined : reflectionHistory || undefined,
           // Gap detection fields
           userId: ctx.user_id,
           projectWeaknesses: activeProject?.validation_weaknesses ?? [],
           projectStage: activeProject?.startup_stage ?? ctx.current_stage ?? "Idea",
         };
 
-        const briefing = await generateMorningBriefing(reflexionCtx);
+        const briefing = guardBriefing(await generateMorningBriefing(reflexionCtx), testRun);
         await admin.from("morning_briefings").insert({
           user_id: ctx.user_id,
           ...briefing,
@@ -356,7 +357,9 @@ export async function GET(req: Request) {
       const newer = row?.updated_at && new Date(row.updated_at).getTime() > new Date(existing.created_at).getTime();
       if (newer && cached?.data?.action && cached.data.action !== existing.action) action = cached.data.action;
     } catch { /* keep the briefing's own action */ }
-    return NextResponse.json({ ok: true, data: { ...existing, action, gaps: cachedGaps }, cached: true });
+    // A briefing written before test mode was switched on may still read a pattern out of made-up history.
+    const testRunCached = await loadTestMode(admin, user.id);
+    return NextResponse.json({ ok: true, data: guardBriefing({ ...existing, action, gaps: cachedGaps }, testRunCached), cached: true });
   }
 
   // Generate a fresh one
@@ -431,7 +434,7 @@ export async function GET(req: Request) {
     cognitiveLoad: ctx?.cognitive_load ?? "fresh",
     yesterdayTask: lastReflection?.today_action ?? undefined,
     completedYesterday: lastReflection?.outcome === "completed",
-    reflectionHistory: reflectionHistory || undefined,
+    reflectionHistory: testRun ? undefined : reflectionHistory || undefined,
     // Gap detection fields
     userId: user.id,
     projectWeaknesses: activeProject?.validation_weaknesses ?? [],
@@ -443,7 +446,7 @@ export async function GET(req: Request) {
   if (blocked) return blocked;
 
   try {
-    const briefing = await generateMorningBriefing(reflexionCtx);
+    const briefing = guardBriefing(await generateMorningBriefing(reflexionCtx), testRun);
     if (briefing.action) {
       recordActionShown({
         userId: user.id,
