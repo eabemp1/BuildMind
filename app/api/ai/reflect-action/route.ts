@@ -283,9 +283,9 @@ export async function POST(request: Request) {
 
     // Use the server-verified userId from auth, fall back to body for backwards compat
     const verifiedUserId = routeUser.userId ?? userId;
-    // Set when the reflection could not be written to the database, so the page never says "saved" when it was not.
-    let reflectionNotSaved = false;
+    // Positive confirmation only: the page must not say "saved" without a persisted row ID.
     let reflectionSaved = false;
+    let reflectionCreated = false;
     let savedReflectionId: string | undefined;
 
     let projectContext = "";
@@ -351,7 +351,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
         // A test run's reflections are marked on the record itself, so nothing downstream mistakes them for real evidence.
         const storedNote = (await loadTestMode(supabase, verifiedUserId).catch(() => false)) ? markTestRun(note ?? "") : (note ?? "");
         try {
-          const { data: dup } = await supabase
+          const { data: dup, error: duplicateError } = await supabase
             .from("reflections")
             .select("id")
             .eq("user_id", verifiedUserId)
@@ -362,7 +362,7 @@ Target users: ${project.target_users ?? "Not specified"}`;
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
-          if (dup?.id) duplicateReflectionId = String(dup.id);
+          if (!duplicateError && typeof dup?.id === "string" && dup.id) duplicateReflectionId = dup.id;
         } catch { /* best effort: fall through to a normal insert */ }
         const reflectionRowValues = {
           user_id:      verifiedUserId,
@@ -382,7 +382,6 @@ Target users: ${project.target_users ?? "Not specified"}`;
         };
         let reflectionRow: { id?: unknown } | null = duplicateReflectionId ? { id: duplicateReflectionId } : null;
         let isDuplicateSubmit = Boolean(duplicateReflectionId);
-        if (duplicateReflectionId) reflectionSaved = true;
         if (!reflectionRow) {
           // The idempotency key is the exact guard (unique index); the 60s match above covers old clients.
           const withKey = body.idempotencyKey ? { ...reflectionRowValues, idempotency_key: body.idempotencyKey } : reflectionRowValues;
@@ -390,25 +389,33 @@ Target users: ${project.target_users ?? "Not specified"}`;
           if (ins.error && body.idempotencyKey) {
             if ((ins.error as { code?: string }).code === "23505") {
               // Same key already saved: this is the same reflection, reuse it.
-              const { data: existing } = await supabase.from("reflections").select("id").eq("user_id", verifiedUserId).eq("idempotency_key", body.idempotencyKey).maybeSingle();
-              if (existing?.id) { ins = { data: existing, error: null } as unknown as typeof ins; isDuplicateSubmit = true; }
-            } else {
-              // Column not migrated yet: save without the key rather than lose the reflection.
+              const { data: existing, error: lookupError } = await supabase.from("reflections").select("id").eq("user_id", verifiedUserId).eq("idempotency_key", body.idempotencyKey).maybeSingle();
+              if (!lookupError && typeof existing?.id === "string" && existing.id) { ins = { data: existing, error: null } as unknown as typeof ins; isDuplicateSubmit = true; }
+            } else if (
+              ["42703", "PGRST204"].includes(String(ins.error.code ?? "")) &&
+              String(ins.error.message ?? "").includes("idempotency_key")
+            ) {
+              // Only a confirmed missing-column error is safe to retry without
+              // the key. A timeout/network error may have committed already.
               ins = await supabase.from("reflections").insert(reflectionRowValues).select("id").maybeSingle();
             }
           }
-          reflectionRow = ins.data ?? null;
-          if (reflectionRow) reflectionSaved = true;
-          if (typeof reflectionRow?.id === "string") savedReflectionId = reflectionRow.id;
-          if (!reflectionRow) {
-            reflectionNotSaved = true;
-            logError("reflect-action/reflection-insert", ins.error ?? new Error("insert returned no row"), { verifiedUserId });
+          reflectionRow = ins.error ? null : ins.data ?? null;
+          if (typeof reflectionRow?.id !== "string" || !reflectionRow.id) {
+            logError("reflect-action/reflection-insert", ins.error ?? new Error("insert returned no id"), { verifiedUserId });
           }
         }
+        // Do not mutate task/progress/learning state until a real saved row is
+        // confirmed. This also returns the existing ID on duplicate retries.
+        savedReflectionId = typeof reflectionRow?.id === "string" && reflectionRow.id
+          ? reflectionRow.id : undefined;
+        reflectionSaved = Boolean(savedReflectionId);
+        if (!reflectionSaved) throw new Error("reflection-not-saved");
         // The same reflection arriving twice must not run its side effects twice (momentum, streak,
         // XP, task status, patterns, the learning comparison). Jump to the response; the catch
         // below continues with local data, exactly as when the database is unavailable.
         if (isDuplicateSubmit) throw new Error("duplicate-reflection");
+        reflectionCreated = true;
 
         // Learn from swaps: if this was a swapped-in task, record how it went.
         void resolveSwap(createAdminClient(), verifiedUserId, todayAction, outcome);
@@ -765,8 +772,8 @@ Target users: ${project.target_users ?? "Not specified"}`;
           // Feed publish failed — never block the reflect response
         }
       } catch {
-        // DB unavailable — continue with local data, but only claim it was saved if the row was written.
-        if (!reflectionSaved) reflectionNotSaved = true;
+        // Keep fallback coaching available. Only a confirmed row counts as
+        // saved; a later best-effort side-effect failure does not erase it.
       }
     }
 
@@ -805,7 +812,7 @@ ${projectContext}`,
       result = fallback;
     }
 
-    void (async () => {
+    if (reflectionCreated) void (async () => {
       try {
         await generateFounderInsight();
       } catch {
@@ -822,7 +829,7 @@ ${projectContext}`,
         momentum: momentumBefore !== undefined && momentumAfter !== undefined
           ? { before: momentumBefore, after: momentumAfter }
           : undefined,
-        notSaved: reflectionNotSaved || undefined,
+        notSaved: !reflectionSaved || undefined,
         reflectionId: savedReflectionId,
         confidenceAdjustment,
         autoSignalNote,

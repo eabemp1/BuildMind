@@ -21,6 +21,13 @@ vi.mock("../../lib/ai-providers", () => ({
   hasAIProvider: vi.fn(() => true),
 }));
 
+// Keep pipeline unit tests offline. Trend/sentiment now consult live search;
+// mocking only the LLM allowed those requests to exhaust the 5s test budget.
+vi.mock("../../lib/search", () => ({
+  newsSearch: async (query: string) => ({ results: [], provider: "none", scraped: false, query }),
+  discussionSearch: async (query: string) => ({ results: [], provider: "none", scraped: false, query }),
+}));
+
 import { callModelJSON } from "../../lib/ai-providers";
 import { runAgentPipeline } from "../../lib/agents/index";
 import type { StartupContext } from "../../lib/agents/index";
