@@ -38,17 +38,20 @@ function acquire(): Promise<void> {
     return Promise.resolve();
   }
   return new Promise<void>((resolve, reject) => {
+    // Queue and remove the same callback identity. Removing `resolve` left
+    // expired waiters behind, so a later release handed a slot to nobody.
+    const grant = () => {
+      clearTimeout(timer);
+      active++;
+      resolve();
+    };
     const timer = setTimeout(() => {
-      const idx = waiters.indexOf(resolve);
+      const idx = waiters.indexOf(grant);
       if (idx !== -1) waiters.splice(idx, 1);
       reject(new Error("AgentConcurrencyLimit: queue timeout — try again in a moment"));
     }, QUEUE_TIMEOUT_MS);
 
-    waiters.push(() => {
-      clearTimeout(timer);
-      active++;
-      resolve();
-    });
+    waiters.push(grant);
   });
 }
 

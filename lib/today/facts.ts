@@ -89,11 +89,13 @@ function mentionedPlatform(s: string): string | undefined {
 const NO_USERS_RULE = "The founder has NO users yet. Never write a task that messages, emails, interviews, surveys or follows up 'your users', 'beta users', 'paying' customers, or anyone who 'used' or 'tried' the product. Tasks must find or reach people who have never used it, with the goal of getting the first 5 users. Do not assume the founder has anyone's email or phone number: unless they named a specific person, the task must be doable from a group or community they already belong to, or its first step must be finding those people.";
 const noAccessRule = (subject: string) => `The founder has no access to ${subject} communities right now. Do not assign tasks that need ${subject} (joining, posting, DMing there) unless the task first gets access in a way that works today.`;
 
+// No paying customers is a revenue fact, not evidence of zero free/beta users.
+// Do not promote payment-only absence into the stronger no_users constraint.
 const NO_USERS_RE = new RegExp(
   [
-    String.raw`\bi\s+(?:do\s*n[o']?t|don'?t|dont|haven'?t|have\s*n[o']?t|have\s+not)\s+(?:yet\s+)?(?:have|got)\s+(?:any\s+|a\s+single\s+)?(?:beta\s+|paying\s+|active\s+|real\s+)?(?:users?|customers?|signups?|sign-ups?|clients?|testers?)\b`,
-    String.raw`\b(?:i\s+have|there\s+are|got)\s+(?:no|zero|0)\s+(?:beta\s+|paying\s+|active\s+|real\s+)?(?:users?|customers?|signups?|sign-ups?|clients?|testers?)\b`,
-    String.raw`\bno\s+(?:beta\s+|paying\s+|active\s+|real\s+)?(?:users?|customers?|signups?)\s+(?:yet|so\s+far)\b`,
+    String.raw`\bi\s+(?:do\s*n[o']?t|don'?t|dont|haven'?t|have\s*n[o']?t|have\s+not)\s+(?:yet\s+)?(?:have|got)\s+(?:any\s+|a\s+single\s+)?(?:beta\s+|active\s+|real\s+)?(?:users?|customers?|signups?|sign-ups?|clients?|testers?)\b`,
+    String.raw`\b(?:i\s+have|there\s+are|got)\s+(?:no|zero|0)\s+(?:beta\s+|active\s+|real\s+)?(?:users?|customers?|signups?|sign-ups?|clients?|testers?)\b`,
+    String.raw`\bno\s+(?:beta\s+|active\s+|real\s+)?(?:users?|customers?|signups?)\s+(?:yet|so\s+far)\b`,
     String.raw`\bnobody\s+(?:has\s+)?(?:signed\s+up|used\s+it|joined)\b`,
     String.raw`\b(?:nobody|no\s*one)\s+(?:is\s+|has\s+)?(?:using|uses|tried|trying)\s+(?:it|the\s+(?:app|product|platform|tool))\b`,
   ].join("|"),

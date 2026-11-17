@@ -7,6 +7,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let founderEntries: MetadataRoute.Sitemap = [];
   let reportEntries: MetadataRoute.Sitemap = [];
 
+  // Optional database entries must not hold up static sitemap generation.
+  // Each query gets a bounded abort signal; failures retain the static entries.
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,7 +21,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .not("username", "is", null)
       .eq("is_public", true)
       .order("updated_at", { ascending: false })
-      .limit(50);
+      .limit(50)
+      .abortSignal(AbortSignal.timeout(5_000));
 
     if (founders) {
       founderEntries = founders.map((f) => ({
@@ -42,7 +45,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .select("share_token, created_at")
       .not("share_token", "is", null)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(100)
+      .abortSignal(AbortSignal.timeout(5_000));
 
     if (reports) {
       reportEntries = reports.map((r) => ({
