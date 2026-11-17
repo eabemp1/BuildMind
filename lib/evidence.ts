@@ -21,6 +21,7 @@ export interface EvidenceInput {
   source_type?: string | null;
   sources?: string[] | null;
   counter_evidence?: string | null;
+  assumptions?: string | null;
 }
 
 export interface Classified {
@@ -93,8 +94,8 @@ export function classifyFinding(f: EvidenceInput): Classified {
 
 const DEMAND_ADMITS_GAP = /\b(?:no|without|lack(?:s|ing)?|absence of|not (?:any|enough))\s+(?:\w+\s+){0,2}(?:survey|search[- ]volume|direct (?:evidence|data|signal)|buyer|customer (?:data|evidence))/i;
 const VENDOR_VOICE = /\b(?:vendor|marketing|case stud(?:y|ies)|testimonial|press release|according to (?:the |its |their )?(?:company|vendor|website)|(?:their|its|the company'?s) (?:own )?(?:site|website|claims?))\b/i;
-export function demandUnbacked(f: Pick<EvidenceInput, "evidence" | "counter_evidence">): boolean {
-  const t = `${f.evidence ?? ""} ${f.counter_evidence ?? ""}`;
+export function demandUnbacked(f: Pick<EvidenceInput, "evidence" | "counter_evidence"> & { assumptions?: string | null }): boolean {
+  const t = `${f.evidence ?? ""} ${f.counter_evidence ?? ""} ${f.assumptions ?? ""}`;
   return DEMAND_ADMITS_GAP.test(t) || VENDOR_VOICE.test(t);
 }
 
@@ -120,9 +121,10 @@ export function evidenceStrength(findings: EvidenceInput[]): number {
 
 export interface RunReadiness { level: Readiness; reason: string; counts: Record<EvidenceTier, number> }
 
-export function runReadiness(findings: EvidenceInput[]): RunReadiness {
+export function runReadiness(findings: EvidenceInput[], opts: { incomplete?: boolean } = {}): RunReadiness {
   const counts: Record<EvidenceTier, number> = { signal: 0, supported: 0, decision_grade: 0 };
-  const grade = findings.map((f) => ({ f, t: classifyFinding(f).tier }));
+  // If the verdict step never completed, nothing was weighed against the findings, so none can count as decision-grade.
+  const grade = findings.map((f) => { const t = classifyFinding(f).tier; return { f, t: opts.incomplete && t === "decision_grade" ? "supported" as EvidenceTier : t }; });
   for (const g of grade) counts[g.t] += 1;
   const dg = grade.filter((g) => g.t === "decision_grade");
   const pos = dg.filter((g) => g.f.positive).length;
@@ -274,4 +276,22 @@ export function dedupeFindings<T extends { title: string; confidence: number; so
 /** True when a finding quotes a price or number but names no source page for it. */
 export function priceUnverified(f: { evidence?: string; sources?: string[] | null }): boolean {
   return /(?:[$£€]|\bGHS\b|\bUSD\b)\s?\d|\d\s?(?:\/\s?(?:mo|month|yr|year)|per month)/i.test(f.evidence ?? "") && !(f.sources && f.sources.length);
+}
+
+/** True when a run ended without a real verdict (the AI provider failed or the run errored). */
+export function verdictIncomplete(run: { status?: string | null; top_risk?: string | null; top_finding_1?: string | null; recommended_action?: string | null }): boolean {
+  if (run.status === "error" || run.status === "abandoned") return true;
+  return /could not complete verdict|analysis incomplete|retry when ai provider/i.test(`${run.top_risk ?? ""} ${run.top_finding_1 ?? ""} ${run.recommended_action ?? ""}`);
+}
+
+/** The tier name shown to people. Withheld "strong" when the verdict step did not complete. */
+export function tierLabel(tier: EvidenceTier, verdictFailed = false): string {
+  if (tier === "decision_grade" && verdictFailed) return "Supported (verdict not completed)";
+  return { signal: "Signal", supported: "Supported", decision_grade: "Strong, not yet reviewed" }[tier];
+}
+
+/** The signal's type as shown. A demand finding that rests on marketing is "claimed", not "confirmed". */
+export function kindLabel(signalType: string, tier: EvidenceTier): string {
+  if (signalType === "demand_confirmed" && tier === "signal") return "demand claimed, not confirmed";
+  return signalType.replace(/_/g, " ");
 }

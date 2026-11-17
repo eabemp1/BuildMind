@@ -63,3 +63,11 @@ export function withinBudget(list: string[], zeroBudget: boolean, pool: string[]
   for (const extra of pool) { if (kept.length >= list.length) break; if (!SPENDS_MONEY.test(extra) && !kept.includes(extra)) kept.push(extra); }
   return kept;
 }
+
+/** What replaces a paid step for a founder with no money to spend. Deliberately generic: it invents nothing about their market. */
+export const FREE_STEP = "Free version: talk to one real person in your target group and ask what they do about this today. No ads or paid tools.";
+
+/** The same action, or the free step when it would spend money the founder said they do not have. */
+export function freeIfZeroBudget(action: string, c: Constraints | null): string {
+  return spendsAgainstBudget(action, c) ? FREE_STEP : action;
+}

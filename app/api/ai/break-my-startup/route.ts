@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { keepFitting } from "@/lib/competitorFit";
+import { INTERVIEW_TARGET } from "@/lib/interviewTarget";
 import { stripUnsourcedResearch } from "@/lib/break/unsourced";
 import { constraintsRule, loadConstraints, withinBudget, spendsAgainstBudget } from "@/lib/constraints";
 import { z } from "zod";
@@ -993,7 +994,7 @@ export async function POST(request: Request) {
         survive_reasons: surviveReasons,
         survive_reason_tags: surviveReasonTags,
         brutal_advice: evidenceLayer.nextMove?.holdBuilding ? evidenceLayer.nextMove.action : (reflexionAction?.action
-          ?? "Run 5 user interviews this week and report back on willingness to pay."),
+          ?? `Run ${INTERVIEW_TARGET} user interviews this week and report back on willingness to pay.`),
         survival_probability: viabilityResult.viability_score,
         competitor_summary: competitorSummary,
         differentiation_plan: differentiationPlan,
