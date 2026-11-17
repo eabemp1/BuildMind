@@ -462,7 +462,7 @@ function DayTimeline() {
       <div>
         <div className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--bm-text4)]">
           <span className="h-px w-5 bg-[var(--bm-accent)]" />
-          A day with BuildMind
+          An example day with BuildMind
         </div>
         <h2 className="mb-5 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
           The system runs.
@@ -2329,7 +2329,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
             </h1>
 
             <p style={{ maxWidth: 460, fontSize: 17, lineHeight: 1.65, color: "var(--bm-text2)" }}>
-              BuildMind remembers what you did and what you avoided, then picks the one action that matters today and shows you why. Free to start.
+              You tell BuildMind where your startup is and what you did today. It picks the one action to take next and shows you why. Free to start.
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -2363,7 +2363,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
                   <span style={{ color: "var(--bm-text3)" }}>{s.label}</span>
                 </div>
               ))}
-              {stats.weekly_tasks > 0 && (
+              {stats.weekly_tasks >= 10 && (
                 <div
                   className="bm-proof-pill"
                   style={{ background: "rgba(232,197,71,0.07)", border: "1px solid rgba(232,197,71,0.22)" }}
@@ -2429,7 +2429,7 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           </div>
         </div>
 
-        {stats.weekly_tasks > 0 && (
+        {stats.weekly_tasks >= 10 && (
           <div
             className="bm-float-card bm-drift bm-glass absolute z-[2] hidden rounded-2xl px-4 py-3 lg:block"
             style={{
@@ -2449,6 +2449,31 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           </div>
         )}
         </>)}
+      </section>
+
+      {/* How it works: what you give it, what it does, what you do. Only things that exist today. */}
+      <section aria-labelledby="how-it-works-title" className="px-5 py-12 sm:px-8 sm:py-16" style={{ borderTop: subtleSectionBorder }}>
+        <div className="mx-auto max-w-[1080px]">
+          <h2 id="how-it-works-title" className="mb-2 text-2xl font-bold tracking-tight text-[var(--bm-text)] sm:text-3xl">How BuildMind works</h2>
+          <p className="mb-8 max-w-2xl text-[15px] leading-relaxed text-[var(--bm-text2)]">You give it what you know. It works out the next step and shows why. You decide what to do and do it yourself.</p>
+          <ol className="m-0 grid list-none gap-4 p-0 md:grid-cols-3">
+            {[
+              { n: "1", title: "You provide", lead: "What you type in", items: ["Your idea, your stage and your goals", "A short daily check-in: what you did and what you skipped", "What happened when you reached out: replies, interest, payments", "Optional: connect GitHub, Notion or Linear so it can see activity there"] },
+              { n: "2", title: "BuildMind helps you decide", lead: "What it works out", items: ["One action for today, with the reasons", "What is checked, what you reported and what is only an assumption", "A stress-test of your idea that says where the evidence is thin"] },
+              { n: "3", title: "You take action", lead: "What you do next", items: ["Read the drafts, change them and send them yourself. Nothing is sent for you", "Record what happened. Interest is not counted as a sale", "The next step follows from what you recorded"] },
+            ].map((c) => (
+              <li key={c.n} className="rounded-2xl p-5" style={{ border: "1px solid var(--bm-border)", background: "var(--bm-bg2)" }}>
+                <div className="mb-1 text-[12px] text-[var(--bm-text3)]">Step {c.n}</div>
+                <h3 className="mb-1 text-[17px] font-semibold text-[var(--bm-text)]">{c.title}</h3>
+                <p className="mb-3 text-[13px] text-[var(--bm-text3)]">{c.lead}</p>
+                <ul className="m-0 flex list-disc flex-col gap-2 pl-5 text-[14px] leading-[1.55] text-[var(--bm-text2)]">
+                  {c.items.map((it) => <li key={it}>{it}</li>)}
+                </ul>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-5 max-w-2xl text-[13px] leading-relaxed text-[var(--bm-text3)]">BuildMind only knows what you enter or connect. It does not watch your screen or guess what you did, and it does not message anyone for you.</p>
+        </div>
       </section>
 
       {/* A real founder's words, used with his permission */}
