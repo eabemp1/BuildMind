@@ -31,6 +31,8 @@ export interface PredictedTest {
   status: TestStatus;
   note?: string;
   resolvedAt?: string;
+  /** Set when the founder chose this test as today's action. Cleared when it is resolved or another is chosen. */
+  chosenAt?: string;
 }
 
 /** The minimum resolved tests before a track record may change anything. */

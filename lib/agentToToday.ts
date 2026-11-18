@@ -137,7 +137,7 @@ export interface BreakPredictionRow {
   id: string;
   project_id?: string | null;
   created_at?: string | null;
-  tests?: Array<{ id?: string; assumption?: string; test?: string; provenWrongIf?: string; predictedHold?: number; status?: string }> | null;
+  tests?: Array<{ chosenAt?: string; id?: string; assumption?: string; test?: string; provenWrongIf?: string; predictedHold?: number; status?: string }> | null;
 }
 
 /** A teardown test stops steering Today after this long. */
@@ -152,12 +152,17 @@ export function selectBreakTest(rows: BreakPredictionRow[], projectId: string | 
     .filter((r) => r && r.id && (!r.project_id || !projectId || r.project_id === projectId))
     .filter((r) => { const t = Date.parse(r.created_at ?? ""); return Number.isFinite(t) && (now.getTime() - t) / DAY <= BREAK_TEST_MAX_AGE_DAYS; })
     .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""));
-  const row = fresh[0];
+  // A test the founder chose stays chosen across newer analyses until it is resolved or replaced.
+  const chosenRow = fresh
+    .filter((r) => (r.tests ?? []).some((x) => x && x.status === "open" && x.chosenAt))
+    .sort((a, b) => Math.max(...(b.tests ?? []).map((x) => Date.parse(x.chosenAt ?? "") || 0)) - Math.max(...(a.tests ?? []).map((x) => Date.parse(x.chosenAt ?? "") || 0)))[0];
+  const row = chosenRow ?? fresh[0];
   if (!row) return null;
   const open = (row.tests ?? [])
     .filter((t) => t && t.status === "open" && clean(t.test, 300).length >= 15 && clean(t.assumption, 200).length >= 5)
     .sort((a, b) => (Number(a.predictedHold) || 0.5) - (Number(b.predictedHold) || 0.5));
-  const t = open[0];
+  const chosen = open.filter((x) => x.chosenAt).sort((a, b) => Date.parse(b.chosenAt ?? "") - Date.parse(a.chosenAt ?? ""))[0];
+  const t = chosen ?? open[0];
   if (!t) return null;
   const hold = Math.max(0, Math.min(1, Number(t.predictedHold) || 0.5));
   return {
@@ -170,13 +175,14 @@ export function selectBreakTest(rows: BreakPredictionRow[], projectId: string | 
     confidence: 0.8,
     confirmed_at: row.created_at ?? null,
     // Carried for the rationale, not shown as a score.
-    ...( { predictedHold: hold, provenWrongIf: clean(t.provenWrongIf, 200) } as object ),
+    ...( { predictedHold: hold, provenWrongIf: clean(t.provenWrongIf, 200), chosen: Boolean(chosen) } as object ),
   } as AgentEvidenceItem;
 }
 
 /** Ranking boost for a finding-backed task: a verified, decision-grade finding outranks a generic probe. */
 export function agentRankingBoost(item: Pick<AgentEvidenceItem, "kind" | "tier">): number {
-  if (item.kind === "break_test") return 4;
+  // A test the founder chose themselves outranks anything the engine would pick.
+  if (item.kind === "break_test") return (item as { chosen?: boolean }).chosen ? 100 : 4;
   if (item.kind === "recheck") return 0;
   return item.tier === "decision_grade" ? 8 : item.tier === "supported" ? 5 : 3;
 }
@@ -232,7 +238,7 @@ export function agentCandidateTemplates(ev: AgentTodayEvidence | null | undefine
     out.push({
       id: "break_test",
       action: sentence(b.action_hint),
-      rationale: `Your Break My Startup teardown flagged this assumption${pct !== null ? ` (rated about ${pct}% likely to hold)` : ""}: "${b.title}". It is a prediction, not a fact, so the way to settle it is to run the test.`,
+      rationale: (b as { chosen?: boolean }).chosen ? `You chose this from your Break My Startup teardown${pct !== null ? ` (rated about ${pct}% likely to hold)` : ""}: "${b.title}". Running it settles the assumption.` : `Your Break My Startup teardown flagged this assumption${pct !== null ? ` (rated about ${pct}% likely to hold)` : ""}: "${b.title}". It is a prediction, not a fact, so the way to settle it is to run the test.`,
       expected_evidence: b.provenWrongIf ? `The assumption is wrong if: ${b.provenWrongIf}` : "A real result that supports or contradicts the assumption.",
       supporting_signals: [],
       evidence: b,
