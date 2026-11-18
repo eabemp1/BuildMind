@@ -10,16 +10,19 @@ import type { WorkSpec } from "@/lib/work/registry";
 import { inventedExperience, inventedTerms, scrubPrivacyPromises } from "@/lib/prep/experienceGuard";
 import { buildPrompt, draftProblems, normalizeWork, readRefined, refinePrompt, revisePrompt, type WorkResult } from "@/lib/work/shape";
 import { loadWorkContext } from "@/lib/work/context";
+import { freeIfZeroBudget, loadConstraints, type Constraints } from "@/lib/constraints";
 
 /** Privacy and data-handling statements are the founder's to make: replaced with a marker unless they wrote them. */
-export function scrubWork(w: WorkResult | null, allowed: string): WorkResult | null {
+export function scrubWork(w: WorkResult | null, allowed: string, limits: Constraints | null = null): WorkResult | null {
   if (!w) return w;
   const fix = (t: string) => scrubPrivacyPromises(t, allowed);
+  // A founder with no money to spend is never handed a paid step as a plan item.
+  const step = (t: string) => freeIfZeroBudget(t, limits);
   return {
     ...w,
     summary: fix(w.summary),
     variants: w.variants.map((v) => ({ ...v, text: fix(v.text) })),
-    sections: w.sections.map((x) => ({ ...x, body: x.body ? fix(x.body) : x.body, bullets: x.bullets?.map(fix) })),
+    sections: w.sections.map((x) => ({ ...x, body: x.body ? fix(x.body) : x.body, bullets: x.bullets?.map((b) => step(fix(b))) })),
   };
 }
 
@@ -28,7 +31,7 @@ export async function generateWork(
   userId: string,
   input: { spec: WorkSpec; values: Record<string, string>; projectId?: string | null; voice?: string; founderName?: string },
 ): Promise<WorkResult | null> {
-  const [project, context] = await Promise.all([loadProject(admin, userId, input.projectId), loadWorkContext(admin, userId, input.projectId)]);
+  const [project, context, limits] = await Promise.all([loadProject(admin, userId, input.projectId), loadWorkContext(admin, userId, input.projectId), loadConstraints(admin, userId)]);
   const prompt = buildPrompt(input.spec, input.values, project, input.voice ?? "", input.founderName ?? "", context);
   const deadlineMs = Date.now() + 45_000;
   const opts = { maxTokens: input.spec.shape === "sections" ? 2600 : 1800, role: "reasoning" as const, deadlineMs, feature: "work" };
@@ -37,7 +40,7 @@ export async function generateWork(
     raw = await callModelJSON<unknown>([{ role: "user", content: prompt }], opts);
   } catch { return null; }
   const allowed = [...Object.values(input.values), project.name, project.description, project.problem, project.targetUsers].join(" ");
-  const first = scrubWork(normalizeWork(raw, input.spec, allowed, unsupportedNumbers), allowed);
+  const first = scrubWork(normalizeWork(raw, input.spec, allowed, unsupportedNumbers), allowed, limits);
   if (!first) return null;
 
   // One fix-up pass when the draft has problems a second look can fix. If it fails, the first draft stands.
@@ -45,7 +48,7 @@ export async function generateWork(
   if (problems.length > 0 && Date.now() < deadlineMs - 12_000) {
     try {
       const fixedRaw = await callModelJSON<unknown>([{ role: "user", content: revisePrompt(JSON.stringify(raw), input.spec, problems) }], { ...opts, feature: "work_revise" });
-      const fixed = scrubWork(normalizeWork(fixedRaw, input.spec, allowed, unsupportedNumbers), allowed);
+      const fixed = scrubWork(normalizeWork(fixedRaw, input.spec, allowed, unsupportedNumbers), allowed, limits);
       if (fixed && draftProblems(fixed, input.spec, allowed, project.stage).length < problems.length) return fixed;
     } catch { /* keep the first draft */ }
   }
