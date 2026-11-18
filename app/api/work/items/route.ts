@@ -31,16 +31,20 @@ export async function GET(request: Request) {
     return data ? NextResponse.json({ ok: true, item: data }) : NextResponse.json({ ok: false }, { status: 404 });
   }
   const [{ data, error }, project, prepRes] = await Promise.all([
-    admin.from("work_items").select("id, kind, title, status, updated_at").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(300),
+    admin.from("work_items").select("id, kind, title, status, updated_at, project_id").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(300),
     loadProject(admin, user.userId, null),
     // Drafts prepared from a task (a post draft from Today, say) live in prepared_work. Listed here so the Library is the whole list.
-    admin.from("prepared_work").select("id, kind, task_text, status, updated_at, title:payload->>title").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(100),
+    admin.from("prepared_work").select("id, kind, task_text, status, updated_at, project_id, outcome, title:payload->>title").eq("user_id", user.userId).order("updated_at", { ascending: false }).limit(100),
   ]);
-  const prepRows = prepRes.error ? [] : (prepRes.data ?? []).map((r: { id: string; kind: string; task_text: string | null; status: string | null; updated_at: string; title: string | null }) => ({
-    id: `prep:${r.id}`, kind: r.kind, title: r.title || (r.task_text ?? "Prepared draft").slice(0, 90), status: r.status === "prepared" || !r.status ? "draft" : r.status, updated_at: r.updated_at, source: "prep" as const, task: r.task_text ?? "",
+  const prepRows = prepRes.error ? [] : (prepRes.data ?? []).map((r: { id: string; kind: string; task_text: string | null; status: string | null; updated_at: string; title: string | null; project_id: string | null; outcome: string | null }) => ({
+    id: `prep:${r.id}`, kind: r.kind, title: r.title || (r.task_text ?? "Prepared draft").slice(0, 90), status: r.status === "prepared" || !r.status ? "draft" : r.status, updated_at: r.updated_at, source: "prep" as const, task: r.task_text ?? "", project_id: r.project_id, outcome: r.outcome ?? null,
   }));
-  const merged = [...(error ? [] : data ?? []), ...prepRows].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
-  return NextResponse.json({ ok: true, setup: Boolean(error), items: merged, project: { name: project.name, targetUsers: project.targetUsers, problem: project.problem, description: project.description, stage: project.stage } });
+  // Each draft says which project it belongs to, so a founder with several projects can tell them apart.
+  const { data: projs } = await admin.from("projects").select("id, name").eq("user_id", user.userId).limit(50);
+  const names = new Map((projs ?? []).map((p: { id: string; name: string | null }) => [p.id, p.name ?? ""]));
+  const tag = <T extends { project_id?: string | null }>(r: T) => ({ ...r, project: r.project_id ? names.get(r.project_id) || null : null });
+  const merged = [...(error ? [] : data ?? []), ...prepRows].map(tag).sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  return NextResponse.json({ ok: true, setup: Boolean(error), items: merged, projects: names.size, project: { name: project.name, targetUsers: project.targetUsers, problem: project.problem, description: project.description, stage: project.stage } });
 }
 
 export async function PATCH(request: Request) {
