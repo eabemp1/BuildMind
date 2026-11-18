@@ -27,7 +27,7 @@ const ago = (iso: string, now: number) => {
   return d === 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
 };
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trim()}…` : s);
-const OUTCOME: Record<string, string> = { replied: "got a reply", call_booked: "booked a call", no_reply: "no reply", got_comments: "got comments", no_response: "no response" };
+export const OUTCOME: Record<string, string> = { replied: "got a reply", call_booked: "booked a call", no_reply: "no reply", got_comments: "got comments", no_response: "no response" };
 
 /** Pure: turns recent records into a short block for prompts. Empty when there is nothing to say. */
 export function inferredBlock(work: WorkRow[], reflections: ReflectionRow[], now = Date.now(), demoTitle?: string | null, feedback: FeedbackRow[] = []): string {
