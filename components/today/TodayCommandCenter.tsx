@@ -357,7 +357,7 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
         )}
 
         {focus.mode === "idle" && done && (
-          <button type="button" className="bm-ink-link" onClick={goToCheckIn} style={link({ padding: "10px 0" })}>{reflected ? "View or edit reflection" : "Reflect on today"}</button>
+          <button type="button" className="bm-ink-link" onClick={goToCheckIn} style={link({ padding: "10px 0" })}>{reflected ? "Open today's reflection" : "Reflect on today"}</button>
         )}
       </div>
 

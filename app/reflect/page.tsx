@@ -27,6 +27,7 @@ import { FollowUpPicker, type FollowUpValue } from "./components/FollowUpPicker"
 import { SignalPicker, type SignalValue } from "./components/SignalPicker";
 import { ReflectionCompletion } from "./components/ReflectionCompletion";
 import { effectiveStreak } from "@/lib/streak";
+import { withinUndoWindow } from "@/lib/reflectionUndo";
 
 type Outcome = ReflectionOutcome;
 type ReflectionHistoryEntry = {
@@ -97,6 +98,10 @@ export default function ReflectPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
+  // Arrived on a day that already has a reflection: it can be redone only inside the undo window.
+  const [lockedEarlier, setLockedEarlier] = useState(false);
+  // Known from this device that today is reflected: wait for the server answer instead of showing the form first.
+  const [checkingDone, setCheckingDone] = useState(() => { try { return storage.get(`bm_reflect_done_${new Date().toISOString().slice(0, 10)}`) === "1"; } catch { return false; } });
   const [undoMsg, setUndoMsg] = useState("");
   const [causality, setCausality] = useState("");
   const [witnessed, setWitnessed] = useState("");
@@ -178,7 +183,7 @@ export default function ReflectPage() {
         storage.set("bm_reflect_pending", "false");
         setDone(true);
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setCheckingDone(false));
     (async () => {
       try {
         const supabase = createClient();
@@ -194,7 +199,7 @@ export default function ReflectPage() {
               .limit(1),
             supabase
               .from("reflections")
-              .select("outcome, note, confidence, today_action, created_at")
+              .select("id, outcome, note, confidence, today_action, created_at")
               .eq("user_id", user.id)
               .order("created_at", { ascending: false })
               .limit(30),
@@ -227,6 +232,11 @@ export default function ReflectPage() {
           }
 
           if (reflectionsRes.status === "fulfilled" && reflectionsRes.value.data?.length) {
+            const todays = reflectionsRes.value.data.find((r) => String(r.created_at).slice(0, 10) === new Date().toISOString().slice(0, 10)) as { id?: string; created_at: string } | undefined;
+            if (todays?.id) {
+              if (withinUndoWindow(String(todays.created_at))) setSavedId((cur) => cur ?? todays.id!);
+              else setLockedEarlier(true);
+            }
             const serverHistory = reflectionsRes.value.data.map((r) => ({
               date: new Date(r.created_at).getTime(),
               outcome: r.outcome,
@@ -423,6 +433,7 @@ export default function ReflectPage() {
     } finally { setSubmitting(false); submitLock.current = false; }
   }
 
+  if (checkingDone) return <div aria-busy="true" style={{ maxWidth: 560, margin: "0 auto", padding: "48px clamp(12px, 5vw, 24px)", color: "var(--bm-text3)", fontSize: 14 }}>Checking today&apos;s reflection...</div>;
   if (done) {
     return (
       <div style={{ maxWidth: 560, margin: "0 auto", padding: "48px clamp(12px, 5vw, 24px)" }}>
@@ -433,14 +444,17 @@ export default function ReflectPage() {
           momentum={celebrationMomentum}
           onDismiss={() => setShowCelebration(false)}
         />
+        {!savedId && lockedEarlier && (
+          <p style={{ marginBottom: 12, fontSize: 13, color: "var(--bm-text3)" }}>You already reflected today. A reflection can be undone and rewritten for 30 minutes after saving; after that it stays, because it already counts toward your streak. Tomorrow you can write a new one.</p>
+        )}
         {savedId && (
           <div style={{ marginBottom: 12, fontSize: 13, color: "var(--bm-text3)" }}>
-            Saved by mistake?{" "}
+            Want to change it?{" "}
             <button type="button" style={{ minHeight: 32, textDecoration: "underline", color: "var(--bm-text)" }} onClick={async () => {
               const r = await fetch("/api/reflections/undo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: savedId }) }).then((x) => x.json()).catch(() => null);
               if (r?.success) { setSavedId(null); setDone(false); setShowCelebration(false); setUndoMsg(""); } else setUndoMsg(r?.error ?? "Could not undo that.");
             }}>Undo it</button>
-            <span style={{ display: "block", marginTop: 2 }}>Undo removes the reflection, reopens its task and puts your streak back. Momentum and the learning log are not rolled back.</span>
+            <span style={{ display: "block", marginTop: 2 }}>Undo removes the reflection so you can write it again. It reopens its task and puts your streak back. Momentum and the learning log are not rolled back.</span>
             {undoMsg && <span role="alert" style={{ display: "block", color: "var(--bm-red)" }}>{undoMsg}</span>}
           </div>
         )}
