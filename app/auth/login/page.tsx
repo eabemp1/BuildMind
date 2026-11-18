@@ -677,7 +677,7 @@ function LoginContent() {
           options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding` },
         });
         if (err) throw err;
-        if (data.session || data.user) {
+        if (data.session) {
           // FIX: when Supabase returns a session immediately (email
           // confirmation disabled), this redirects straight to /onboarding
           // and NEVER passes through /auth/callback — which is the only
@@ -688,7 +688,8 @@ function LoginContent() {
           router.replace("/onboarding");
           return;
         }
-        setSuccessMsg("Check your email to confirm your account.");
+        // No session: Supabase is asking for email confirmation (or the address already has an account).
+        setSuccessMsg("We sent a link to your email. Open it to finish signing up. If nothing arrives, check spam, or sign in if you already have an account.");
         setTab("signin");
       }
     } catch (err: unknown) {
