@@ -37,3 +37,13 @@ describe("zero budget", () => {
     expect(out).not.toMatch(/\$100/);
   });
 });
+
+import { scrubWork } from "@/lib/work/engine";
+describe("work plans on a zero budget", () => {
+  it("replaces a paid bullet with the free step", () => {
+    const w = { summary: "s", variants: [], sections: [{ title: "Plan", body: "", bullets: ["Run $100 of Facebook ads", "Call three barbers"] }] } as never;
+    const out = scrubWork(w, "", { minutesPerDay: null, monthlyBudget: 0 }) as { sections: Array<{ bullets: string[] }> };
+    expect(out.sections[0].bullets[0]).toMatch(/Free version/);
+    expect(out.sections[0].bullets[1]).toBe("Call three barbers");
+  });
+});

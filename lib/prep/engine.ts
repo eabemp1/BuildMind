@@ -17,6 +17,8 @@ import { draftContent, keepPastBehaviourQuestions, unsupportedNumbers, type Proj
 import { searchPromptBlock, searchSections } from "@/lib/integrations/searchConsole";
 import { fallbackPrep } from "@/lib/prep/fallback";
 import { loadInferredContext } from "@/lib/prep/context";
+import { factsBlock, loadFacts } from "@/lib/projectFacts";
+import { constraintsRule, loadConstraints } from "@/lib/constraints";
 import { keepFitting } from "@/lib/competitorFit";
 import { SENDER_RULE } from "@/lib/prep/senderRule";
 import { learnedLessons, type LearnRow } from "@/lib/prep/learning";
@@ -316,7 +318,9 @@ export async function generatePrep(
   let connected: ConnectedFacts | null = null;
   const connectedKinds = new Set<PrepKind>(["investor_update", "video_script", "post", "landing", "launch_plan", "seo"]);
 
-  const inferred = await loadInferredContext(admin, userId);
+  // Same situation facts and limits the Work tools use, so Today's prepared work cannot contradict them.
+  const [inferredBase, facts, limits] = await Promise.all([loadInferredContext(admin, userId), loadFacts(admin, userId, input.projectId), loadConstraints(admin, userId)]);
+  const inferred = [inferredBase, factsBlock(facts), constraintsRule(limits)].filter(Boolean).join("\n\n");
   if (kind === "competitor_brief") prepared = await competitorBrief(project);
   else if (kind === "validation_kit") prepared = await validationKit(project, input.task, inferred);
   else if (kind === "pricing_test") prepared = await pricingTest(project, input.task, inferred);
