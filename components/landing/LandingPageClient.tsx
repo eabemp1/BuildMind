@@ -429,7 +429,7 @@ function HeroReflexionPipeline() {
         >
           <div className="mb-2.5 flex items-center justify-between">
             <span className="rounded-md border border-[var(--bm-accent-bd)] bg-[var(--bm-accent-dim)] px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-[var(--bm-accent)]">Tomorrow's action</span>
-            <span className="text-[10px] text-[var(--bm-text4)]">Ready at 07:00</span>
+            <span className="text-[10px] text-[var(--bm-text4)]">Example data, not your result</span>
           </div>
           <p className="mb-3 text-sm font-semibold leading-6 text-[var(--bm-text)]">Send a Loom to 5 founders. Ask one question.</p>
           <div className="flex flex-wrap gap-2">
@@ -632,6 +632,9 @@ function HeroMockup() {
               <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: "var(--bm-accent-dim)", color: "var(--bm-accent)", border: "1px solid var(--bm-accent-bd)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 Prototype Stage
               </span>
+              <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, border: "1px dashed var(--bm-border3)", color: "var(--bm-text3)", fontWeight: 700 }}>
+                Example data
+              </span>
               <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 12, background: "rgba(167,139,250,0.10)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.25)", fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>
                 <Brain size={8} /> 3-agent loop
               </span>
@@ -657,7 +660,7 @@ function HeroMockup() {
             <div className="grid grid-cols-3 gap-2">
               {[{ label: "Score", val: "81" }, { label: "Streak", val: "14d" }, { label: "Confidence", val: "4/5" }].map((m) => (
                 <div key={m.label} style={{ padding: "8px 10px", borderRadius: 9, background: "var(--bm-bg3)", border: "1px solid var(--bm-border)" }}>
-                  <span style={{ fontSize: 9, color: "var(--bm-text3)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>{m.label}</span>
+                  <span style={{ fontSize: 9, color: "var(--bm-text3)", display: "block", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>Example {m.label.toLowerCase()}</span>
                   <span style={{ fontSize: 16, fontWeight: 800, color: "var(--bm-text)" }}>{m.val}</span>
                 </div>
               ))}

@@ -59,6 +59,8 @@ export default function BreakPublicPage() {
       const res = await fetch("/api/ai/break-public/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain: domain.trim() }) });
       const b = await res.json().catch(() => ({}));
       if (!res.ok || !b.success) throw new Error(b?.error ?? "Scan failed. Type it in instead.");
+      const typed = [idea, targetUsers, problem].some((v) => v.trim());
+      if (typed && !window.confirm("Replace what you have typed with what was found on that site?")) { setScanNote("Kept what you typed."); return; }
       setIdea(b.data.idea); setTargetUsers(b.data.targetUsers || ""); setProblem(b.data.problem || "");
       setScanNote(`Filled from ${b.data.domain}. Read it, fix anything wrong, then run it.`);
     } catch (e) { setScanNote(e instanceof Error ? e.message : "Scan failed. Type it in instead."); }
@@ -156,17 +158,18 @@ export default function BreakPublicPage() {
                   </div>
                 </div>
                 <div className={css.field}>
-                  <label htmlFor="break-domain">Already live? <span className={css.hint}>Fill the form from your website</span></label>
+                  <label htmlFor="break-domain">Already live? <span className={css.hint}>Fills the three boxes above from your site</span></label>
                   <div className={css.scan}>
-                    <input id="break-domain" className={css.input} value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourapp.com" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                    <input id="break-domain" aria-describedby="break-domain-help" className={css.input} value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourapp.com" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
                     <button type="button" className={`${css.btn} ${css.btnGhost}`} onClick={handleScan} disabled={scanning || domain.trim().length < 4}>{scanning ? "Reading…" : "Read site"}</button>
                   </div>
+                  <p id="break-domain-help" className={css.small} style={{ margin: "8px 0 0" }}>Optional. It reads your public home page and suggests your idea, who it is for and the problem. Anything you have already typed is kept until you confirm.</p>
                   {scanNote && <p role="status" className={css.small} style={{ margin: "8px 0 0" }}>{scanNote}</p>}
                 </div>
                 {error && <p role="alert" className={css.error}>{error}</p>}
                 <div className={css.actions}>
                   <button type="submit" className={`${css.btn} ${css.btnPrimary}`} disabled={!canRun}>Run the test</button>
-                  <span className={css.small}>Instant preview without an account. The full analysis, which also searches for competitors, needs a free account.</span>
+                  <span className={css.small}>No account needed for an instant preview, scored from how your idea is written. The full analysis, which searches the web for competitors and reads their sites, needs a free account. If competitor links appear, they came from a live search.</span>
                 </div>
               </form>
 
@@ -255,7 +258,7 @@ export default function BreakPublicPage() {
 
                   {!!result.competitor_links?.length && (
                     <section className={css.section}>
-                      <h2 className={css.h2}>Already out there</h2>
+                      <h2 className={css.h2}>Already out there <span className={css.hint}>from a live web search</span></h2>
                       <ul className={css.list}>{result.competitor_links.map((c) => (
                         <li key={c.url}><a href={c.url} target="_blank" rel="noopener noreferrer nofollow">{c.title}</a></li>
                       ))}</ul>
