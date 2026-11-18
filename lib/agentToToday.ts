@@ -152,7 +152,11 @@ export function selectBreakTest(rows: BreakPredictionRow[], projectId: string | 
     .filter((r) => r && r.id && (!r.project_id || !projectId || r.project_id === projectId))
     .filter((r) => { const t = Date.parse(r.created_at ?? ""); return Number.isFinite(t) && (now.getTime() - t) / DAY <= BREAK_TEST_MAX_AGE_DAYS; })
     .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""));
-  const row = fresh[0];
+  // A test the founder chose stays chosen across newer analyses until it is resolved or replaced.
+  const chosenRow = fresh
+    .filter((r) => (r.tests ?? []).some((x) => x && x.status === "open" && x.chosenAt))
+    .sort((a, b) => Math.max(...(b.tests ?? []).map((x) => Date.parse(x.chosenAt ?? "") || 0)) - Math.max(...(a.tests ?? []).map((x) => Date.parse(x.chosenAt ?? "") || 0)))[0];
+  const row = chosenRow ?? fresh[0];
   if (!row) return null;
   const open = (row.tests ?? [])
     .filter((t) => t && t.status === "open" && clean(t.test, 300).length >= 15 && clean(t.assumption, 200).length >= 5)

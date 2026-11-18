@@ -55,3 +55,14 @@ describe("chosen teardown test", () => {
     expect(agentRankingBoost(pick as never)).toBe(4);
   });
 });
+
+describe("choice survives a newer teardown", () => {
+  it("keeps the chosen test from an older analysis", () => {
+    const now = new Date("2026-11-18T10:00:00Z");
+    const mk = (id: string, created: string, tests: unknown[]) => ({ id, project_id: null, created_at: created, tests });
+    const older = mk("older-row-1", "2026-11-15T10:00:00Z", [{ id: "a", assumption: "assumption a", test: "Talk to five people about a", provenWrongIf: "x", predictedHold: 0.5, status: "open", chosenAt: "2026-11-16T10:00:00Z" }]);
+    const newer = mk("newer-row-1", "2026-11-17T10:00:00Z", [{ id: "n", assumption: "assumption n", test: "Talk to five people about n", provenWrongIf: "x", predictedHold: 0.1, status: "open" }]);
+    const pick = selectBreakTest([newer, older] as never, null, now) as never as { title: string };
+    expect(pick.title).toBe("assumption a");
+  });
+});
