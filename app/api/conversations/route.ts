@@ -10,13 +10,14 @@ import { NextResponse } from "next/server";
 import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { hasAdminEnv } from "@/app/api/ai/_utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mirrorToExperiment } from "@/lib/conversations/toExperiment";
 import { isStatus, nextAction, sanitizeLine, summarize, type Person } from "@/lib/conversations/track";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const UUID = /^[0-9a-f-]{36}$/i;
-const COLS = "id, name, where_found, link, status, contacted_at, message, notes, insights, updated_at";
+const COLS = "id, name, where_found, link, status, contacted_at, message, notes, insights, updated_at, project_id";
 
 export async function GET() {
   const user = await getRouteUser();
@@ -68,6 +69,8 @@ export async function PATCH(request: Request) {
   if (b.notes !== undefined) patch.notes = sanitizeLine(b.notes, 8000) || null;
   const { data, error } = await admin.from("conversation_people").update(patch).eq("id", b.id).eq("user_id", user.userId).select(COLS).maybeSingle();
   if (error || !data) return NextResponse.json({ ok: false }, { status: 404 });
+  // What the founder just confirmed also counts as evidence in their running experiment.
+  if (b.status !== undefined) await mirrorToExperiment(admin, user.userId, data as { id: string; name: string; project_id?: string | null; notes?: string | null }, b.status as never);
   return NextResponse.json({ ok: true, person: data });
 }
 
