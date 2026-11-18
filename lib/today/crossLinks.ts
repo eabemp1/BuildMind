@@ -48,15 +48,15 @@ export function pickCrossLink(i: CrossLinkInput): CrossLink | null {
 
   if (i.breakAgeDays === null) {
     if (i.outcome === "blocked" && unseen("break_blocked")) {
-      return { id: "break_blocked", text: "Blocked often means one risk is bigger than the others. A teardown shows which one.", cta: "Break my startup", href: "/break" };
+      return { id: "break_blocked", text: "Blocked often means one risk is bigger than the others. A teardown shows which one.", cta: "Break my startup", href: "/break-my-startup" };
     }
     if (unseen("break")) {
-      return { id: "break", text: `See what could stop ${name}, in about 2 minutes.`, cta: "Break my startup", href: "/break" };
+      return { id: "break", text: `See what could stop ${name}, in about 2 minutes.`, cta: "Break my startup", href: "/break-my-startup" };
     }
   } else if (i.breakAgeDays >= RERUN_AFTER_DAYS) {
     const last = i.seen.break_rerun;
     if (!last || daysBetween(last, i.today) >= RERUN_REPEAT_DAYS) {
-      return { id: "break_rerun", text: `It has been ${i.breakAgeDays} days since your last teardown. Run it again to see what changed.`, cta: "Run it again", href: "/break" };
+      return { id: "break_rerun", text: `It has been ${i.breakAgeDays} days since your last teardown. Run it again to see what changed.`, cta: "Run it again", href: "/break-my-startup" };
     }
   }
 
