@@ -37,3 +37,32 @@ describe("zero budget", () => {
     expect(out).not.toMatch(/\$100/);
   });
 });
+
+import { selectBreakTest, agentRankingBoost } from "@/lib/agentToToday";
+describe("chosen teardown test", () => {
+  const now = new Date("2026-11-18T10:00:00Z");
+  const t = (id: string, hold: number, chosenAt?: string) => ({ id, assumption: `assumption ${id}`, test: `Talk to five people about ${id}`, provenWrongIf: "nobody cares", predictedHold: hold, status: "open", chosenAt });
+  const rows = [{ id: "abcdefgh-1", project_id: null, created_at: "2026-11-17T10:00:00Z", tests: [t("a", 0.2), t("b", 0.8, "2026-11-18T09:00:00Z")] }];
+  it("prefers the chosen test over the riskiest", () => {
+    const pick = selectBreakTest(rows as never, null, now) as never as { title: string; chosen?: boolean };
+    expect(pick.title).toBe("assumption b");
+    expect(agentRankingBoost(pick as never)).toBe(100);
+  });
+  it("falls back to the riskiest when nothing is chosen", () => {
+    rows[0].tests[1].chosenAt = undefined;
+    const pick = selectBreakTest(rows as never, null, now) as never as { title: string };
+    expect(pick.title).toBe("assumption a");
+    expect(agentRankingBoost(pick as never)).toBe(4);
+  });
+});
+
+describe("choice survives a newer teardown", () => {
+  it("keeps the chosen test from an older analysis", () => {
+    const now = new Date("2026-11-18T10:00:00Z");
+    const mk = (id: string, created: string, tests: unknown[]) => ({ id, project_id: null, created_at: created, tests });
+    const older = mk("older-row-1", "2026-11-15T10:00:00Z", [{ id: "a", assumption: "assumption a", test: "Talk to five people about a", provenWrongIf: "x", predictedHold: 0.5, status: "open", chosenAt: "2026-11-16T10:00:00Z" }]);
+    const newer = mk("newer-row-1", "2026-11-17T10:00:00Z", [{ id: "n", assumption: "assumption n", test: "Talk to five people about n", provenWrongIf: "x", predictedHold: 0.1, status: "open" }]);
+    const pick = selectBreakTest([newer, older] as never, null, now) as never as { title: string };
+    expect(pick.title).toBe("assumption a");
+  });
+});

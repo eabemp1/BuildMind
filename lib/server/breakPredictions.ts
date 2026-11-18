@@ -78,6 +78,7 @@ export async function resolveTest(
         status: args.status,
         note: args.note?.slice(0, 300) || undefined,
         resolvedAt: args.status === "open" ? undefined : new Date().toISOString(),
+        chosenAt: args.status === "open" ? t.chosenAt : undefined,
       };
     });
     if (!found) return null;
@@ -90,5 +91,39 @@ export async function resolveTest(
     return summarizeTrackRecord(await loadAllTests(supabase, args.userId));
   } catch {
     return null;
+  }
+}
+
+/**
+ * Marks one open test as the founder's chosen action. Only one test is chosen at a time: others in the same
+ * analysis are cleared. Returns false if the test is missing or already resolved.
+ */
+export async function chooseTest(
+  supabase: SupabaseClient,
+  args: { userId: string; predictionId: string; testId: string; choose?: boolean },
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("break_predictions").select("tests")
+      .eq("id", args.predictionId).eq("user_id", args.userId).single();
+    if (error || !data || !Array.isArray(data.tests)) return false;
+    const on = args.choose !== false;
+    let found = false;
+    const next = (data.tests as PredictedTest[]).map((t) => {
+      if (t.id !== args.testId) return { ...t, chosenAt: on ? undefined : t.chosenAt };
+      if (t.status !== "open") return t;
+      found = true;
+      return { ...t, chosenAt: on ? new Date().toISOString() : undefined };
+    });
+    if (!found) return false;
+    const { error: upErr } = await supabase
+      .from("break_predictions").update({ tests: next })
+      .eq("id", args.predictionId).eq("user_id", args.userId);
+    if (upErr) return false;
+    // Today caches the day's action; drop it so the choice shows on the next load.
+    await supabase.from("user_behavior_state").delete().eq("user_id", args.userId).eq("key", "today_action_cache");
+    return true;
+  } catch {
+    return false;
   }
 }

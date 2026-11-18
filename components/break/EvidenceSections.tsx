@@ -75,6 +75,33 @@ export function useEvidenceRecorder(layer: EvidenceLayer | undefined): EvidenceR
   return { results, track, busy, error, record };
 }
 
+function WorkOnThis({ predictionId, testId }: { predictionId: string; testId: string }) {
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  async function go() {
+    setState("busy");
+    try {
+      const res = await fetch("/api/break-predictions/choose", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ predictionId, testId }),
+      });
+      const json = await res.json().catch(() => null);
+      setState(res.ok && json?.success ? "done" : "error");
+    } catch { setState("error"); }
+  }
+  if (state === "done") {
+    return <span style={{ ...smallText, fontSize: 12 }}>This is now your action for Today. <a href="/today" style={{ color: "var(--bm-text)", textDecoration: "underline" }}>Open Today</a></span>;
+  }
+  return (
+    <>
+      <button type="button" disabled={state === "busy"} onClick={go}
+        style={{ border: "1px solid var(--bm-text)", background: "var(--bm-text)", color: "var(--bm-bg)", borderRadius: 99, padding: "4px 12px", fontSize: 12, fontWeight: 600, cursor: state === "busy" ? "wait" : "pointer" }}>
+        Work on this
+      </button>
+      {state === "error" && <span style={{ ...smallText, fontSize: 12 }}>Could not set it. Try again, or sign in first.</span>}
+    </>
+  );
+}
+
 function RecordResult({ layer, testId, hold, status, rec }: { layer: EvidenceLayer; testId?: string; hold?: number; status?: TestStatus; rec: EvidenceRecorder }) {
   if (!layer.predictionId || !testId) return null;
   const done = status && status !== "open" ? RESULT_LABEL[status] : null;
@@ -87,12 +114,15 @@ function RecordResult({ layer, testId, hold, status, rec }: { layer: EvidenceLay
           <button type="button" disabled={rec.busy} onClick={() => rec.record(testId, "open")} style={{ background: "none", border: 0, padding: 0, color: "var(--bm-text3)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Undo</button>
         </>
       ) : (
-        (Object.keys(RESULT_LABEL) as Array<keyof typeof RESULT_LABEL>).map((k) => (
+        <>
+        <WorkOnThis predictionId={layer.predictionId} testId={testId} />
+        {(Object.keys(RESULT_LABEL) as Array<keyof typeof RESULT_LABEL>).map((k) => (
           <button key={k} type="button" disabled={rec.busy} onClick={() => rec.record(testId, k)}
             style={{ border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text2)", borderRadius: 99, padding: "4px 12px", fontSize: 12, cursor: rec.busy ? "wait" : "pointer" }}>
             {RESULT_LABEL[k].label}
           </button>
-        ))
+        ))}
+        </>
       )}
     </div>
   );
