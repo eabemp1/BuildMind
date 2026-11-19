@@ -18,6 +18,18 @@ export interface Lead {
   first_message: string;
   /** "unconfirmed" when nothing in the page ties the lead to the requested country or city. */
   location?: "confirmed" | "unconfirmed";
+  /** Filled by lib/leads/rank.ts after every claim is checked against the source. */
+  tier?: "ready" | "no_contact" | "referral";
+  contact?: { kind: "email" | "phone" | "form" | "page_message" | "none"; value: string };
+  /** What the model says the page shows about the group serving the customer; checked against the page. */
+  fit_proof?: string;
+  already_has?: string;
+  distinct_reason?: string;
+  hook?: string;
+  role?: "direct" | "referral";
+  score?: number;
+  /** The model's contact claim, before it is checked. Removed by the ranker. */
+  claimed_contact?: { kind: string; value: string };
 }
 
 const s = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -57,6 +69,12 @@ export function validateLeads(raw: unknown, allowedUrls: string[], max = 12, all
       evidence,
       how_to_reach: s(r.how_to_reach, 240),
       first_message: message,
+      fit_proof: s(r.fit_proof, 300),
+      already_has: s(r.already_has, 200),
+      distinct_reason: s(r.distinct_reason, 240),
+      hook: s(r.hook, 120),
+      role: r.role === "referral" ? "referral" : "direct",
+      claimed_contact: r.contact && typeof r.contact === "object" ? { kind: s((r.contact as Record<string, unknown>).kind, 20), value: s((r.contact as Record<string, unknown>).value, 200) } : undefined,
     });
     if (out.length >= max) break;
   }

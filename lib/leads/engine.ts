@@ -10,6 +10,7 @@ import { readPage, readPageWithLinks, isAllowedUrl, type PageLink } from "@/lib/
 import { findPlaces, type OsmPlace } from "@/lib/leads/osm";
 import { cleanInput, cleanQueries, cleanOsmTags, fallbackQueries, productLine, targetsFounders, type LeadInput, type OsmTag } from "@/lib/leads/plan";
 import { validateLeads, type Lead } from "@/lib/leads/validate";
+import { directLeads, refineLeads, type Source } from "@/lib/leads/rank";
 import { placeVerdict } from "@/lib/leads/place";
 import { isGenericLead } from "@/lib/leads/generic";
 
@@ -19,7 +20,7 @@ export interface LeadRun {
   /** Why it came back thin, in plain words (null when it did not). */
   reason: string | null;
   queries: string[];
-  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number; proposed: number; modelFailed: number; followed: number; modelError?: string };
+  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number; proposed: number; dropped: number; modelFailed: number; followed: number; modelError?: string };
 }
 
 const MAX_PAGES = 10;
@@ -128,18 +129,25 @@ ${shortlist.map((l) => `- ${l.text || "(no text)"} | ${l.url}`).join("\n")}` },
     .filter((p) => p.text.length > 40) as Page[];
 }
 
-export async function extractLeads(i: LeadInput, pages: Page[], places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[]; proposed: number; failed: boolean; error?: string }> {
+export async function extractLeads(i: LeadInput, pages: Page[], places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[]; proposed: number; failed: boolean; error?: string; dropped?: number }> {
   const allowed = [...pages.map((p) => p.url), ...snippets.map((s) => s.url), ...places.map((p) => p.url)];
   if (!pages.length && !places.length) return { leads: [], proposed: 0, failed: false };
-  const system = `You find real places a founder can reach their first customers. Use ONLY the material given. Return JSON: {"leads": [up to 12 of {"name","kind","where","url","why_fit","evidence","how_to_reach","first_message"}]}.
+  const system = `You find real places a founder can reach their first customers. Use ONLY the material given. Return JSON: {"leads": [up to 12 of {"name","kind","where","url","why_fit","evidence","role","how_to_reach","contact","fit_proof","already_has","distinct_reason","hook","first_message"}]}.
 Rules:
 - kind is one of: business, public_community, page, association, event, listing.
 - url MUST be copied exactly from a URL in the material. Never invent one.
 - evidence: a short quote or fact taken from the material that shows why this is a real fit (at least one full sentence).
 - why_fit: one plain sentence tied to the customers, the problem and the product below.
-- how_to_reach: one concrete way to contact them in public (page message, listed phone, visit, comment, email on the page). Do not guess private contact details.
+- name: copied exactly as written on the page that holds the url. Never rename, translate or "correct" it. If two pages disagree, use the spelling on the page you cite.
+- role: "direct" for a group, business or organiser the founder can write to and that serves the customers described. "referral" for a directory, list, listing page, article, forum or general discussion group: useful for introductions, not a lead.
+- fit_proof: one sentence copied from that page showing it serves THESE customers (for example that it coaches beginners or runs a beginner event). If the page does not show this, leave it empty and make the role "referral".
+- contact: {"kind": "email"|"phone"|"form"|"none", "value": "..."} copied exactly from the material. Only an email, phone number or contact-page link that is printed in the material. If there is none, {"kind":"none","value":""}. Never guess or build an address.
+- how_to_reach: one short line. It is replaced by the checked contact, so do not suggest searching elsewhere.
+- already_has: what this lead already offers that overlaps the product below, if the page says so, else "".
+- distinct_reason: one sentence on what the product adds that this lead does NOT already have. If the lead already has the same thing (check-ins, milestones, leaderboard...), leave it empty.
+- hook: the lead's own named program, event or offer, as written on the page (for example a beginner 5K), else "".
 - Businesses, public pages, associations, events and public communities only. No private individuals. No startup or founder communities, no big global subreddits.
-- first_message: 2 to 4 short plain sentences the founder can send. Say who they are, the specific thing they want to learn or offer about THE PRODUCT BELOW, and ask one easy question. Mention only what the product description says it does. If a product is given, never write about any other product. No hype, no invented facts or numbers. Write it in the language the founder wrote their customers and problem in.
+- first_message: 2 to 4 short plain sentences the founder can send. Say who they are, the specific thing they want to learn or offer about THE PRODUCT BELOW, and ask one easy question. Name the lead's own hook or the lead itself, then make one small concrete ask that matches the product and the founder's problem (for example, would they try one free session with a few first-timers). If already_has covers what the product does, do not pitch that feature. Mention only what the product description says it does. If a product is given, never write about any other product. No hype, no invented facts or numbers. Write it in the language the founder wrote their customers and problem in.
 - List every real fit you can support with evidence, up to 12. Weak leads are still dropped, but do not stop at two or three when the material holds more. If the material holds nothing real, return {"leads": []}.`;
   const allowFounders = targetsFounders(i.customer);
   // Too much text in one request is the usual reason a model call is refused (token limits). Try a moderate amount,
@@ -157,7 +165,13 @@ Rules:
         { role: "user", content: `${productLine(i.product) ? `${productLine(i.product)}\n` : ""}Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
       ], { role: att.role, temperature: 0.2, maxTokens: 3000 });
       const proposed = Array.isArray(out?.leads) ? out.leads.length : 0;
-      return { leads: keepRightPlace(validateLeads(out?.leads, allowed, 12, allowFounders), i, pages, snippets, places), proposed, failed: false };
+      const sources: Source[] = [
+        ...pages.map((p) => ({ url: p.url, title: p.title, text: p.text })),
+        ...snippets.map((x) => ({ url: x.url, title: x.title, text: x.snippet ?? "" })),
+        ...places.map((x) => ({ url: x.url, title: x.name, text: `${x.name} ${x.type} ${x.phone ?? ""} ${x.website ?? ""}` })),
+      ];
+      const checked = refineLeads(keepRightPlace(validateLeads(out?.leads, allowed, 12, allowFounders), i, pages, snippets, places), sources);
+      return { leads: checked.leads, proposed, failed: false, dropped: checked.stats.droppedName + checked.stats.droppedEvidence };
     } catch (e) {
       lastError = String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 200);
       console.error(`[leads] extract attempt=${n + 1} failed:`, lastError);
@@ -197,11 +211,12 @@ export function buildLeadMaterial(
   ].filter(Boolean).join("\n\n");
 }
 
-export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; modelFailed?: number; modelError?: string }): string {
+export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; dropped?: number; modelFailed?: number; modelError?: string }): string {
   if ((st.modelFailed ?? 0) > 0 && found === 0) return `I found pages to read, but the AI step failed twice, so nothing could be turned into leads.${st.modelError ? ` Reason: ${st.modelError}` : ""} This is usually a model quota or outage. Try again in a few minutes.`;
   if (st.resultsFound === 0 && st.places === 0) return "The search services returned nothing, so there was nothing to read. This usually means a search key is missing or out of quota, or the place name was not recognised.";
   if (st.pagesRead === 0 && st.places === 0) return "Searches found pages, but none of them could be opened and read.";
   if ((st.proposed ?? 0) > 0 && found === 0) return `I read ${st.pagesRead} pages and the AI suggested ${st.proposed} leads, but none had a link and a quoted fact I could check, so I dropped them rather than show you guesses. Try describing your customers differently.`;
+  if ((st.dropped ?? 0) > 0) return `I read ${st.pagesRead} pages. ${st.dropped} suggested leads were dropped because their name or quote was not on the page they cited, and only ${found} could be checked and reached directly. Referral sources, if any, are listed separately.`;
   return `I read ${st.pagesRead} pages${st.places ? ` and ${st.places} map listings` : ""}, but only ${found} held a real customer I could check. Try a bigger city, or describe your customers by what they sell or where they work.`;
 }
 
@@ -237,7 +252,7 @@ export function fromSaved(m: SavedMaterial): { pages: Page[]; snippets: SearchRe
 
 export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink, known: string[] = [], tried: string[] = []): Promise<LeadRun> {
   const i = cleanInput(input);
-  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, modelFailed: 0, followed: 0, modelError: undefined as string | undefined };
+  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, dropped: 0, modelFailed: 0, followed: 0, modelError: undefined as string | undefined };
   const maxRounds = light ? 1 : 3;
   const maxPages = light ? 6 : MAX_PAGES;
   const allQueries: string[] = [];
@@ -257,15 +272,16 @@ export async function findLeads(input: Partial<LeadInput>, deadline = Date.now()
     stats.searches += got.searches; stats.resultsFound += got.resultsFound; stats.pagesRead += pages.length; stats.places += got.places.length; stats.followed += followed.length; stats.rounds = round;
     // Keep what was read before the model is asked to write, so a refusal or a timeout does not throw the search away.
     if (sink) sink.material = toSaved([...(sink.material ? fromSaved(sink.material).pages : []), ...pages].filter((p, n, all) => all.findIndex((q) => q.url === p.url) === n), [...got.snippets], got.places);
-    const { leads: found, proposed, failed, error } = await extractLeads(i, pages, got.places, got.snippets);
-    stats.proposed += proposed; stats.modelFailed += failed ? 1 : 0; if (error) stats.modelError = error;
+    const { leads: found, proposed, failed, error, dropped } = await extractLeads(i, pages, got.places, got.snippets);
+    stats.proposed += proposed; stats.dropped += dropped ?? 0; stats.modelFailed += failed ? 1 : 0; if (error) stats.modelError = error;
     console.log(`[leads] round=${round} light=${light} results=${got.resultsFound} pages=${got.pages.length} followed=${followed.length} places=${got.places.length} proposed=${proposed} kept=${found.length} modelFailed=${failed}`);
     const have = new Set(leads.map((l) => l.url));
     const haveName = new Set(leads.map((l) => l.name.toLowerCase()));
-    leads = [...leads, ...found.filter((l) => !have.has(l.url) && !haveName.has(l.name.toLowerCase()))].slice(0, 12);
+    leads = [...leads, ...found.filter((l) => !have.has(l.url) && !haveName.has(l.name.toLowerCase()))].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 12);
     if (sink) { sink.leads = leads; sink.stats = { ...stats } as LeadRun["stats"]; sink.queries = [...allQueries]; }
-    if (leads.length >= 8) break;
+    if (directLeads(leads).length >= 8) break;
   }
-  const thin = leads.length < 3;
-  return { leads, thin, reason: thin ? thinReason(leads.length, stats) : null, queries: allQueries, stats };
+  const direct = directLeads(leads).length;
+  const thin = direct < 3;
+  return { leads, thin, reason: thin ? thinReason(direct, stats) : null, queries: allQueries, stats };
 }

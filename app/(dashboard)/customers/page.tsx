@@ -15,6 +15,7 @@ type Channel = "whatsapp" | "facebook" | "phone" | "visit" | "email" | "other";
 interface LeadRow {
   id: string | null; name: string; kind: string; where: string; url: string; location?: "confirmed" | "unconfirmed";
   why_fit: string; evidence: string; how_to_reach: string; first_message: string;
+  tier?: "ready" | "no_contact" | "referral"; fit_proof?: string; already_has?: string; distinct_reason?: string; score?: number;
   status: Status; channel: Channel | null;
   country?: string; city?: string; created_at?: string;
 }
@@ -78,6 +79,7 @@ export default function CustomersPage() {
         id: l.id, country: l.country, city: l.city, created_at: l.created_at, name: l.lead_name, kind: l.lead_kind, url: l.lead_url, status: l.status, channel: l.channel,
         where: l.payload?.where ?? "", location: l.payload?.location, why_fit: l.payload?.why_fit ?? "", evidence: l.payload?.evidence ?? "",
         how_to_reach: l.payload?.how_to_reach ?? "", first_message: l.payload?.first_message ?? "",
+        tier: l.payload?.tier, fit_proof: l.payload?.fit_proof ?? "", already_has: l.payload?.already_has ?? "", distinct_reason: l.payload?.distinct_reason ?? "", score: l.payload?.score,
       })));
     }
   }
@@ -151,16 +153,64 @@ export default function CustomersPage() {
   const ready = country.trim().length >= 2 && customer.trim().length >= 3 && !busy && !running && hasProduct;
 
   // Group by search (date + place), newest first. Inside a search, leads not yet contacted come first.
-  const groups: Array<{ key: string; leads: LeadRow[]; todo: number }> = [];
+  const groups: Array<{ key: string; leads: LeadRow[]; todo: number; referrals: LeadRow[] }> = [];
   for (const l of leads) {
     const key = searchKey(l);
     let g = groups.find((x) => x.key === key);
-    if (!g) groups.push((g = { key, leads: [], todo: 0 }));
+    if (!g) groups.push((g = { key, leads: [], todo: 0, referrals: [] }));
+    // Directories and general groups are introductions, not leads: kept apart and out of the count.
+    if (l.tier === "referral") { g.referrals.push(l); continue; }
     g.leads.push(l);
     if (l.status === "saved") g.todo++;
   }
   groups.sort((x, y) => y.key.localeCompare(x.key));
-  for (const g of groups) g.leads.sort((x, y) => Number(y.status === "saved") - Number(x.status === "saved"));
+  for (const g of groups) g.leads.sort((x, y) => Number(y.status === "saved") - Number(x.status === "saved") || (y.score ?? 0) - (x.score ?? 0));
+
+  const renderLead = (l: LeadRow) => (
+          <li key={l.id ?? l.url}>
+            <Card className="p-4 sm:p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="break-words text-[16px] font-semibold text-[var(--bm-text)]">{l.name}</h2>
+                <span className="rounded-full bg-[var(--bm-bg3)] px-2 py-0.5 text-[11px] text-[var(--bm-text3)]">{KIND_LABEL[l.kind] ?? l.kind}</span>
+              </div>
+              {l.where && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">{l.where}</p>}
+              {l.location === "unconfirmed" && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Location not confirmed on the page. Check it is in your area before you reach out.</p>}
+              {l.why_fit && <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text)]">{l.why_fit}</p>}
+              {l.fit_proof && <p className="mt-2 break-words border-l-2 border-[var(--bm-border2)] pl-3 text-[13px] leading-relaxed text-[var(--bm-text2)]"><span className="font-semibold">On their page:</span> {l.fit_proof}</p>}
+              {l.evidence && l.evidence !== l.fit_proof && <p className="mt-2 break-words border-l-2 border-[var(--bm-border2)] pl-3 text-[13px] leading-relaxed text-[var(--bm-text3)]">{l.evidence}</p>}
+              {l.already_has && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">Already offers:</strong> {l.already_has}</p>}
+              {l.distinct_reason && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">Why reach out:</strong> {l.distinct_reason}</p>}
+              {l.how_to_reach && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">How to reach them:</strong> {l.how_to_reach}</p>}
+              <a href={l.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 text-[13px] text-[var(--bm-accent)] underline">
+                {l.tier === "referral" ? "Open the page" : "Open the source that backs this up"} <ExternalLink size={13} />
+              </a>
+
+              {l.first_message && (
+                <div className="mt-2 rounded-[10px] p-3.5" style={{ background: "var(--bm-bg3)" }}>
+                  <p className="text-[12px] font-medium text-[var(--bm-text3)]">First message</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-[var(--bm-text)]">{l.first_message}</p>
+                  <Button variant="secondary" size="sm" className="mt-3 min-h-[44px] w-full sm:w-auto" onClick={() => void copy(l)}>
+                    {copied === l.url ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy message</>}
+                  </Button>
+                </div>
+              )}
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <label className="text-[12px] text-[var(--bm-text3)]">What happened?
+                  <select className={`${inputCls} mt-1`} value={l.status} onChange={(e) => void mark(l, e.target.value as Status)}>
+                    {(Object.keys(STATUS_LABEL) as Status[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                  </select>
+                </label>
+                <label className="text-[12px] text-[var(--bm-text3)]">How did you reach them?
+                  <select className={`${inputCls} mt-1`} value={l.channel ?? ""} onChange={(e) => void mark(l, l.status, (e.target.value || null) as Channel | null)}>
+                    <option value="">Not set</option>
+                    {CHANNELS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                  </select>
+                </label>
+              </div>
+            </Card>
+          </li>
+  );
 
   return (
     <div className="mx-auto max-w-[760px] px-4 py-6 sm:px-6 sm:py-8">
@@ -265,53 +315,20 @@ export default function CustomersPage() {
         {groups.map((g, gi) => (
           <details key={g.key} open={gi === 0} className="rounded-[12px] border border-[var(--bm-border)] p-3 sm:p-4">
             <summary className="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-semibold text-[var(--bm-text)]">
-              <span>{searchLabel(g.leads[0])}</span>
-              <span className="text-[12px] font-normal text-[var(--bm-text3)]">{g.leads.length} {g.leads.length === 1 ? "lead" : "leads"}{g.todo > 0 ? `, ${g.todo} not contacted yet` : ", all followed up"}</span>
+              <span>{searchLabel(g.leads[0] ?? g.referrals[0])}</span>
+              <span className="text-[12px] font-normal text-[var(--bm-text3)]">{g.leads.length} {g.leads.length === 1 ? "lead" : "leads"}{g.leads.length === 0 ? "" : g.todo > 0 ? `, ${g.todo} not contacted yet` : ", all followed up"}{g.referrals.length > 0 ? `, ${g.referrals.length} referral ${g.referrals.length === 1 ? "source" : "sources"}` : ""}</span>
             </summary>
             <ul className="mt-3 flex flex-col gap-3">
-        {g.leads.map((l) => (
-          <li key={l.id ?? l.url}>
-            <Card className="p-4 sm:p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="break-words text-[16px] font-semibold text-[var(--bm-text)]">{l.name}</h2>
-                <span className="rounded-full bg-[var(--bm-bg3)] px-2 py-0.5 text-[11px] text-[var(--bm-text3)]">{KIND_LABEL[l.kind] ?? l.kind}</span>
-              </div>
-              {l.where && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">{l.where}</p>}
-              {l.location === "unconfirmed" && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Location not confirmed on the page. Check it is in your area before you reach out.</p>}
-              {l.why_fit && <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text)]">{l.why_fit}</p>}
-              {l.evidence && <p className="mt-2 break-words border-l-2 border-[var(--bm-border2)] pl-3 text-[13px] leading-relaxed text-[var(--bm-text3)]">{l.evidence}</p>}
-              {l.how_to_reach && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">How to reach them:</strong> {l.how_to_reach}</p>}
-              <a href={l.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 text-[13px] text-[var(--bm-accent)] underline">
-                Open the source <ExternalLink size={13} />
-              </a>
-
-              {l.first_message && (
-                <div className="mt-2 rounded-[10px] p-3.5" style={{ background: "var(--bm-bg3)" }}>
-                  <p className="text-[12px] font-medium text-[var(--bm-text3)]">First message</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-[var(--bm-text)]">{l.first_message}</p>
-                  <Button variant="secondary" size="sm" className="mt-3 min-h-[44px] w-full sm:w-auto" onClick={() => void copy(l)}>
-                    {copied === l.url ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy message</>}
-                  </Button>
-                </div>
-              )}
-
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <label className="text-[12px] text-[var(--bm-text3)]">What happened?
-                  <select className={`${inputCls} mt-1`} value={l.status} onChange={(e) => void mark(l, e.target.value as Status)}>
-                    {(Object.keys(STATUS_LABEL) as Status[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-                  </select>
-                </label>
-                <label className="text-[12px] text-[var(--bm-text3)]">How did you reach them?
-                  <select className={`${inputCls} mt-1`} value={l.channel ?? ""} onChange={(e) => void mark(l, l.status, (e.target.value || null) as Channel | null)}>
-                    <option value="">Not set</option>
-                    {CHANNELS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                  </select>
-                </label>
-              </div>
-            </Card>
-          </li>
-        ))}
+        {g.leads.map(renderLead)}
             </ul>
+            {g.referrals.length > 0 && (
+              <details className="mt-4">
+                <summary className="min-h-[44px] cursor-pointer text-[13px] font-semibold text-[var(--bm-text)]">Referral sources ({g.referrals.length})</summary>
+                <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Directories, lists and general groups. They are not leads. Ask them to introduce you to the right organiser.</p>
+                <ul className="mt-3 flex flex-col gap-3">{g.referrals.map(renderLead)}</ul>
+              </details>
+            )}
+            {g.leads.length === 0 && g.referrals.length > 0 && <p className="mt-3 text-[13px] text-[var(--bm-text2)]">No group with proof it fits and a way to reach it was found in this search.</p>}
           </details>
         ))}
       </div>

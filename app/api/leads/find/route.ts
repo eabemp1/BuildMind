@@ -11,6 +11,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findLeads, type LeadSink } from "@/lib/leads/engine";
 import { cleanBrief, type ProductBrief } from "@/lib/leads/plan";
+import { directLeads } from "@/lib/leads/rank";
 import { generationFailure, hasMaterial, sameProduct, saveLeads } from "@/lib/leads/save";
 import { sanitizePromptInput } from "@/lib/agents";
 import { admitHeavyRun } from "@/lib/server/heavyRuns";
@@ -152,7 +153,7 @@ async function postInner(req: NextRequest) {
         await admin.from("lead_runs").update({ status: "failed", error: "Leads were found but could not be saved. Has the lead_results table been created?", stats: run.stats, finished_at: new Date().toISOString() }).eq("id", row.id);
         return;
       }
-      await admin.from("lead_runs").update({ status: "done", stats: { ...run.stats, queries: run.queries.slice(0, 40) }, lead_count: run.leads.length, reason: run.reason, finished_at: new Date().toISOString() }).eq("id", row.id);
+      await admin.from("lead_runs").update({ status: "done", stats: { ...run.stats, queries: run.queries.slice(0, 40) }, lead_count: directLeads(run.leads).length, reason: run.reason, finished_at: new Date().toISOString() }).eq("id", row.id);
     } catch (e) {
       await refundAIUsage(userId, "general"); // the search failed on our side: give the request back
       // Timed out after the pages were read: same as an AI failure, the reading is kept for a retry.
