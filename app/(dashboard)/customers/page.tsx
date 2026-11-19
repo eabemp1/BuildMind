@@ -36,6 +36,9 @@ const inputCls = "min-h-[44px] w-full rounded-lg border border-[var(--bm-border2
 export default function CustomersPage() {
   const { data: summaries = [], isLoading: summariesLoading } = useProjectSummariesQuery();
   const [projectId, setProjectId] = useState("");
+  // A one-off product for this search only. Choosing it never changes the active project.
+  const [oneoff, setOneoff] = useState<{ name: string; what: string } | null>(null);
+  const [savedOneoffs, setSavedOneoffs] = useState<Array<{ name: string; what: string }>>([]);
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
   const [customer, setCustomer] = useState("");
@@ -52,16 +55,22 @@ export default function CustomersPage() {
 
   const project = useMemo(() => summaries.find((s) => s.id === projectId) ?? summaries[0], [summaries, projectId]);
   useEffect(() => {
-    if (project && !customer) setCustomer(project.target_users ?? "");
+    if (project && !oneoff && !customer) setCustomer(project.target_users ?? "");
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The product behind the search: the chosen project, or the one-off brief.
+  const productName = oneoff ? oneoff.name.trim() : String(project?.name ?? project?.title ?? "");
+  const productWhat = oneoff ? oneoff.what.trim() : String(project?.description ?? project?.problem ?? "");
+  const hasProduct = oneoff ? oneoff.name.trim().length >= 2 : !!project;
+  const scopeUrl = oneoff ? `scope=oneoff&brief=${encodeURIComponent(oneoff.name.trim())}` : project ? `projectId=${project.id}` : "";
 
-  type RunInfo = { id: string; status: "running" | "done" | "failed"; lead_count: number; reason: string | null; error: string | null; stats?: { searches?: number; resultsFound?: number; pagesRead?: number; places?: number; proposed?: number } };
+  type RunInfo = { id: string; status: "running" | "done" | "failed"; lead_count: number; reason: string | null; error: string | null; retryable?: boolean; stats?: { searches?: number; resultsFound?: number; pagesRead?: number; places?: number; proposed?: number } };
   const [run, setRun] = useState<RunInfo | null>(null);
 
   async function loadSaved(replace = false) {
-    if (!project) return;
-    const r = await fetch(`/api/leads?projectId=${project.id}&country=${encodeURIComponent(country)}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+    if (!scopeUrl || !hasProduct) return;
+    const r = await fetch(`/api/leads?${scopeUrl}&country=${encodeURIComponent(country)}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null);
     if (!r?.ok) return;
+    if (Array.isArray(r.oneoffs)) setSavedOneoffs(r.oneoffs);
     setWorking(r.working ?? []);
     setRun(r.run ?? null);
     if (replace || !leads.length) {
@@ -72,19 +81,20 @@ export default function CustomersPage() {
       })));
     }
   }
-  // Keep the form across navigation: restore what was typed for this project.
+  const formKey = oneoff ? (oneoff.name.trim() ? `oneoff_${oneoff.name.trim().toLowerCase()}` : "") : (project?.id ?? "");
+  // Keep the form across navigation: restore what was typed for this product.
   useEffect(() => {
-    if (!project?.id) return;
+    if (!formKey) return;
     try {
-      const saved = JSON.parse(localStorage.getItem(`bm_find_customers_${project.id}`) ?? "null") as { country?: string; city?: string; customer?: string } | null;
+      const saved = JSON.parse(localStorage.getItem(`bm_find_customers_${formKey}`) ?? "null") as { country?: string; city?: string; customer?: string } | null;
       if (saved) { if (saved.country) setCountry(saved.country.slice(0, 60)); if (saved.city) setCity(saved.city.slice(0, 60)); if (saved.customer) setCustomer(saved.customer.slice(0, 160)); }
     } catch { /* storage unavailable */ }
-  }, [project?.id]);
+  }, [formKey]);
   useEffect(() => {
-    if (!project?.id || (!country && !city && !customer)) return;
-    try { localStorage.setItem(`bm_find_customers_${project.id}`, JSON.stringify({ country, city, customer })); } catch { /* ignore */ }
-  }, [project?.id, country, city, customer]);
-  useEffect(() => { void loadSaved(); }, [project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!formKey || (!country && !city && !customer)) return;
+    try { localStorage.setItem(`bm_find_customers_${formKey}`, JSON.stringify({ country, city, customer })); } catch { /* ignore */ }
+  }, [formKey, country, city, customer]);
+  useEffect(() => { void loadSaved(true); }, [formKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // While a search runs in the background, check on it every few seconds. It keeps running if you leave this page.
   const running = run?.status === "running";
@@ -92,18 +102,34 @@ export default function CustomersPage() {
     if (!running) return;
     const t = setInterval(() => { void loadSaved(true); }, 4000);
     return () => clearInterval(t);
-  }, [running, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [running, formKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function start(more = false) {
-    if (!project) return;
+    if (!hasProduct) return;
     setBusy(true); setError("");
     try {
       const res = await fetch("/api/leads/find", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, country: country.trim(), city: city.trim(), customer: customer.trim(), more }),
+        body: JSON.stringify({ ...(oneoff ? { brief: { name: oneoff.name.trim(), what: oneoff.what.trim() } } : { projectId: project!.id }), country: country.trim(), city: city.trim(), customer: customer.trim(), more }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) { setError(json?.error ?? "Something went wrong. Try again."); return; }
+      await loadSaved(true);
+    } catch {
+      setError("Could not reach the server. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The search already read its pages; this only asks the AI to write the leads again.
+  async function retryWriting() {
+    if (!run?.id) return;
+    setBusy(true); setError("");
+    try {
+      const res = await fetch("/api/leads/retry", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runId: run.id }) });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) { setError(json?.error ?? "Could not retry. Try again."); return; }
       await loadSaved(true);
     } catch {
       setError("Could not reach the server. Try again.");
@@ -122,7 +148,7 @@ export default function CustomersPage() {
     try { await navigator.clipboard.writeText(l.first_message); setCopied(l.url); setTimeout(() => setCopied(null), 1500); } catch { /* ignore */ }
   }
 
-  const ready = country.trim().length >= 2 && customer.trim().length >= 3 && !busy && !running && !!project;
+  const ready = country.trim().length >= 2 && customer.trim().length >= 3 && !busy && !running && hasProduct;
 
   // Group by search (date + place), newest first. Inside a search, leads not yet contacted come first.
   const groups: Array<{ key: string; leads: LeadRow[]; todo: number }> = [];
@@ -146,6 +172,38 @@ export default function CustomersPage() {
         <p className="mt-6 text-[14px] text-[var(--bm-text3)]">Create a project first, then come back. <Link href="/projects/new" className="underline">New project</Link></p>
       ) : (
         <Card className="mt-5 p-4 sm:p-5">
+          <div className="mb-4 rounded-[10px] p-3.5" style={{ background: "var(--bm-bg3)" }}>
+            <p className="text-[13px] text-[var(--bm-text3)]">Searching for: <strong className="font-semibold text-[var(--bm-text)]">{productName || "a product you describe below"}</strong></p>
+            {productWhat && <p className="mt-1 break-words text-[13px] leading-relaxed text-[var(--bm-text2)]">{productWhat.length > 160 ? `${productWhat.slice(0, 157)}...` : productWhat}</p>}
+            <label className="mt-3 block text-[12px] text-[var(--bm-text3)]">Product
+              <select
+                className={`${inputCls} mt-1`}
+                value={oneoff ? (savedOneoffs.some((o) => o.name.toLowerCase() === oneoff.name.trim().toLowerCase()) ? `o:${oneoff.name.trim().toLowerCase()}` : "new") : `p:${project?.id ?? ""}`}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setLeads([]); setRun(null);
+                  if (v === "new") { setOneoff({ name: "", what: "" }); setCustomer(""); return; }
+                  if (v.startsWith("o:")) { const o = savedOneoffs.find((x) => x.name.toLowerCase() === v.slice(2)); if (o) { setOneoff({ name: o.name, what: o.what }); setCustomer(""); } return; }
+                  setOneoff(null); setProjectId(v.slice(2)); setCustomer("");
+                }}
+              >
+                {summaries.map((s2) => <option key={s2.id} value={`p:${s2.id}`}>{s2.name ?? s2.title}</option>)}
+                {savedOneoffs.map((o) => <option key={o.name} value={`o:${o.name.toLowerCase()}`}>{o.name} (one-off)</option>)}
+                <option value="new">A different product (one-off)…</option>
+              </select>
+            </label>
+            {oneoff && (
+              <div className="mt-3 grid gap-3">
+                <label className="text-[12px] text-[var(--bm-text3)]">Product name
+                  <input className={`${inputCls} mt-1`} value={oneoff.name} onChange={(e) => setOneoff({ ...oneoff, name: e.target.value })} placeholder="PLAYFORGE" maxLength={80} />
+                </label>
+                <label className="text-[12px] text-[var(--bm-text3)]">What it does, in one or two sentences
+                  <textarea className={`${inputCls} mt-1 min-h-[72px]`} value={oneoff.what} onChange={(e) => setOneoff({ ...oneoff, what: e.target.value })} maxLength={400} placeholder="What it is and what problem it solves for your customers" />
+                </label>
+                <p className="text-[12px] text-[var(--bm-text3)]">This brief is used for this search only{project ? `. Your active project, ${String(project.name ?? project.title)}, is not changed` : ""}. It is saved with the results, so Find more keeps using it.</p>
+              </div>
+            )}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-[13px] text-[var(--bm-text3)]">Country
               <input className={`${inputCls} mt-1`} value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Ghana" maxLength={60} />
@@ -157,13 +215,6 @@ export default function CustomersPage() {
           <label className="mt-3 block text-[13px] text-[var(--bm-text3)]">Who are your customers?
             <input className={`${inputCls} mt-1`} value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Chop bar owners who track sales on paper" maxLength={160} />
           </label>
-          {summaries.length > 1 && (
-            <label className="mt-3 block text-[13px] text-[var(--bm-text3)]">Project
-              <select className={`${inputCls} mt-1`} value={project?.id ?? ""} onChange={(e) => { setProjectId(e.target.value); setLeads([]); setCustomer(""); }}>
-                {summaries.map((s) => <option key={s.id} value={s.id}>{s.name ?? s.title}</option>)}
-              </select>
-            </label>
-          )}
           <Button className="mt-4 w-full sm:w-auto" disabled={!ready} onClick={() => void start()}>
             {busy || running ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : "Find my first customers"}
           </Button>
@@ -172,7 +223,7 @@ export default function CustomersPage() {
         </Card>
       )}
 
-      {project && (
+      {project && !oneoff && (
         <div className="mt-5">
           <DemandCheck projectId={project.id} country={country} city={city} customer={customer} defaultProblem={String(project.problem ?? project.description ?? "").slice(0, 200)} />
         </div>
@@ -186,7 +237,15 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {run?.status === "failed" && <p role="alert" className="mt-5 text-[13px] text-[var(--bm-red)]">{run.error ?? "The search failed."} Try again.</p>}
+      {run?.status === "failed" && run.retryable && (
+        <div role="alert" className="mt-5 rounded-[12px] border border-[var(--bm-red)] p-4">
+          <p className="text-[14px] font-semibold text-[var(--bm-text)]">Writing the leads failed</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-[var(--bm-text2)]">{run.error}</p>
+          {run.stats && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">The search itself worked: {run.stats.searches ?? 0} searches, {run.stats.pagesRead ?? 0} pages read, {run.stats.places ?? 0} map listings.</p>}
+          <Button className="mt-3" disabled={busy} onClick={() => void retryWriting()} style={{ minHeight: 44 }}>{busy ? "Retrying…" : "Retry writing the leads"}</Button>
+        </div>
+      )}
+      {run?.status === "failed" && !run.retryable && <p role="alert" className="mt-5 text-[13px] text-[var(--bm-red)]">{run.error ?? "The search failed."} Try again.</p>}
       {run?.status === "done" && run.reason && (
         <div className="mt-5">
           <p className="text-[13px] leading-relaxed text-[var(--bm-text2)]">{run.reason}</p>
@@ -194,10 +253,10 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {project && groups.length > 0 && !running && (
+      {hasProduct && groups.length > 0 && !running && (
         <div className="mt-5">
           <Button variant="secondary" disabled={busy || !ready} onClick={() => void start(true)} style={{ minHeight: 44 }}>{busy ? "Searching…" : run?.reason?.includes("ran out of time") ? "Continue the search that stopped early" : "Find more, skipping pages I already have"}</Button>
-          <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Uses the same place and customer. It skips the pages you already have and the searches already tried.</p>
+          <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Uses the same product, place and customer. It skips the pages you already have and the searches already tried.</p>
         </div>
       )}
 
