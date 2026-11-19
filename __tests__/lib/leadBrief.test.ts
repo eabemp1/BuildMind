@@ -11,7 +11,7 @@ vi.mock("@/lib/ai-providers", () => ({
     if (system.includes("plan web searches")) return { queries: ["game studios Bengaluru directory", "indie game developers Bengaluru community", "Bengaluru game jam events page"], osm: [] };
     if (system.includes("decide which links")) return { open: [] };
     if (extractMode === "429") throw new Error("GROQ_429 rate limit reached");
-    return { leads: [{ name: "Bengaluru Game Devs", kind: "association", where: "Bengaluru", url: "https://games.example.in/bengaluru", why_fit: "A local group of game studios.", evidence: "The page lists 40 game studios in Bengaluru.", how_to_reach: "Message the page", first_message: "Hello, I am building PLAYFORGE for game studios. Could I ask two questions?" }] };
+    return { leads: [{ name: "Bengaluru Game Devs", kind: "association", where: "Bengaluru", url: "https://games.example.in/bengaluru", why_fit: "A local group of game studios.", evidence: "Directory of 40 game studios in Bengaluru.", fit_proof: "Directory of 40 game studios in Bengaluru.", contact: { kind: "email", value: "hello@games.example.in" }, how_to_reach: "Message the page", first_message: "Hello, I am building PLAYFORGE for game studios. Could I ask two questions?" }] };
   }),
 }));
 vi.mock("@/lib/search", () => ({
@@ -21,7 +21,7 @@ vi.mock("@/lib/search", () => ({
 vi.mock("@/lib/leads/pageReader", async (orig) => ({
   ...(await orig<typeof import("@/lib/leads/pageReader")>()),
   readPage: vi.fn(async () => "x".repeat(200)),
-  readPageWithLinks: vi.fn(async () => ({ text: "Directory of 40 game studios in Bengaluru. ".repeat(10), links: [] })),
+  readPageWithLinks: vi.fn(async () => ({ text: "Directory of 40 game studios in Bengaluru. Write to hello@games.example.in. Studio group 1 Studio group 2 Studio group 3 Studio group 4 Studio group 5 Studio group 6 Studio group 7 Studio group 8 Studio group 9 Bengaluru Game Devs. ".repeat(4), links: [] })),
 }));
 vi.mock("@/lib/leads/osm", () => ({ findPlaces: vi.fn(async () => []), overpassQuery: vi.fn(), parsePlaces: vi.fn() }));
 

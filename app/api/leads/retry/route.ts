@@ -11,6 +11,7 @@ import { getRouteUser } from "@/app/api/ai/_planCheck";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractLeads, fromSaved, thinReason, type SavedMaterial } from "@/lib/leads/engine";
 import { cleanInput } from "@/lib/leads/plan";
+import { directLeads } from "@/lib/leads/rank";
 import { generationFailure, saveLeads } from "@/lib/leads/save";
 
 export const runtime = "nodejs";
@@ -57,8 +58,9 @@ async function postInner(req: NextRequest) {
       const failedSaves = await saveLeads(admin, { userId, projectId, country: input.country, city: input.city, product: projectId ? undefined : input.product, leads: out.leads });
       if (out.leads.length > 0 && failedSaves === out.leads.length) return await fail("Leads were written but could not be saved. Try again.");
       const st = { ...keep, proposed: out.proposed, modelFailed: 0, modelError: undefined };
-      const reason = out.leads.length < 3 ? thinReason(out.leads.length, { resultsFound: Number(keep.resultsFound ?? 0), pagesRead: m.pages.length, places: m.places.length, proposed: out.proposed, modelFailed: 0 }) : null;
-      await admin.from("lead_runs").update({ status: "done", stats: st, lead_count: out.leads.length, reason, error: null, finished_at: new Date().toISOString() }).eq("id", run.id);
+      const direct = directLeads(out.leads).length;
+      const reason = direct < 3 ? thinReason(direct, { resultsFound: Number(keep.resultsFound ?? 0), pagesRead: m.pages.length, places: m.places.length, proposed: out.proposed, dropped: out.dropped, modelFailed: 0 }) : null;
+      await admin.from("lead_runs").update({ status: "done", stats: st, lead_count: direct, reason, error: null, finished_at: new Date().toISOString() }).eq("id", run.id);
     } catch (e) {
       await fail(generationFailure(String((e as Error)?.message ?? e)));
     }
