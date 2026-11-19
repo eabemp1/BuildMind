@@ -8,7 +8,7 @@ import { callModelJSON } from "@/lib/ai-providers";
 import { webSearch, discussionSearch, type SearchResult } from "@/lib/search";
 import { readPage, readPageWithLinks, isAllowedUrl, type PageLink } from "@/lib/leads/pageReader";
 import { findPlaces, type OsmPlace } from "@/lib/leads/osm";
-import { cleanInput, cleanQueries, cleanOsmTags, fallbackQueries, targetsFounders, type LeadInput, type OsmTag } from "@/lib/leads/plan";
+import { cleanInput, cleanQueries, cleanOsmTags, fallbackQueries, productLine, targetsFounders, type LeadInput, type OsmTag } from "@/lib/leads/plan";
 import { validateLeads, type Lead } from "@/lib/leads/validate";
 import { placeVerdict } from "@/lib/leads/place";
 import { isGenericLead } from "@/lib/leads/generic";
@@ -50,7 +50,7 @@ async function planSearch(i: LeadInput, avoid: string[], found: string[] = []): 
     const p = await callModelJSON<{ queries?: unknown; osm?: unknown }>([
       { role: "system", content: `You plan web searches to find real potential customers for a founder in one place. Return JSON: {"queries": [6 short search queries], "osm": [up to 4 {"key","value"} OpenStreetMap tags for the kinds of places customers work at]}.
 Rules: every query must name the city or country. Aim at the customers themselves and where they gather in public: local business pages, associations, directories, public Facebook pages, Telegram channels, marketplaces, local forums, events, complaints about the problem. Never aim at startup or founder communities. Mix wording local people really use. osm keys allowed: amenity, shop, craft, office, healthcare, tourism, leisure; values like restaurant, pharmacy, tailor, clinic, school.${avoid.length ? `\nThese queries were already tried, use clearly different angles (other kinds of places, other wording, nearby areas, other languages people there use): ${avoid.join(" | ")}` : ""}${found.length ? `\nAlready found, so look for DIFFERENT kinds of places than these: ${found.slice(0, 12).join(" | ")}` : ""}` },
-      { role: "user", content: `Country: ${i.country}\nCity or area: ${i.city || "not given"}\nCustomers: ${i.customer}\nProblem: ${i.problem}` },
+      { role: "user", content: `${productLine(i.product) ? `${productLine(i.product)}\n` : ""}Country: ${i.country}\nCity or area: ${i.city || "not given"}\nCustomers: ${i.customer}\nProblem: ${i.problem}` },
     ], { role: "fast", temperature: 0.3, maxTokens: 500 });
     return { queries: cleanQueries(p?.queries, i), osm: cleanOsmTags(p?.osm) };
   } catch {
@@ -58,7 +58,7 @@ Rules: every query must name the city or country. Aim at the customers themselve
   }
 }
 
-type Page = SearchResult & { text: string; links: PageLink[] };
+export type Page = SearchResult & { text: string; links: PageLink[] };
 
 async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Set<string>, maxPages: number) {
   const searches = await Promise.allSettled([
@@ -128,7 +128,7 @@ ${shortlist.map((l) => `- ${l.text || "(no text)"} | ${l.url}`).join("\n")}` },
     .filter((p) => p.text.length > 40) as Page[];
 }
 
-async function extract(i: LeadInput, pages: Page[], places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[]; proposed: number; failed: boolean; error?: string }> {
+export async function extractLeads(i: LeadInput, pages: Page[], places: OsmPlace[], snippets: SearchResult[]): Promise<{ leads: Lead[]; proposed: number; failed: boolean; error?: string }> {
   const allowed = [...pages.map((p) => p.url), ...snippets.map((s) => s.url), ...places.map((p) => p.url)];
   if (!pages.length && !places.length) return { leads: [], proposed: 0, failed: false };
   const system = `You find real places a founder can reach their first customers. Use ONLY the material given. Return JSON: {"leads": [up to 12 of {"name","kind","where","url","why_fit","evidence","how_to_reach","first_message"}]}.
@@ -136,10 +136,10 @@ Rules:
 - kind is one of: business, public_community, page, association, event, listing.
 - url MUST be copied exactly from a URL in the material. Never invent one.
 - evidence: a short quote or fact taken from the material that shows why this is a real fit (at least one full sentence).
-- why_fit: one plain sentence tied to the customers and problem below.
+- why_fit: one plain sentence tied to the customers, the problem and the product below.
 - how_to_reach: one concrete way to contact them in public (page message, listed phone, visit, comment, email on the page). Do not guess private contact details.
 - Businesses, public pages, associations, events and public communities only. No private individuals. No startup or founder communities, no big global subreddits.
-- first_message: 2 to 4 short plain sentences the founder can send. Say who they are, the specific thing they want to learn or offer, and ask one easy question. No hype, no invented facts or numbers. Write it in the language the founder wrote their customers and problem in.
+- first_message: 2 to 4 short plain sentences the founder can send. Say who they are, the specific thing they want to learn or offer about THE PRODUCT BELOW, and ask one easy question. Mention only what the product description says it does. If a product is given, never write about any other product. No hype, no invented facts or numbers. Write it in the language the founder wrote their customers and problem in.
 - List every real fit you can support with evidence, up to 12. Weak leads are still dropped, but do not stop at two or three when the material holds more. If the material holds nothing real, return {"leads": []}.`;
   const allowFounders = targetsFounders(i.customer);
   // Too much text in one request is the usual reason a model call is refused (token limits). Try a moderate amount,
@@ -154,7 +154,7 @@ Rules:
       const material = buildLeadMaterial(pages, snippets, places, att, (x) => isAllowedUrl(x.url) && !isGenericLead(x.title, x.url, allowFounders));
       const out = await callModelJSON<{ leads?: unknown }>([
         { role: "system", content: system },
-        { role: "user", content: `Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
+        { role: "user", content: `${productLine(i.product) ? `${productLine(i.product)}\n` : ""}Customers: ${i.customer}\nProblem: ${i.problem}\nPlace: ${[i.city, i.country].filter(Boolean).join(", ")}\n\nMATERIAL\n${material}` },
       ], { role: att.role, temperature: 0.2, maxTokens: 3000 });
       const proposed = Array.isArray(out?.leads) ? out.leads.length : 0;
       return { leads: keepRightPlace(validateLeads(out?.leads, allowed, 12, allowFounders), i, pages, snippets, places), proposed, failed: false };
@@ -206,7 +206,34 @@ export function thinReason(found: number, st: { resultsFound: number; pagesRead:
 }
 
 /** Filled in after every round, so a caller that has to stop the search early still has what was found so far. */
-export interface LeadSink { leads: Lead[]; stats: LeadRun["stats"] | null; queries: string[] }
+export interface LeadSink {
+  leads: Lead[]; stats: LeadRun["stats"] | null; queries: string[];
+  /** What was read, kept so a failed writing step can be retried without searching again. */
+  material?: SavedMaterial;
+}
+
+/** The searched material a retry needs. Kept small: page text is cut to what the model reads anyway. */
+export interface SavedMaterial {
+  pages: Array<{ title: string; url: string; text: string }>;
+  snippets: Array<{ title: string; url: string; snippet: string }>;
+  places: OsmPlace[];
+}
+
+export function toSaved(pages: Page[], snippets: SearchResult[], places: OsmPlace[]): SavedMaterial {
+  return {
+    pages: pages.slice(0, 12).map((p) => ({ title: p.title, url: p.url, text: p.text.slice(0, 2000) })),
+    snippets: snippets.slice(0, 25).map((x) => ({ title: x.title, url: x.url, snippet: x.snippet.slice(0, 200) })),
+    places: places.slice(0, 25),
+  };
+}
+
+export function fromSaved(m: SavedMaterial): { pages: Page[]; snippets: SearchResult[]; places: OsmPlace[] } {
+  return {
+    pages: (m.pages ?? []).map((p) => ({ title: p.title, url: p.url, snippet: "", source_type: "web" as const, text: p.text, links: [] })) as Page[],
+    snippets: (m.snippets ?? []).map((x) => ({ title: x.title, url: x.url, snippet: x.snippet, source_type: "web" as const })) as SearchResult[],
+    places: m.places ?? [],
+  };
+}
 
 export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink, known: string[] = [], tried: string[] = []): Promise<LeadRun> {
   const i = cleanInput(input);
@@ -228,7 +255,9 @@ export async function findLeads(input: Partial<LeadInput>, deadline = Date.now()
     followed.forEach((p) => seen.add(p.url));
     const pages = [...got.pages, ...followed];
     stats.searches += got.searches; stats.resultsFound += got.resultsFound; stats.pagesRead += pages.length; stats.places += got.places.length; stats.followed += followed.length; stats.rounds = round;
-    const { leads: found, proposed, failed, error } = await extract(i, pages, got.places, got.snippets);
+    // Keep what was read before the model is asked to write, so a refusal or a timeout does not throw the search away.
+    if (sink) sink.material = toSaved([...(sink.material ? fromSaved(sink.material).pages : []), ...pages].filter((p, n, all) => all.findIndex((q) => q.url === p.url) === n), [...got.snippets], got.places);
+    const { leads: found, proposed, failed, error } = await extractLeads(i, pages, got.places, got.snippets);
     stats.proposed += proposed; stats.modelFailed += failed ? 1 : 0; if (error) stats.modelError = error;
     console.log(`[leads] round=${round} light=${light} results=${got.resultsFound} pages=${got.pages.length} followed=${followed.length} places=${got.places.length} proposed=${proposed} kept=${found.length} modelFailed=${failed}`);
     const have = new Set(leads.map((l) => l.url));

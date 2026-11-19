@@ -7,15 +7,31 @@ export interface LeadInput {
   city: string;
   customer: string;   // who the founder sells to, in their words
   problem: string;
+  /** The product being sold. Every plan, fit explanation and first message is about this product only. */
+  product?: ProductBrief;
 }
+
+export interface ProductBrief { name: string; what: string }
 
 export const OSM_KEYS = ["amenity", "shop", "craft", "office", "healthcare", "tourism", "leisure"] as const;
 export type OsmTag = { key: (typeof OSM_KEYS)[number]; value: string };
 
 const clean = (v: string, max: number) => v.replace(/[\r\n"]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
+export function cleanBrief(b: Partial<ProductBrief> | null | undefined): ProductBrief | undefined {
+  const name = clean(b?.name ?? "", 80);
+  if (!name) return undefined;
+  return { name, what: clean(b?.what ?? "", 400) };
+}
+
+/** The product as one line for a prompt, or "" when no product was given. */
+export function productLine(b?: ProductBrief): string {
+  return b?.name ? `Product: ${b.name}${b.what ? `. What it does: ${b.what}` : ""}` : "";
+}
+
 export function cleanInput(i: Partial<LeadInput>): LeadInput {
-  return { country: clean(i.country ?? "", 60), city: clean(i.city ?? "", 60), customer: clean(i.customer ?? "", 160), problem: clean(i.problem ?? "", 240) };
+  const product = cleanBrief(i.product);
+  return { country: clean(i.country ?? "", 60), city: clean(i.city ?? "", 60), customer: clean(i.customer ?? "", 160), problem: clean(i.problem ?? "", 240), ...(product ? { product } : {}) };
 }
 
 /** True when the founder sells to other founders, so founder communities are legitimate leads. */
