@@ -56,3 +56,38 @@ describe("live ping includes OpenAI", () => {
     expect(body.temperature).toBeUndefined();
   });
 });
+
+describe("a slow OpenAI call leaves time for the fallback", () => {
+  it("with no deadline: OpenAI hangs past the default 9s budget, Groq still gets its turn", async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.OPENAI_API_KEY = "sk-test"; delete process.env.OPENAI_FIRST; process.env.GROQ_API_KEY = "gsk-test";
+      const urls: string[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (u: string) => {
+        urls.push(u);
+        // stands in for OpenAI's own 12s timeout (AbortSignal.timeout is not driven by fake timers)
+        if (u.includes("openai.com/v1")) await new Promise((_, rej) => setTimeout(() => rej(new Error("OPENAI_timeout")), 12_000));
+        return reply("from groq");
+      }));
+      const { callModel } = await import("../../lib/ai-providers");
+      const p = callModel([{ role: "user", content: "hi" }], { role: "fast" });
+      await vi.advanceTimersByTimeAsync(13_000);
+      expect(await p).toBe("from groq");
+      expect(urls.some((u) => u.includes("groq.com"))).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("with a shared deadline: OpenAI is cut off at 60% of what is left", async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.OPENAI_API_KEY = "sk-test"; delete process.env.OPENAI_FIRST; process.env.GROQ_API_KEY = "gsk-test";
+      const urls: string[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (u: string) => { urls.push(u); if (u.includes("openai.com/v1")) await new Promise(() => {}); return reply("from groq"); }));
+      const { callModel } = await import("../../lib/ai-providers");
+      const p = callModel([{ role: "user", content: "hi" }], { role: "reasoning", deadlineMs: Date.now() + 10_000 });
+      await vi.advanceTimersByTimeAsync(6_500);
+      expect(await p).toBe("from groq");
+      expect(urls.some((u) => u.includes("groq.com"))).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+});
