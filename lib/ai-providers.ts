@@ -347,7 +347,9 @@ export async function checkAllProviders(): Promise<ProviderHealth[]> {
     }
   }
 
+  const openaiModels = [...new Set([OPENAI_MODEL, OPENAI_REASONING_MODEL])];
   const results = await Promise.all([
+    ...openaiModels.map((m) => probe("openai", m, Boolean(OPENAI_API_KEY), () => openAICall(ping, m, 0, 120, false))),
     probe("groq", GROQ_MODEL, Boolean(GROQ_API_KEY), () => groqCall(ping, GROQ_MODEL, 0, 120, false)),
     probe("groq", "qwen/qwen3.8-27b", Boolean(GROQ_API_KEY), () => groqCall(ping, "qwen/qwen3.8-27b", 0, 120, false)),
     probe("openrouter", OPENROUTER_MODEL, Boolean(OPENROUTER_API_KEY), () => openRouterCall(ping, OPENROUTER_MODEL, 0, 120, false)),
@@ -653,7 +655,8 @@ async function openRouterCall(
 /** OpenAI Chat Completions. Newer model families (gpt-5, o-series) reject `temperature`, so it is left out for them. */
 async function openAICall(messages: ChatMessage[], model: string, temperature: number, maxTokens: number, jsonMode: boolean): Promise<string> {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
-  const fixedTemp = /^(gpt-5|o\d)/i.test(model);
+  // Only the older families are known to accept `temperature`; newer ones (gpt-5, gpt-6, o-series) may reject it.
+  const fixedTemp = !/^(gpt-4|gpt-3)/i.test(model);
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),

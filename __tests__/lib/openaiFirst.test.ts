@@ -40,3 +40,19 @@ describe("OpenAI goes first when its key is set (fetch is mocked; no real call i
     expect(urls.every((u) => !u.includes("openai.com/v1"))).toBe(true);
   });
 });
+
+describe("live ping includes OpenAI", () => {
+  it("reports each OpenAI model and the error text when the call fails", async () => {
+    process.env.OPENAI_API_KEY = "sk-test"; delete process.env.OPENAI_FIRST; process.env.OPENAI_MODEL = "gpt-6.2-sol";
+    for (const k of ["GROQ_API_KEY", "CEREBRAS_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY"]) delete process.env[k];
+    let body: Record<string, unknown> = {};
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: { body: string }) => { body = JSON.parse(init.body); return { ok: false, status: 404, text: async () => "model not found" }; }));
+    const { checkAllProviders } = await import("../../lib/ai-providers");
+    const res = await checkAllProviders();
+    const o = res.find((r) => r.provider === "openai")!;
+    expect(o.model).toBe("gpt-6.2-sol");
+    expect(o.ok).toBe(false);
+    expect(o.error).toContain("OPENAI_404");
+    expect(body.temperature).toBeUndefined();
+  });
+});
