@@ -208,13 +208,25 @@ const MISTRAL_MODEL        = process.env.MISTRAL_MODEL || "mistral-small-latest"
 // gets cut off before it can succeed.
 const PROVIDER_TIMEOUT_MS = 8000;
 
+// OPENAI — paid. When OPENAI_API_KEY is set it goes FIRST in every chain (fast, reasoning, fallback, Gemini-first
+// pages too); the free providers stay behind it as fallbacks. OPENAI_FIRST=off turns it off without removing the key.
+// OPENAI_MODEL / OPENAI_REASONING_MODEL pick the model (the reasoning role falls back to OPENAI_MODEL).
+const OPENAI_API_KEY       = readApiKey("OPENAI_API_KEY");
+const OPENAI_MODEL         = process.env.OPENAI_MODEL?.trim() || "gpt-4.1-mini";
+const OPENAI_REASONING_MODEL = process.env.OPENAI_REASONING_MODEL?.trim() || OPENAI_MODEL;
+const OPENAI_ENABLED       = Boolean(OPENAI_API_KEY) && (process.env.OPENAI_FIRST ?? "on").toLowerCase() !== "off";
+// Short enough that a slow OpenAI call still leaves the free providers time inside a 30s function.
+const OPENAI_TIMEOUT_MS    = Math.max(3000, Math.min(20_000, Number(process.env.OPENAI_TIMEOUT_MS) || 12_000));
+
 const cerebrasClient = CEREBRAS_API_KEY
   ? new Cerebras({ apiKey: CEREBRAS_API_KEY, timeout: PROVIDER_TIMEOUT_MS, maxRetries: 0 })
   : null;
 
 export function getAIProviderStatus() {
+  const openai = OPENAI_ENABLED ? { provider: "openai", model: OPENAI_MODEL, configured: true } : null;
   return {
     fast: [
+      openai,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: "qwen/qwen3.8-27b", configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
@@ -223,6 +235,7 @@ export function getAIProviderStatus() {
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
     reasoning: [
+      OPENAI_ENABLED ? { provider: "openai", model: OPENAI_REASONING_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_REASONING_MODEL, configured: true } : null,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
@@ -231,6 +244,7 @@ export function getAIProviderStatus() {
       CEREBRAS_API_KEY ? { provider: "cerebras", model: CEREBRAS_REASONING_MODEL, configured: true, note: "requires card on file as of Aug 2026" } : null,
     ].filter(Boolean),
     fallback: [
+      openai,
       OPENROUTER_API_KEY ? { provider: "openrouter", model: OPENROUTER_MODEL, configured: true } : null,
       GROQ_API_KEY ? { provider: "groq", model: GROQ_MODEL, configured: true } : null,
       GEMINI_API_KEY ? { provider: "gemini", model: GEMINI_MODEL, configured: true } : null,
@@ -243,6 +257,7 @@ export function getAIProviderStatus() {
 export function getAIProviderDiagnostics() {
   const status = getAIProviderStatus();
   const configured = {
+    openai: OPENAI_ENABLED,
     groq: Boolean(GROQ_API_KEY),
     cerebras: Boolean(CEREBRAS_API_KEY),
     openrouter: Boolean(OPENROUTER_API_KEY),
@@ -250,6 +265,7 @@ export function getAIProviderDiagnostics() {
     mistral: Boolean(MISTRAL_API_KEY),
   };
   const missingEnv = [
+    configured.openai ? null : "OPENAI_API_KEY",
     configured.groq ? null : "GROQ_API_KEY",
     configured.cerebras ? null : "CEREBRAS_API_KEY",
     configured.openrouter ? null : "OPENROUTER_API_KEY",
@@ -269,7 +285,7 @@ export function getAIProviderDiagnostics() {
 }
 
 export function hasAIProvider(): boolean {
-  return Boolean(GROQ_API_KEY || CEREBRAS_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY);
+  return Boolean(OPENAI_ENABLED || GROQ_API_KEY || CEREBRAS_API_KEY || OPENROUTER_API_KEY || GEMINI_API_KEY);
 }
 
 /**
@@ -634,6 +650,32 @@ async function openRouterCall(
   return sanitizeModelOutput(text);
 }
 
+/** OpenAI Chat Completions. Newer model families (gpt-5, o-series) reject `temperature`, so it is left out for them. */
+async function openAICall(messages: ChatMessage[], model: string, temperature: number, maxTokens: number, jsonMode: boolean): Promise<string> {
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
+  const fixedTemp = /^(gpt-5|o\d)/i.test(model);
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model,
+      ...(fixedTemp ? {} : { temperature }),
+      max_completion_tokens: maxTokens,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OPENAI_${res.status}: ${text.slice(0, 150)}`);
+  }
+  const body = await res.json();
+  const text: string = body?.choices?.[0]?.message?.content;
+  if (!text) throw new Error("OpenAI empty response");
+  return sanitizeModelOutput(text);
+}
+
 /**
  * mistralCall — La Plateforme's OpenAI-compatible endpoint, "Experiment" free
  * tier. No credit card required (phone verification only at signup). A
@@ -943,6 +985,12 @@ export async function callModel(
       { label: `gemini:${GEMINI_MODEL}`, call: (m, t, mt, j) => geminiCall(m, t, mt, j, { timeoutMs: geminiTimeoutMs, thinking: geminiThinking }) },
       ...chain.filter((p) => !p.label.startsWith("gemini:")),
     ];
+  }
+
+  // OpenAI leads every chain when it is configured, whatever the role or the Gemini preference.
+  if (OPENAI_ENABLED) {
+    const model = role === "reasoning" ? OPENAI_REASONING_MODEL : OPENAI_MODEL;
+    chain = [{ label: `openai:${model}`, call: (m, t, mt, j) => openAICall(m, model, t, mt, j) }, ...chain];
   }
 
   if (chain.length === 0) {
