@@ -32,6 +32,7 @@ import type { BreakResult, CompetitorRow, FocusAreaCoverage, PivotItem, RiskItem
 // view and this page share one definition (Next page files cannot export them).
 type BreakApiData = {
   verdict?: string;
+  review?: { status: "pending" | "reviewed" | "partial" | "unavailable"; label: string };
   kill_reasons?: string[];
   kill_reason_tags?: string[][];
   survive_reasons?: string[];
@@ -162,6 +163,9 @@ function StressTestView() {
   // can abort the previous request rather than running two pipelines in parallel.
   const abortRef = useRef<AbortController | null>(null);
   const [result, setResult] = useState<BreakResult | null>(null);
+  // The final review runs as its own request after the first result. Until it finishes the verdict is a draft.
+  const [review, setReview] = useState<{ status: "pending" | "reviewed" | "partial" | "unavailable"; label: string; reason?: string | null; removed?: number; missing?: string[] } | null>(null);
+  const [reviewCtx, setReviewCtx] = useState<{ idea: string; data: BreakApiData; runId: string | null } | null>(null);
   const [pastRuns, setPastRuns] = useState<Array<{ id: string; idea: string; verdict: string | null; survival: number | null; created_at: string }>>([]);
   const [openingRun, setOpeningRun] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -230,6 +234,21 @@ function StressTestView() {
   }
   useEffect(() => { void loadPastRuns(); }, []);
 
+  async function runReview(ctx: { idea: string; data: BreakApiData; runId: string | null }) {
+    setReviewCtx(ctx);
+    setReview({ status: "pending", label: "First draft. The final review is still running." });
+    try {
+      const res = await fetch("/api/ai/break-my-startup/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ctx) });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok || !json.data) throw new Error("review failed");
+      setResult(mapApiResult(json.data as BreakApiData));
+      const r = json.review ?? {};
+      setReview({ status: r.status ?? "partial", label: r.label ?? "Partial: not reviewed", reason: r.reason, removed: (r.removed_by_model ?? 0) + (r.removed_by_rule ?? 0), missing: r.missing_evidence ?? [] });
+    } catch {
+      setReview({ status: "partial", label: "Partial: not reviewed. The review could not be reached, so this draft is unchecked.", reason: "review request failed" });
+    }
+  }
+
   // Reopening a saved run reads it from the database. No AI call, no usage counted.
   async function openPastRun(id: string) {
     setOpeningRun(id);
@@ -243,6 +262,11 @@ function StressTestView() {
       setAddProjectError(null);
       setCustomIdea(String(json.run.idea ?? ""));
       setResult(mapApiResult(json.run.payload as BreakApiData));
+      const saved = (json.run.payload as { review?: { status?: string; label?: string; reason?: string; removed_by_model?: number; removed_by_rule?: number; missing_evidence?: string[] } }).review;
+      const reopenIdea = String(json.run.idea ?? "");
+      // A run saved before its review finished (or before reviews existed) is shown as not reviewed, with a way to run it now.
+      setReviewCtx({ idea: reopenIdea, data: json.run.payload as BreakApiData, runId: id });
+      setReview(saved?.status === "reviewed" ? { status: "reviewed", label: saved.label ?? "Reviewed", removed: (saved.removed_by_model ?? 0) + (saved.removed_by_rule ?? 0), missing: saved.missing_evidence ?? [] } : { status: "partial", label: saved?.label && saved.status !== "pending" ? saved.label : "Partial: not reviewed", reason: saved?.reason });
     } catch {
       setError("Couldn't open that run. Please try again.");
     } finally {
@@ -507,6 +531,7 @@ function StressTestView() {
 
     setLoading(true);
     setResult(null);
+    setReview(null);
     setError(null);
     setSaved(false);
     setAddedProjectId(null);
@@ -554,14 +579,20 @@ function StressTestView() {
       try { trackFunnelStep("break_run_completed"); } catch {}
 
       // Keep the run so it can be reopened later without running the AI again.
+      let savedRunId: string | null = null;
       try {
-        await fetch("/api/break-runs", {
+        const saveRes = await fetch("/api/break-runs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ idea, projectId: runProjectId, data: payload.data ?? {} }),
         });
+        const saveJson = await saveRes.json().catch(() => ({}));
+        savedRunId = typeof saveJson?.id === "string" ? saveJson.id : null;
         void loadPastRuns();
       } catch {}
+      // The final review is its own request: it has its own time budget and never delays the first result.
+      if (payload.data?.review && payload.data.review.status === "pending") void runReview({ idea, data: payload.data as BreakApiData, runId: savedRunId });
+      else setReview(payload.data?.review ? { status: payload.data.review.status, label: payload.data.review.label } : null);
 
       // Track achievement
       try {
@@ -930,6 +961,15 @@ function StressTestView() {
             transition={{ duration: 0.35 }}
                 className="flex flex-col gap-4"
           >
+            {review && (
+              <div role="status" style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 14px", fontSize: 14, color: review.status === "reviewed" ? "var(--bm-text)" : "var(--bm-amber)" }}>
+                <strong>{review.label}</strong>
+                {review.status === "reviewed" && typeof review.removed === "number" && review.removed > 0 && <span> {review.removed} claim{review.removed === 1 ? "" : "s"} the evidence did not support {review.removed === 1 ? "was" : "were"} removed.</span>}
+                {review.status !== "reviewed" && review.status !== "pending" && <span> Treat the verdict as unchecked. Claims with numbers or experiences that are not in the evidence were still removed.</span>}
+                {review.missing && review.missing.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{review.missing.map((m) => <li key={m}>Find out: {m}</li>)}</ul>}
+                {(review.status === "partial" || review.status === "unavailable") && reviewCtx && <div style={{ marginTop: 8 }}><button type="button" onClick={() => void runReview(reviewCtx)} style={{ minHeight: 44, borderRadius: 8, border: "1px solid var(--bm-border)", background: "var(--bm-bg)", color: "var(--bm-text)", padding: "0 14px", cursor: "pointer" }}>Run the review again</button></div>}
+              </div>
+            )}
             <BreakResultView
               result={result}
               saveMode={selectedProjectId && projectExplicitlySelected ? "project" : customIdea.trim() ? "new" : "none"}

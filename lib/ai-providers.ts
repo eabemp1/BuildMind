@@ -653,19 +653,21 @@ async function openRouterCall(
 }
 
 /** OpenAI Chat Completions. Newer model families (gpt-5, o-series) reject `temperature`, so it is left out for them. */
-async function openAICall(messages: ChatMessage[], model: string, temperature: number, maxTokens: number, jsonMode: boolean): Promise<string> {
+async function openAICall(messages: ChatMessage[], model: string, temperature: number, maxTokens: number, jsonMode: boolean, extra: { timeoutMs?: number; schema?: { name: string; schema: Record<string, unknown> } } = {}): Promise<string> {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
   // Only the older families are known to accept `temperature`; newer ones (gpt-5, gpt-6, o-series) may reject it.
   const fixedTemp = !/^(gpt-4|gpt-3)/i.test(model);
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS),
+    signal: AbortSignal.timeout(extra.timeoutMs ?? OPENAI_TIMEOUT_MS),
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
       model,
       ...(fixedTemp ? {} : { temperature }),
       max_completion_tokens: maxTokens,
-      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      ...(extra.schema
+        ? { response_format: { type: "json_schema", json_schema: { name: extra.schema.name, strict: true, schema: extra.schema.schema } } }
+        : jsonMode ? { response_format: { type: "json_object" } } : {}),
       messages,
     }),
   });
@@ -1062,6 +1064,7 @@ export async function callModel(
       }
       if (jsonMode) assertValidJSONModeOutput(text);
       console.info(`[ai-providers] ${role} succeeded via ${provider.label}`);
+      console.info("[ai-attempt]", JSON.stringify({ feature: feature ?? role, requested: chain[0].label, used: provider.label, ok: true, ms: Date.now() - callStartedAt, fellBack: provider !== chain[0], reason: errors.length ? errors[errors.length - 1].slice(0, 120) : undefined }));
       // One line per call, so Vercel logs can answer "which feature costs what". Token counts are
       // estimates (characters / 4); Gemini also logs its own exact usage figures.
       console.info("[ai-cost]", JSON.stringify({
@@ -1077,6 +1080,7 @@ export async function callModel(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(msg);
+      console.info("[ai-attempt]", JSON.stringify({ feature: feature ?? role, requested: chain[0].label, used: provider.label, ok: false, ms: Date.now() - callStartedAt, reason: msg.slice(0, 120) }));
       if (isRetryableProviderError(err)) {
         console.warn(`[ai-providers] ${provider.label} failed (${msg.slice(0, 80)}) - rotating to next`);
         continue; // try next provider
@@ -1178,4 +1182,31 @@ export async function geminiVisionJSON<T>(
     }
   }
   throw new Error(`geminiVisionJSON: every image reader failed. Last error: ${lastErr instanceof Error ? lastErr.message.slice(0, 120) : "unknown"}`);
+}
+
+
+// ── One strict OpenAI call: no fallback chain ────────────────────────────────
+/** The model used to review a finished Break My Startup report. OPENAI_REVIEW_MODEL changes it; OPENAI_REVIEW=off disables it. */
+export const REVIEW_MODEL = process.env.OPENAI_REVIEW_MODEL?.trim() || "gpt-6.2-astra";
+export const reviewEnabled = () => Boolean(OPENAI_API_KEY) && (process.env.OPENAI_REVIEW ?? "on").toLowerCase() !== "off";
+
+export interface StrictResult<T> { ok: boolean; value?: T; requested: string; actual: string | null; ms: number; reason?: string }
+
+/**
+ * One OpenAI call that must match a JSON schema. It never falls back to another provider: if the model cannot answer in
+ * time, the caller says so instead of presenting a different model's answer as this one's. Returns, never throws.
+ */
+export async function callOpenAIStrict<T>(messages: ChatMessage[], o: { model: string; maxTokens: number; timeoutMs: number; schema: { name: string; schema: Record<string, unknown> } }): Promise<StrictResult<T>> {
+  const t0 = Date.now();
+  if (!OPENAI_API_KEY) return { ok: false, requested: o.model, actual: null, ms: 0, reason: "OPENAI_API_KEY not set" };
+  try {
+    const text = await openAICall(messages, o.model, 0, o.maxTokens, true, { timeoutMs: o.timeoutMs, schema: o.schema });
+    const value = JSON.parse(extractJSONText(sanitizeModelOutput(text))) as T;
+    return { ok: true, value, requested: o.model, actual: o.model, ms: Date.now() - t0 };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const name = err instanceof Error ? err.name : "";
+    const reason = name === "TimeoutError" || name === "AbortError" || /timeout|timed out|aborted/i.test(msg) ? `timeout after ${o.timeoutMs}ms` : msg.slice(0, 160);
+    return { ok: false, requested: o.model, actual: null, ms: Date.now() - t0, reason };
+  }
 }
