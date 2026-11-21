@@ -142,6 +142,26 @@ export interface BreakPredictionRow {
 
 /** A teardown test stops steering Today after this long. */
 export const BREAK_TEST_MAX_AGE_DAYS = 21;
+/** A test the founder chose stays pinned this long. After that it is offered again, not forced, so one task cannot sit on Today for weeks. */
+export const PIN_MAX_DAYS = 3;
+const pinnedNow = (chosenAt: string | undefined, now: Date) => {
+  const t = Date.parse(chosenAt ?? "");
+  return Number.isFinite(t) && (now.getTime() - t) / DAY <= PIN_MAX_DAYS;
+};
+
+/** The test the founder pinned and that is still steering Today, if any. */
+export function activePin(rows: BreakPredictionRow[], projectId: string | null | undefined, now: Date = new Date()): { predictionId: string; testId: string; title: string } | null {
+  let best: { predictionId: string; testId: string; title: string; at: number } | null = null;
+  for (const r of rows ?? []) {
+    if (!r?.id || (r.project_id && projectId && r.project_id !== projectId)) continue;
+    for (const t of r.tests ?? []) {
+      if (!t || t.status !== "open" || !t.id || !pinnedNow(t.chosenAt, now)) continue;
+      const at = Date.parse(t.chosenAt ?? "");
+      if (!best || at > best.at) best = { predictionId: r.id, testId: t.id, title: clean(t.assumption, 140), at };
+    }
+  }
+  return best ? { predictionId: best.predictionId, testId: best.testId, title: best.title } : null;
+}
 
 /**
  * The riskiest open test from the newest analysis (the assumption the teardown itself rated least likely to hold).
@@ -154,14 +174,14 @@ export function selectBreakTest(rows: BreakPredictionRow[], projectId: string | 
     .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""));
   // A test the founder chose stays chosen across newer analyses until it is resolved or replaced.
   const chosenRow = fresh
-    .filter((r) => (r.tests ?? []).some((x) => x && x.status === "open" && x.chosenAt))
+    .filter((r) => (r.tests ?? []).some((x) => x && x.status === "open" && pinnedNow(x.chosenAt, now)))
     .sort((a, b) => Math.max(...(b.tests ?? []).map((x) => Date.parse(x.chosenAt ?? "") || 0)) - Math.max(...(a.tests ?? []).map((x) => Date.parse(x.chosenAt ?? "") || 0)))[0];
   const row = chosenRow ?? fresh[0];
   if (!row) return null;
   const open = (row.tests ?? [])
     .filter((t) => t && t.status === "open" && clean(t.test, 300).length >= 15 && clean(t.assumption, 200).length >= 5)
     .sort((a, b) => (Number(a.predictedHold) || 0.5) - (Number(b.predictedHold) || 0.5));
-  const chosen = open.filter((x) => x.chosenAt).sort((a, b) => Date.parse(b.chosenAt ?? "") - Date.parse(a.chosenAt ?? ""))[0];
+  const chosen = open.filter((x) => pinnedNow(x.chosenAt, now)).sort((a, b) => Date.parse(b.chosenAt ?? "") - Date.parse(a.chosenAt ?? ""))[0];
   const t = chosen ?? open[0];
   if (!t) return null;
   const hold = Math.max(0, Math.min(1, Number(t.predictedHold) || 0.5));

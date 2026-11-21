@@ -1320,6 +1320,25 @@ function TodayContent() {
   const workHref = actionData?.action
     ? `/work?${new URLSearchParams({ task: actionData.action, ...(actionData.missionKind ? { mk: actionData.missionKind } : {}), ...(actionData.firstStep ? { step: actionData.firstStep } : {}) }).toString()}`
     : "/work";
+  // A test pinned from Break My Startup keeps steering Today until it is resolved or released. This lets the founder let it go.
+  const [pin, setPin] = useState<{ predictionId: string; testId: string; title: string } | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/today/pinned", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (live) setPin(j?.pin ?? null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  async function releasePin() {
+    if (!pin || pinBusy) return;
+    setPinBusy(true);
+    try {
+      const res = await fetch("/api/break-predictions/choose", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ predictionId: pin.predictionId, testId: pin.testId, choose: false }) });
+      if (res.ok) { setPin(null); setForceActionRefresh((v) => v + 1); }
+    } finally { setPinBusy(false); }
+  }
   // One line saying why today's task matters now, from the founder's own records. Empty when there is no real reason.
   const [whyNowLine, setWhyNowLine] = useState<string | null>(null);
   const [whyNowLink, setWhyNowLink] = useState<string | null>(null);
@@ -2405,6 +2424,14 @@ function TodayContent() {
               alignItems: "start",
             }}
           >
+            {pin && (
+              <p style={{ margin: "0 0 var(--space-2)", fontSize: "var(--text-sm)", color: "var(--bm-text2)" }}>
+                Pinned from Break My Startup: {pin.title}{" "}
+                <button type="button" onClick={() => void releasePin()} disabled={pinBusy} style={{ background: "none", border: "none", padding: 0, minHeight: 44, color: "var(--bm-text)", textDecoration: "underline", cursor: "pointer", font: "inherit" }}>
+                  {pinBusy ? "Releasing…" : "Not this one"}
+                </button>
+              </p>
+            )}
             <TodayCommandCenter
               action={linkifyChannels(sanitizeOutput(actionData.action))}
               lowConfidence={actionData.isLowConfidence}
