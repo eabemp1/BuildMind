@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { selectBreakTest, selectAgentEvidence, agentCandidateTemplates, agentPromptBlock, agentRankingBoost, loadAgentEvidence, type AgentFindingRow } from "@/lib/agentToToday";
+import { activePin, PIN_MAX_DAYS, selectBreakTest, selectAgentEvidence, agentCandidateTemplates, agentPromptBlock, agentRankingBoost, loadAgentEvidence, type AgentFindingRow } from "@/lib/agentToToday";
 import { buildDecisionState } from "@/lib/founderIntelligence";
 
 const now = new Date("2026-10-22T10:00:00Z");
@@ -140,5 +140,28 @@ describe("teardown tests reaching Today", () => {
     };
     const c = buildDecisionState(base).candidates.find((x) => x.id === "break_test");
     expect(c?.evidence?.kind).toBe("break_test");
+  });
+});
+
+describe("a pinned test does not stay forever", () => {
+  const mk = (chosenDaysAgo: number) => [{ id: "cccccccc-1111-0000-0000-000000000000", project_id: null, created_at: daysAgo(5), tests: [
+    { id: "t1", assumption: "People will pay for this", test: "Ask 5 people in your target group what they pay for today.", predictedHold: 0.7, status: "open", chosenAt: daysAgo(chosenDaysAgo) },
+    { id: "t2", assumption: "Founders have time for weekly check-ins", test: "Offer a 10-minute call to 5 founders and count who books.", predictedHold: 0.2, status: "open" },
+  ] }];
+  it("a fresh pin wins over the riskier test and is reported as the active pin", () => {
+    const rows = mk(1);
+    expect(selectBreakTest(rows, "p1", now)!.title).toBe("People will pay for this");
+    expect((selectBreakTest(rows, "p1", now) as unknown as { chosen: boolean }).chosen).toBe(true);
+    expect(activePin(rows, "p1", now)).toEqual({ predictionId: rows[0].id, testId: "t1", title: "People will pay for this" });
+  });
+  it(`after ${PIN_MAX_DAYS} days the pin stops steering Today and is no longer offered for release`, () => {
+    const rows = mk(PIN_MAX_DAYS + 1);
+    expect(selectBreakTest(rows, "p1", now)!.title).toBe("Founders have time for weekly check-ins");
+    expect((selectBreakTest(rows, "p1", now) as unknown as { chosen: boolean }).chosen).toBe(false);
+    expect(activePin(rows, "p1", now)).toBeNull();
+  });
+  it("a resolved test is never an active pin", () => {
+    const rows = mk(1); rows[0].tests[0].status = "supported";
+    expect(activePin(rows, "p1", now)).toBeNull();
   });
 });
