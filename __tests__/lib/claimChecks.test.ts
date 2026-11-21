@@ -55,3 +55,16 @@ describe("settled checks in the evidence layer", () => {
     expect(evidenceQuality({ ...base, checkedClaims: open }, gradeCompetitors(base))).toBe(evidenceQuality(base, gradeCompetitors(base)));
   });
 });
+
+describe("competitor 'verified' means the page was read", () => {
+  const competitor = { direct_competitors: [{ name: "Stride", url: "https://stride.example", weakness: "No quests" }, { name: "Bhaago", url: "https://bhaago.example", weakness: "Events only" }], indirect_competitors: [] } as unknown as EvidenceInput["competitor"];
+  const scraped = [
+    { title: "Stride", url: "https://stride.example", snippet: "Run club", pageFacts: { read: true, prices: ["£95/month"] } },
+    { title: "Bhaago", url: "https://bhaago.example", snippet: "Habit Run" },
+  ] as unknown as EvidenceInput["scraped"];
+  it("flags siteRead only for the competitor whose own page was read", () => {
+    const g = gradeCompetitors({ ...base, competitor, scraped, competitorSource: "serper" });
+    expect(g.find((c) => c.name === "Stride")).toMatchObject({ quality: "verified", siteRead: true });
+    expect(g.find((c) => c.name === "Bhaago")).toMatchObject({ quality: "verified", siteRead: false });
+  });
+});
