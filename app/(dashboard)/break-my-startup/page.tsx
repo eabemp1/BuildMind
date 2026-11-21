@@ -1,4 +1,5 @@
 "use client";
+import { annotatePrices, annotateDeep, listedPrices } from "@/lib/break/priceProvenance";
 import { classifyRiskCategory, stripUnsupportedTraitClaims } from "@/lib/breakGuards";
 import type { EvidenceLayer } from "@/lib/breakEvidence";
 import { StressTestProgress } from "@/components/break/StressTestProgress";
@@ -242,7 +243,7 @@ function StressTestView() {
       const res = await fetch("/api/ai/break-my-startup/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runId: ctx.runId }) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok || !json.data) throw new Error("review failed");
-      setResult(mapApiResult(json.data as BreakApiData));
+      setResult(mapApiResult(json.data as BreakApiData, ctx.idea));
       const r = json.review ?? {};
       setReview({ status: r.status ?? "partial", label: r.label ?? "Partial: not reviewed", reason: r.reason, removed: (r.removed_by_model ?? 0) + (r.removed_by_rule ?? 0), missing: r.missing_evidence ?? [] });
     } catch {
@@ -262,7 +263,7 @@ function StressTestView() {
       setAddedProjectId(null);
       setAddProjectError(null);
       setCustomIdea(String(json.run.idea ?? ""));
-      setResult(mapApiResult(json.run.payload as BreakApiData));
+      setResult(mapApiResult(json.run.payload as BreakApiData, String(json.run.idea ?? "")));
       const saved = (json.run.payload as { review?: { status?: string; label?: string; reason?: string; removed_by_model?: number; removed_by_rule?: number; missing_evidence?: string[] } }).review;
       const reopenIdea = String(json.run.idea ?? "");
       // A run saved before its review finished (or before reviews existed) is shown as not reviewed, with a way to run it now.
@@ -280,7 +281,7 @@ function StressTestView() {
     try { await fetch(`/api/break-runs?id=${encodeURIComponent(id)}`, { method: "DELETE" }); } catch {}
   }
 
-  function mapApiResult(data: BreakApiData): BreakResult {
+  function mapApiResult(data: BreakApiData, founderIdea = ""): BreakResult {
     const probability = typeof data.survival_probability === "number" ? data.survival_probability : undefined;
     // cleanAIList can drop an item entirely (.filter(Boolean), when an item
     // is nothing but a stripped think-tag/markdown artifact) — pairing text
@@ -347,7 +348,9 @@ function StressTestView() {
             siteRead: false,
           } as CompetitorRow))
         : undefined;
-    const competitorFirstTest = cleanAIText(competitorAgentOutput?.first_test) || undefined;
+    // The model's suggested test may name a price. It is not evidence: say where each price came from, or replace it.
+    const listed = listedPrices(data);
+    const competitorFirstTest = annotatePrices(cleanAIText(competitorAgentOutput?.first_test), founderIdea, listed) || undefined;
 
     const usedDiffIndices = new Set<number>();
     function nextDifferentiationEntry(): string | undefined {
@@ -434,7 +437,7 @@ function StressTestView() {
       : undefined;
 
     return {
-      evidence: data.evidence_layer,
+      evidence: data.evidence_layer ? annotateDeep(data.evidence_layer, founderIdea, listed) : data.evidence_layer,
       overallRisk,
       summary: cleanAIText(data.verdict) || "Stress test complete. Review the risks before deciding what to build next.",
       risks,
@@ -572,7 +575,7 @@ function StressTestView() {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.success) throw new Error(payload?.error ?? "Request failed");
 
-      const mappedResult = mapApiResult(payload.data ?? {});
+      const mappedResult = mapApiResult(payload.data ?? {}, idea);
       setResult(mappedResult);
       if (plan === "free") storage.set(freePreviewKey, "1");
 
