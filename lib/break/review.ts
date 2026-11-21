@@ -6,6 +6,7 @@
  * The report is labelled by what really happened: reviewed, or partial / not reviewed.
  */
 import { unsupportedNumbers } from "@/lib/distribution/engine";
+import { annotatePrices as annotateBase } from "@/lib/break/priceProvenance";
 import { inventedExperience } from "@/lib/prep/experienceGuard";
 
 export type ReviewStatus = "pending" | "reviewed" | "partial" | "unavailable";
@@ -135,32 +136,21 @@ export function agentCounts(d: Data): { succeeded: number; total: number } | nul
 }
 
 /** Prices that a competitor's own page showed, from the report's competitor brief: [{ name, price }]. */
-export function competitorPrices(d: Data): Array<{ name: string; price: string }> {
+export function competitorPrices(d: Data): Array<{ name: string; price: string; url?: string }> {
   const brief = ((d.agent_outputs ?? {}) as Record<string, unknown>).competitor as { brief?: unknown } | null | undefined;
   const list = Array.isArray(brief?.brief) ? (brief!.brief as Array<Record<string, unknown>>) : [];
-  const out: Array<{ name: string; price: string }> = [];
+  const out: Array<{ name: string; price: string; url?: string }> = [];
   for (const c of list) {
     const m = /^Seen on their site:\s*(.+)$/i.exec(text(c.pricing));
     if (!m) continue;
-    for (const price of m[1].split(",").map((x) => x.trim()).filter(Boolean)) out.push({ name: text(c.name), price });
+    for (const price of m[1].split(",").map((x) => x.trim()).filter(Boolean)) out.push({ name: text(c.name), price, url: text(c.url) || undefined });
   }
   return out;
 }
-const AMOUNT = /(?:[$£€]|\bGHS\b|\bUSD\b)\s?\d[\d,]*(?:\.\d+)?(?:\s?(?:\/\s?(?:month|mo|year|yr)|per month))?/gi;
-const norm = (t: string) => t.toLowerCase().replace(/\s+/g, "");
-
-/**
- * Say where a price came from. A price that is a competitor's listed price gets that said next to it. A price nobody
- * published anywhere in the evidence is replaced, because it would read as something a customer agreed to.
- */
-export function annotatePrices(t: string, prices: Array<{ name: string; price: string }>, dossier: string): string {
-  const notes: string[] = [];
-  const out = t.replace(AMOUNT, (m) => {
-    const hit = prices.find((p) => norm(p.price).includes(norm(m)) || norm(m).includes(norm(p.price)));
-    if (hit) { const n = `${m.trim()} is ${hit.name}'s listed price, not a price a customer told you`; if (!notes.includes(n)) notes.push(n); return m; }
-    return norm(dossier).includes(norm(m)) ? m : "a price you choose";
-  });
-  return notes.length ? `${out} (${notes.join("; ")}.)` : out;
+/** Exact amount + currency + billing period matching lives in priceProvenance. The founder's own idea is the dossier's first line. */
+export function annotatePrices(t: string, prices: Array<{ name: string; price: string; url?: string }>, dossier: string): string {
+  const founder = /^FOUNDER'S IDEA: ([\s\S]*?)\nCOMPETITORS FOUND/.exec(dossier)?.[1] ?? "";
+  return annotateBase(t, founder, prices);
 }
 
 export function labelFor(status: ReviewStatus, model: string | null, agents: { succeeded: number; total: number } | null = null): string {
