@@ -238,7 +238,8 @@ function StressTestView() {
     setReviewCtx(ctx);
     setReview({ status: "pending", label: "First draft. The final review is still running." });
     try {
-      const res = await fetch("/api/ai/break-my-startup/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ctx) });
+      if (!ctx.runId) throw new Error("not saved");
+      const res = await fetch("/api/ai/break-my-startup/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runId: ctx.runId }) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok || !json.data) throw new Error("review failed");
       setResult(mapApiResult(json.data as BreakApiData));
@@ -965,6 +966,7 @@ function StressTestView() {
               <div role="status" style={{ border: "1px solid var(--bm-border)", borderRadius: 10, padding: "10px 14px", fontSize: 14, color: review.status === "reviewed" ? "var(--bm-text)" : "var(--bm-amber)" }}>
                 <strong>{review.label}</strong>
                 {review.status === "reviewed" && typeof review.removed === "number" && review.removed > 0 && <span> {review.removed} claim{review.removed === 1 ? "" : "s"} the evidence did not support {review.removed === 1 ? "was" : "were"} removed.</span>}
+                {review.status !== "reviewed" && review.status !== "pending" && review.reason && <span> ({review.reason}.)</span>}
                 {review.status !== "reviewed" && review.status !== "pending" && <span> Treat the verdict as unchecked. Claims with numbers or experiences that are not in the evidence were still removed.</span>}
                 {review.missing && review.missing.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{review.missing.map((m) => <li key={m}>Find out: {m}</li>)}</ul>}
                 {(review.status === "partial" || review.status === "unavailable") && reviewCtx && <div style={{ marginTop: 8 }}><button type="button" onClick={() => void runReview(reviewCtx)} style={{ minHeight: 44, borderRadius: 8, border: "1px solid var(--bm-border)", background: "var(--bm-bg)", color: "var(--bm-text)", padding: "0 14px", cursor: "pointer" }}>Run the review again</button></div>}

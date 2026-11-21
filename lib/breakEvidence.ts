@@ -48,6 +48,8 @@ export interface CompetitorEvidence {
   quality: "verified" | "inferred" | "adjacent";
   note: string;
   url?: string;
+  /** True only when BuildMind read the competitor's own page. A search hit alone is not a verified competitor. */
+  siteRead?: boolean;
 }
 
 export type TestComponent = "demand" | "monetization" | "competition" | "uniqueness" | "risk";
@@ -216,7 +218,7 @@ export function gradeCompetitors(input: EvidenceInput): CompetitorEvidence[] {
     const h = hostOf(d.url);
     const hit = h ? scrapedByHost.get(h) : undefined;
     if (hit && searchIsReal) {
-      push({ name: d.name, quality: "verified", url: d.url, note: `Found in live search (${h}). Weakness cited: ${clip(d.weakness, 90)}` });
+      push({ name: d.name, quality: "verified", url: d.url, siteRead: Boolean(hit.pageFacts?.read), note: `Found in live search (${h}). Weakness cited: ${clip(d.weakness, 90)}` });
     } else {
       push({ name: d.name, quality: "inferred", url: d.url, note: "Named by the competitor agent; not matched to a live search result. Check it exists and serves the same customer." });
     }
@@ -230,7 +232,7 @@ export function gradeCompetitors(input: EvidenceInput): CompetitorEvidence[] {
     const h = hostOf(s.url);
     if (!h) continue;
     if ([...seen].some(n => h.includes(n.replace(/\s+/g, "").toLowerCase()))) continue;
-    push({ name: s.title || h, quality: "verified", url: s.url, note: `Appeared in live search (${h}). Relevance not yet confirmed.` });
+    push({ name: s.title || h, quality: "verified", url: s.url, siteRead: Boolean(s.pageFacts?.read), note: `Appeared in live search (${h}). Relevance not yet confirmed.` });
     if (out.length >= 10) break;
   }
   return out.slice(0, 10);

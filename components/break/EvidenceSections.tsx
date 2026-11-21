@@ -25,7 +25,7 @@ const KIND: Record<ClaimKind, { label: string; color: string; hint: string }> = 
   unknown:    { label: "Unknown",    color: "var(--bm-text3)",  hint: "Nobody has checked this" },
 };
 const QUALITY: Record<string, { label: string; color: string }> = {
-  verified: { label: "Verified", color: "var(--bm-green)" },
+  verified: { label: "Verified: page read", color: "var(--bm-green)" },
   inferred: { label: "Inferred", color: "var(--bm-amber)" },
   adjacent: { label: "Adjacent", color: "var(--bm-text3)" },
 };
@@ -331,7 +331,11 @@ export function ProofSections({ layer, rec, investigate }: { layer: EvidenceLaye
 /** Competitor evidence quality, keyed by lower-cased name, for the market tab. */
 export function competitorQuality(layer: EvidenceLayer | undefined): Record<string, { label: string; color: string; note: string }> {
   const out: Record<string, { label: string; color: string; note: string }> = {};
-  for (const co of layer?.competitors ?? []) out[co.name.toLowerCase()] = { ...QUALITY[co.quality], note: co.note };
+  for (const co of layer?.competitors ?? []) {
+    // "Verified" means their own page was read. A search hit alone, or a run saved before this was tracked, is only "Found in search".
+    const q = co.quality === "verified" && !co.siteRead ? { label: "Found in search", color: "var(--bm-amber)" } : QUALITY[co.quality];
+    out[co.name.toLowerCase()] = { ...q, note: co.quality === "verified" && !co.siteRead ? `${co.note} Their page was not read.` : co.note };
+  }
   return out;
 }
 
