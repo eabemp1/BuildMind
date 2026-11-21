@@ -249,7 +249,9 @@ export async function middleware(request: NextRequest) {
     // Tracked links and hosted signup pages are opened by the founder's audience, who have no account.
     pathname.startsWith("/r/") ||
     pathname.startsWith("/i/") ||
-    pathname.startsWith("/v/");
+    pathname.startsWith("/v/") ||
+    // Offer pages a founder chose to publish are opened by their audience, who have no account.
+    pathname.startsWith("/o/");
   const isExploreRoute = pathname === "/explore" || pathname.startsWith("/explore/");
   const isFounderRoute = pathname.startsWith("/founder/");
   const isStudentRoute = pathname === "/students";

@@ -57,7 +57,7 @@ export function nextAction(s: Summary): string {
 }
 
 /** Insight lines must quote the founder's own notes. Anything whose quote is not in the notes is dropped. */
-export interface Insight { point: string; quote: string }
+export interface Insight { point: string; quote: string; /** Set by the founder: this quote may be used on an offer page. */ approved?: boolean }
 
 export function verifyInsights(raw: unknown, notes: string): Insight[] {
   const norm = (t: string) => t.toLowerCase().replace(/[\s’'"“”]+/g, " ").trim();

@@ -110,6 +110,12 @@ function PersonCard({ p, due, open, onToggle, onStatus, onRemove, onChanged, pro
     onChanged();
   }
 
+  async function approve(index: number, approved: boolean) {
+    const r = await api("/api/conversations/approve", { method: "POST", body: JSON.stringify({ id: p.id, index, approved }) });
+    if (!r.ok) setLearnNote(r.error ?? "Could not save that.");
+    onChanged();
+  }
+
   const days = p.contacted_at ? Math.floor((Date.now() - Date.parse(p.contacted_at)) / 86_400_000) : null;
   return (
     <div style={{ ...card, display: "grid", gap: 10, borderColor: due ? "var(--bm-amber)" : undefined }}>
@@ -143,9 +149,14 @@ function PersonCard({ p, due, open, onToggle, onStatus, onRemove, onChanged, pro
             {upgrade && <div><Link href="/upgrade" style={{ ...btn(true), textDecoration: "none", display: "inline-flex", alignItems: "center" }}>See Builder</Link></div>}
             {p.insights && p.insights.length > 0 && (
               <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6, fontSize: 14, color: "var(--bm-text2)" }}>
-                {p.insights.map((i, k) => <li key={k}>{i.point} <span style={{ color: "var(--bm-text3)" }}>— “{i.quote}”</span></li>)}
+                {p.insights.map((i, k) => (
+                  <li key={k}>{i.point} <span style={{ color: "var(--bm-text3)" }}>— “{i.quote}”</span>{" "}
+                    <button type="button" onClick={() => void approve(k, !i.approved)} style={{ ...btn(Boolean(i.approved)), minHeight: 44 }}>{i.approved ? "Approved for an offer page" : "Use this quote"}</button>
+                  </li>
+                ))}
               </ul>
             )}
+            {p.insights?.some((i) => i.approved) && <div><Link href="/offers" style={{ ...btn(true), textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Make an offer page</Link></div>}
             {p.insights && p.insights.length === 0 && p.notes && <p style={muted}>Nothing clear could be pulled out of those notes. Add what they actually said.</p>}
           </div>
           <div><button type="button" onClick={onRemove} style={btn()}>Remove</button></div>
