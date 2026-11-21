@@ -23,6 +23,7 @@ import {
 } from "@/lib/agents";
 import { competitorSearch } from "@/lib/search";
 import { readPages } from "@/lib/pageReader";
+import { createBudget, reflexionDeadline, traceFields } from "@/lib/break/budget";
 import { buildEvidenceLayer } from "@/lib/breakEvidence";
 import { extractTests, applyTrackRecord, summarizeTrackRecord } from "@/lib/breakCalibration";
 import { stripUnsupportedTraitClaims } from "@/lib/breakGuards";
@@ -312,6 +313,7 @@ export async function POST(request: Request) {
   let fallbackStage = "Idea";
   let fallbackFocusAreas: string[] = [];
   let fallbackExecutionMode = false;
+  const budget = createBudget(55_000);
   try {
     const rawBody = await request.json().catch(() => ({}));
     const zodResult = BreakMyStartupSchema.safeParse(rawBody);
@@ -476,7 +478,7 @@ export async function POST(request: Request) {
 
       // Run 5-agent pipeline
       // C2 FIX: Gate the 5-agent fan-out behind a concurrency limiter
-      const agentPipeline = await withAgentConcurrencyLimit(() => runAgentPipeline(startupCtx));
+      const agentPipeline = await budget.time("agents", () => withAgentConcurrencyLimit(() => runAgentPipeline(startupCtx)));
       const signals = agentPipeline.signal_summary;
 
       // Viability score
@@ -486,12 +488,15 @@ export async function POST(request: Request) {
       const breakdownEntries = computeViabilityBreakdown(viabilityResult.breakdown);
 
       // Pivots
-      const pivots = await generatePivots(startupCtx, signals, viabilityResult.viability_score);
+      const pivots: Awaited<ReturnType<typeof generatePivots>> = budget.canRun(18_000)
+        ? await budget.time("pivots", () => generatePivots(startupCtx, signals, viabilityResult.viability_score))
+        : (budget.skip("pivots"), []);
 
       // Execution plan (if requested or if score is viable)
       let executionPlan: ExecutionPlan | null = null;
       if (requestExecutionMode || viabilityResult.viability_score >= 50) {
-        executionPlan = await generateExecutionPlan(startupCtx, viabilityResult.viability_score);
+        if (budget.canRun(22_000)) executionPlan = await budget.time("execution_plan", () => generateExecutionPlan(startupCtx, viabilityResult.viability_score));
+        else budget.skip("execution_plan");
       }
 
       // Reflexion pipeline — Stage 7 action
@@ -508,7 +513,8 @@ export async function POST(request: Request) {
       let learningLogId: string | null = null;
       let reflexionStatus: ReflexionStatus = "partial";
       try {
-        reflexionAction = await runFullReflexionPipeline(
+        if (reflexionDeadline(budget) - Date.now() < 12_000) budget.skip("reflexion_shortened");
+        reflexionAction = await budget.time("reflexion", () => runFullReflexionPipeline(
           {
             founderContext,
             agentPipeline,
@@ -519,8 +525,8 @@ export async function POST(request: Request) {
           },
           // G1 FIX: Give reflexion 26 s from now (route maxDuration is 60 s; agent
           // pipeline already consumed ~25 s, leaving ~35 s; 26 s is a safe budget).
-          Date.now() + 26_000,
-        );
+          reflexionDeadline(budget),
+        ));
 
         // Record action shown — starts the learning loop for this run
         if (reflexionAction?.action) {
@@ -590,6 +596,7 @@ export async function POST(request: Request) {
             `${agentPipeline.agents_succeeded} of 5 analysis steps completed${agentPipeline.agents_succeeded < 5 ? ` (${5 - agentPipeline.agents_succeeded} used a built-in default: ${(Object.entries(agentPipeline.agent_statuses) as [string, string][]).filter(([, st]) => st !== "success").map(([n]) => n).join(", ")})` : ""} in ${agentPipeline.duration_ms}ms`,
             `Found ${competitors.length} competitor(s) via ${competitor_data_source}`,
             `Viability score: ${viabilityResult.viability_score}/100 (${viabilityResult.verdict})`,
+            ...(budget.summary().partial ? [`Partial report: ${budget.summary().skipped.join(", ").replace(/_/g, " ")} ran out of time and ${budget.summary().skipped.length === 1 ? "was" : "were"} skipped or shortened. Run it again for the full report.`] : []),
           ],
           verdict: viabilityResult.verdict_reason,
           kill_reasons: killReasons,
@@ -647,6 +654,7 @@ export async function POST(request: Request) {
           evidence_layer: evidenceLayer,
           competitor_data_source,  // "ddg" | "brave" | "ai_synthesised" | "none"
           pipeline_duration_ms: agentPipeline.duration_ms,
+          ...traceFields(budget, { agents: agentPipeline.agent_statuses }),
         },
       });
     }
@@ -818,7 +826,7 @@ export async function POST(request: Request) {
 
     // Run 5-agent pipeline with full project context
     // C2 FIX: Gate the 5-agent fan-out behind a concurrency limiter
-    const agentPipeline = await withAgentConcurrencyLimit(() => runAgentPipeline(startupCtx));
+    const agentPipeline = await budget.time("agents", () => withAgentConcurrencyLimit(() => runAgentPipeline(startupCtx)));
     const signals = agentPipeline.signal_summary;
 
     // Viability score — blend agent signals with execution data
@@ -831,12 +839,15 @@ export async function POST(request: Request) {
     const breakdownEntries = computeViabilityBreakdown(viabilityResult.breakdown);
 
     // Pivots
-    const pivots = await generatePivots(startupCtx, signals, viabilityResult.viability_score);
+    const pivots: Awaited<ReturnType<typeof generatePivots>> = budget.canRun(18_000)
+        ? await budget.time("pivots", () => generatePivots(startupCtx, signals, viabilityResult.viability_score))
+        : (budget.skip("pivots"), []);
 
     // Execution plan
     let executionPlan: ExecutionPlan | null = null;
     if (requestExecutionMode || viabilityResult.viability_score >= 45) {
-      executionPlan = await generateExecutionPlan(startupCtx, viabilityResult.viability_score);
+      if (budget.canRun(22_000)) executionPlan = await budget.time("execution_plan", () => generateExecutionPlan(startupCtx, viabilityResult.viability_score));
+        else budget.skip("execution_plan");
     }
 
     // Build Reflexion context from founder_context row
@@ -859,14 +870,15 @@ export async function POST(request: Request) {
     let learningLogId: string | null = null;
     let reflexionStatus: ReflexionStatus = "partial";
     try {
-      reflexionAction = await runFullReflexionPipeline({
+      if (reflexionDeadline(budget) - Date.now() < 12_000) budget.skip("reflexion_shortened");
+      reflexionAction = await budget.time("reflexion", () => runFullReflexionPipeline({
         founderContext: founderReflexionCtx,
         agentPipeline,
         viabilityScore: viabilityResult,
         task: `Given this founder's project data and the agent analysis, what is the single highest-leverage next move?${focusAreaPrompt}`,
         executionMode: requestExecutionMode,
         learnedPatternsPrompt: `${learnedPatternsPrompt}${focusAreaPrompt}${intelligenceBlock ? `\n\n${intelligenceBlock}` : ""}`,
-      });
+      }, reflexionDeadline(budget)));
 
       // Record action shown — starts the learning loop for this run
       if (reflexionAction?.action) {
@@ -987,6 +999,7 @@ export async function POST(request: Request) {
           `${agentPipeline.agents_succeeded} of 5 analysis steps completed${agentPipeline.agents_succeeded < 5 ? ` (${5 - agentPipeline.agents_succeeded} used a built-in default: ${(Object.entries(agentPipeline.agent_statuses) as [string, string][]).filter(([, st]) => st !== "success").map(([n]) => n).join(", ")})` : ""} in ${agentPipeline.duration_ms}ms`,
           `Found ${competitors.length} competitor(s) via live web scan`,
           `Viability score: ${viabilityResult.viability_score}/100 — ${viabilityResult.verdict}`,
+            ...(budget.summary().partial ? [`Partial report: ${budget.summary().skipped.join(", ").replace(/_/g, " ")} ran out of time and ${budget.summary().skipped.length === 1 ? "was" : "were"} skipped or shortened. Run it again for the full report.`] : []),
         ],
         verdict: viabilityResult.verdict_reason,
         kill_reasons: killReasons,
@@ -1053,6 +1066,7 @@ export async function POST(request: Request) {
         competitors_scraped,
         evidence_layer: evidenceLayer,
         pipeline_duration_ms: agentPipeline.duration_ms,
+        ...traceFields(budget, { agents: agentPipeline.agent_statuses }),
       },
     });
   } catch (error) {
