@@ -1032,7 +1032,9 @@ export async function callModel(
   // unaffected.
   // A Gemini-first call gets its own timeout on top, so a slow Gemini cannot use up the time the
   // fallback providers need.
-  const effectiveDeadline = deadlineMs ?? (Date.now() + 9000 + (geminiFirst ? geminiTimeoutMs : 0));
+  // An OpenAI first attempt gets its own allowance on top (like Gemini), so a slow OpenAI call cannot use up the whole
+  // default budget and leave no time for the fallback providers.
+  const effectiveDeadline = deadlineMs ?? (Date.now() + 9000 + (geminiFirst ? geminiTimeoutMs : 0) + (OPENAI_ENABLED ? OPENAI_TIMEOUT_MS : 0));
 
   for (const provider of chain) {
     if (Date.now() >= effectiveDeadline) {
@@ -1045,7 +1047,9 @@ export async function callModel(
       // own 8s timeout and push the function past Vercel's 30s kill.
       let text: string;
       if (deadlineMs !== undefined) {
-        const remaining = Math.max(500, effectiveDeadline - Date.now());
+        let remaining = Math.max(500, effectiveDeadline - Date.now());
+        // OpenAI may use at most 60% of what is left, so a hung call still leaves time for a real fallback.
+        if (provider.label.startsWith("openai:") && chain.length > 1) remaining = Math.max(500, Math.floor(remaining * 0.6));
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           text = await Promise.race([
