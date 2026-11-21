@@ -16,6 +16,7 @@ import { BrandMark } from "@/components/layout/logo";
 import { useTheme } from "@/components/layout/theme-provider";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { Price } from "@/components/Price";
+import { PLAN_LIMITS } from "@/lib/plan";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -684,7 +685,7 @@ const FEATURES = [
   {
     icon: Flame,
     title: "Break My Startup, built on evidence",
-    desc: "Five specialist agents attack your idea, then every claim is labelled evidence, inference or hypothesis. Contradictions are flagged and the score comes as a range with the tests that would prove it wrong.",
+    desc: "Up to five specialist agents attack your idea, then every claim is labelled evidence, inference or hypothesis. Contradictions are flagged and the score comes as a range with the tests that would prove it wrong.",
     badge: "Stress-test",
     badgeColor: "var(--bm-red)",
   },
@@ -905,7 +906,7 @@ function PricingSection() {
                 {[
                   "Morning Briefing — 3 days/week",
                   "One stress-test per session (Break My Startup)",
-                  "5 actions per week",
+                  `${PLAN_LIMITS.free.actionsPerWeek} actions per week`,
                   "3 AI messages per day",
                   "Momentum Score (Level 1)",
                   "1 project",
@@ -940,7 +941,7 @@ function PricingSection() {
               <ul className="flex flex-col gap-3 flex-1">
                 {[
                   "A new daily move every day, with the reasoning",
-                  "Full Break My Startup: 5 agents, evidence labels, contradictions, falsification tests",
+                  "Full Break My Startup: up to 5 agents (a step that fails is shown as partial), evidence labels, contradictions, falsification tests",
                   "Evidence-gated stage progression",
                   "Founder memory that spots your avoidance patterns",
                   "AI Coach grounded in your project, up to 80 messages a day",
