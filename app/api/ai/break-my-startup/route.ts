@@ -24,6 +24,8 @@ import {
 import { competitorSearch } from "@/lib/search";
 import { readPages } from "@/lib/pageReader";
 import { createBudget, reflexionDeadline, traceFields } from "@/lib/break/budget";
+import { initialReview } from "@/lib/break/review";
+import { REVIEW_MODEL, reviewEnabled } from "@/lib/ai-providers";
 import { buildEvidenceLayer } from "@/lib/breakEvidence";
 import { extractTests, applyTrackRecord, summarizeTrackRecord } from "@/lib/breakCalibration";
 import { stripUnsupportedTraitClaims } from "@/lib/breakGuards";
@@ -655,6 +657,7 @@ export async function POST(request: Request) {
           competitor_data_source,  // "ddg" | "brave" | "ai_synthesised" | "none"
           pipeline_duration_ms: agentPipeline.duration_ms,
           ...traceFields(budget, { agents: agentPipeline.agent_statuses }),
+          review: initialReview(reviewEnabled(), REVIEW_MODEL),
         },
       });
     }
@@ -1067,6 +1070,7 @@ export async function POST(request: Request) {
         evidence_layer: evidenceLayer,
         pipeline_duration_ms: agentPipeline.duration_ms,
         ...traceFields(budget, { agents: agentPipeline.agent_statuses }),
+          review: initialReview(reviewEnabled(), REVIEW_MODEL),
       },
     });
   } catch (error) {
