@@ -325,7 +325,7 @@ function MarketTab({ result }: { result: BreakResult }) {
                     <p style={{ ...bodyText, fontSize: 13.5 }}>{c.weakness}</p>
                   </div>
                   {c.howYouLose && (<div><p style={labelText}>How you could lose to them</p><p style={{ ...bodyText, fontSize: 13.5 }}>{c.howYouLose}</p></div>)}
-                  {ev && <p style={{ ...smallText, fontSize: 12 }}><span style={{ color: ev.color }}>{ev.label}.</span> {ev.note}</p>}
+                  {ev && <p style={{ ...smallText, fontSize: 12 }}><span style={{ color: ev.color }}>{ev.label}.</span> {ev.note}{ev.url && /^https?:\/\//.test(ev.url) ? <> <a href={ev.url} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>Source</a></> : " No source link."}</p>}
                 </div>
               );
             })}

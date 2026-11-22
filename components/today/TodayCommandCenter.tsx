@@ -34,7 +34,7 @@ import { useCountUp } from "@/components/today/useCountUp";
 import { useSidePane } from "@/components/layout/side-pane-context";
 import { buildFocusIcs, detectPlatform, openAndroidTimer, openIcs, type Platform } from "@/lib/focusReminder";
 import {
-  FOCUS_PRESETS, dayArc, finishBlock, formatClock, nearestPreset, normalizeFocusState, nudgeLine,
+  FOCUS_PRESETS, dayArc, finishBlock, formatClock, normalizeFocusState, nudgeLine,
   parseSuggestedMinutes, pauseFocus, resetFocus, resumeFocus, secondsLeft, startFocus,
   type FocusState,
 } from "@/lib/todayFocus";
@@ -93,7 +93,8 @@ export default function TodayCommandCenter({ action, kicker, accent, rationale, 
     facts: timeText ? [{ label: "Time", value: timeText }] : undefined,
   });
   const suggested = useMemo(() => parseSuggestedMinutes(timeText), [timeText]);
-  const defaultMinutes = suggested ? nearestPreset(suggested) : 25;
+  // The block matches the task's own time (a 15-minute task starts a 15-minute block), not the nearest preset.
+  const defaultMinutes = suggested ? Math.min(90, Math.max(5, suggested)) : 25;
 
   const [now, setNow] = useState<Date>(() => new Date());
   const [focus, setFocus] = useState<FocusState>(() => normalizeFocusState(null, new Date(), defaultMinutes));

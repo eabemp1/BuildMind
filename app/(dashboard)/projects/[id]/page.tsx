@@ -1512,7 +1512,7 @@ export default function ProjectDetailPage() {
       {tab === "roadmap" && (
         <div>
           <div style={{ fontSize: 12, color: "var(--bm-text3)", marginBottom: 18 }}>
-            Proven actions for <span style={{ color: "#A78BFA", fontWeight: 600 }}>{stage}</span> stage — based on what actually works.
+            Common next steps for the <span style={{ color: "#A78BFA", fontWeight: 600 }}>{stage}</span> stage. These are general suggestions, not tested on your customers. Treat each as a guess until a customer confirms it.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {roadmapSteps.map((step, i) => (

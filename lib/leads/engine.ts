@@ -62,11 +62,21 @@ Rules: every query must name the city or country. Aim at the customers themselve
 
 export type Page = SearchResult & { text: string; links: PageLink[] };
 
-async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Set<string>, maxPages: number, discussion = 2) {
+/** Give a request only the time the run has left; a late answer counts as a failure instead of holding the run. */
+export function within<T, F>(p: Promise<T>, ms: number, fallback: F): Promise<T | F> {
+  let t: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<F>((res) => { t = setTimeout(() => res(fallback), Math.max(0, ms)); });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+}
+
+const timedOut = <T,>(v: T | null): T => { if (v === null) throw new Error("out of time"); return v; };
+
+async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Set<string>, maxPages: number, discussion = 2, stopAt = Number.POSITIVE_INFINITY, withPlaces = true) {
+  const left = () => stopAt - Date.now();
   const webCount = discussion > 0 ? 5 : queries.length;
   const searches = await Promise.allSettled([
-    ...queries.slice(0, webCount).map((q) => webSearch(q, 6)),
-    ...(discussion > 0 ? queries.slice(5, 5 + discussion).map((q) => discussionSearch(q, 6)) : []),
+    ...queries.slice(0, webCount).map((q) => within(webSearch(q, 6), left(), null).then(timedOut)),
+    ...(discussion > 0 ? queries.slice(5, 5 + discussion).map((q) => within(discussionSearch(q, 6), left(), null).then(timedOut)) : []),
   ]);
   const results: SearchResult[] = [];
   let failed = 0;
@@ -77,8 +87,9 @@ async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Se
   }
   const chosen = pickPages(results.filter((r) => !seen.has(r.url)), maxPages, targetsFounders(i.customer));
   const [read, places] = await Promise.all([
-    Promise.all(chosen.map((r) => readPageWithLinks(r.url))),
-    findPlaces(i.city, i.country, osmTags),
+    Promise.all(chosen.map((r) => within(readPageWithLinks(r.url), left(), { text: "", links: [] as PageLink[] }))),
+    // One map lookup per run: later rounds would only repeat it.
+    withPlaces ? within(findPlaces(i.city, i.country, osmTags), left(), [] as OsmPlace[]) : Promise.resolve([] as OsmPlace[]),
   ]);
   const pages: Page[] = chosen.map((r, n) => ({ ...r, text: read[n].text || r.snippet || "", links: read[n].links })).filter((p) => p.text.length > 40);
   return { pages, places, searches: searches.length, searchFailed: failed, snippets: results, resultsFound: results.length };
@@ -284,7 +295,7 @@ export async function findLeads(input: Partial<LeadInput>, deadline = Date.now()
     const queries = plan.queries.filter((q) => !tried.includes(q) && !allQueries.includes(q)).slice(0, queriesLeft);
     if (!queries.length) break;
     allQueries.push(...queries);
-    const got = await pass(i, queries, plan.osm, seen, pagesLeft, b.discussion);
+    const got = await pass(i, queries, plan.osm, seen, pagesLeft, b.discussion, stopAt, round === 1);
     got.pages.forEach((p) => seen.add(p.url));
     // Second hop: open the most promising links found on those pages, if any page budget is left.
     const followedLeft = pagesLeft - got.pages.length;

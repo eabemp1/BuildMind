@@ -100,7 +100,7 @@ export default function RadarPage() {
             <span>
               Search for me automatically, twice a week. New finds appear here marked "new" and you get a notification.
               {!auto.paid ? " This is part of the paid plan." : ""}
-              {auto.lastRunAt ? ` Last searched ${new Date(auto.lastRunAt).toLocaleDateString()}${auto.lastAdded ? `, found ${auto.lastAdded}` : ", nothing new that fit"}.` : ""}
+              {auto.lastRunAt ? ` Last checked ${new Date(auto.lastRunAt).toLocaleDateString()}${auto.lastAdded ? `, found ${auto.lastAdded}` : ", nothing new that fit"}.` : auto.paid && auto.enabled ? " Not checked yet. The first search runs within a few days." : " No automatic search has run."}
             </span>
           </label>
         )}
