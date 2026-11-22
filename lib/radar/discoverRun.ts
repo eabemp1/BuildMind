@@ -9,6 +9,7 @@ import { webSearch } from "@/lib/search";
 import { loadProject } from "@/lib/prep/engine";
 import { withTimeout, settleAll } from "@/lib/resilience";
 import { buildQueries, pickCandidates, type Hit } from "@/lib/radar/discover";
+import { radarBudget, yearConfirmed, isRoundup, type RadarMode } from "@/lib/radar/budget";
 import { extractDraft } from "@/lib/radar/extract";
 import { typeOfKind } from "@/lib/radar/types";
 import { fitFor } from "@/lib/radar/fit";
@@ -18,12 +19,13 @@ export type DiscoverResult =
   | { ok: true; added: Array<{ title: string; kind: string; score: number; deadline_at?: string | null }>; stats: Record<string, number>; queries: string[] }
   | { ok: false; status: number; error: string; reason?: "setup" | "no_project" };
 
-export async function runDiscovery(admin: SupabaseClient, input: { userId: string; projectId?: string | null; where?: string }): Promise<DiscoverResult> {
+export async function runDiscovery(admin: SupabaseClient, input: { userId: string; projectId?: string | null; where?: string; mode?: RadarMode }): Promise<DiscoverResult> {
   const { userId } = input;
   const where = input.where ?? "";
   const project = await loadProject(admin, userId, input.projectId);
   if (!project.name && !project.description) return { ok: false, status: 400, error: "Add a project first so BuildMind knows what to look for.", reason: "no_project" };
-  const queries = buildQueries(project, where);
+  const budget = radarBudget(input.mode ?? "manual");
+  const queries = buildQueries(project, where).slice(0, budget.queries);
 
   const { data: existing, error: exErr } = await admin.from("radar_items").select("url").eq("user_id", userId).limit(500);
   if (exErr) return { ok: false, status: 503, error: "Radar is not set up yet. Run the latest database migrations.", reason: "setup" };
@@ -34,7 +36,7 @@ export async function runDiscovery(admin: SupabaseClient, input: { userId: strin
     const hits: Hit[] = (res.scraped ? res.results : []).map((r) => ({ title: r.title, url: r.url, snippet: r.snippet }));
     return { wanted: q.kind, hits, query: q.q };
   }, 4);
-  const { picked, dropped } = pickCandidates(searched.ok, seen, 6);
+  const { picked, dropped } = pickCandidates(searched.ok.map((g) => ({ ...g, hits: g.hits.filter((h) => !isRoundup(h.title, h.url)) })), seen, budget.reads);
 
   const read = await settleAll(picked, async (c) => {
     const d = await withTimeout(extractDraft({ url: c.url }), 14000, "read");
@@ -42,7 +44,7 @@ export async function runDiscovery(admin: SupabaseClient, input: { userId: strin
     return { c, d };
   }, 3);
 
-  const stats = { searched: queries.length, searchFailed: searched.failed, found: picked.length, unreadable: read.failed, ...dropped, undated: 0, passed: 0, wrongKind: dropped.wrongKind, lowFit: 0, added: 0 };
+  const stats = { searched: queries.length, searchFailed: searched.failed, found: picked.length, unreadable: read.failed, ...dropped, undated: 0, yearUnconfirmed: 0, passed: 0, wrongKind: dropped.wrongKind, lowFit: 0, added: 0 };
   const added: Array<{ title: string; kind: string; score: number; deadline_at?: string | null }> = [];
   const now = Date.now();
   for (const { c, d } of read.ok) {
@@ -52,6 +54,8 @@ export async function runDiscovery(admin: SupabaseClient, input: { userId: strin
     const actionAt = type === "program" ? d.deadline_at ?? d.starts_at : d.starts_at ?? d.deadline_at;
     if (!actionAt) { stats.undated++; continue; }
     if (Date.parse(actionAt) < now) { stats.passed++; continue; }
+    // The date must come with its year in the page's own words, so a recurring 'March 14' is never read as this year's.
+    if (!yearConfirmed(actionAt, d.source_text ?? "")) { stats.yearUnconfirmed++; continue; }
     const probe = { type, kind, kind_confirmed: d.kind_confirmed, title: d.title, organizer: d.organizer, location: d.location, is_virtual: d.is_virtual, meeting_url: d.meeting_url, starts_at: d.starts_at, deadline_at: d.deadline_at, eligibility: d.eligibility, cost: d.cost, notes: null, role: null, status: "new", source_text: d.source_text } as unknown as RadarItem;
     const fit = fitFor(probe, { stage: project.stage, projectText: [project.name, project.description, project.problem, project.targetUsers].join(" "), homeWhere: where, now });
     if (fit.score < 45) { stats.lowFit++; continue; }
