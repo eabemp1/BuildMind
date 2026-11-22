@@ -2370,9 +2370,12 @@ function TodayContent() {
                 onClick={() => {
                   if (submitting) return;
                   setSubmitting(true);
-                  storage.setJSON("bm_today_action", { action: actionData?.action ?? "", outcome: "completed", note: "", confidence: 3, recommendation_id: actionData?.intelligence?.recommendation_id ?? null, date: localDayKey() });
-                  void handleCheckIn("completed").catch(() => { setSubmitting(false); });
-                  router.push("/reflect?outcome=completed");
+                  // Same rule as the outcome buttons: open the reflection only after the server confirms the save,
+                  // and carry the project the task was for.
+                  void handleCheckIn("completed", () => {
+                    storage.setJSON("bm_today_action", { action: actionData?.action ?? "", outcome: "completed", note: "", confidence: 3, recommendation_id: actionData?.intelligence?.recommendation_id ?? null, date: localDayKey() });
+                    router.push(`/reflect?outcome=completed${project?.id ? `&project=${project.id}` : ""}`);
+                  }).catch(() => { setSubmitting(false); });
                 }}
                 style={{ minHeight: 40, padding: "0 14px", borderRadius: 8, border: "none", background: "var(--bm-accent)", color: "#151109", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
               >

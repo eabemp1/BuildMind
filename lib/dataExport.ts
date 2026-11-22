@@ -81,6 +81,7 @@ export const EXPORT_CATEGORIES: ReadonlyArray<ExportCategory> = [
   { table: "radar_items", ownerCol: "user_id", group: "growth", label: "Radar opportunities and contacts", orderBy: "created_at" },
   { table: "radar_settings", ownerCol: "user_id", group: "growth", label: "Radar settings" },
   { table: "signal_links", ownerCol: "user_id", group: "growth", label: "Tracked links and pages", orderBy: "created_at" },
+  { table: "landing_drafts", ownerCol: "user_id", group: "growth", label: "Saved landing page drafts", orderBy: "updated_at" },
   { table: "signal_events", ownerCol: "user_id", group: "growth", label: "Visits, signups and confirmations on your links", orderBy: "created_at", thirdParty: true },
   { table: "dist_conversations", ownerCol: "user_id", group: "growth", label: "Distribution conversations", orderBy: "created_at" },
   { table: "dist_drafts", ownerCol: "user_id", group: "growth", label: "Distribution drafts", orderBy: "created_at", aiGenerated: true },

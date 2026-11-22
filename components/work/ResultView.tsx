@@ -4,6 +4,8 @@ import type { WorkSpec } from "@/lib/work/registry";
 import type { WorkResult } from "@/lib/work/shape";
 import { REFINE_PRESETS } from "@/lib/work/shape";
 import { api, btn, input, muted } from "./ui";
+import PublishPage from "@/components/today/PublishPage";
+import { useActiveProjectId } from "@/lib/queries";
 
 export interface WorkItem {
   id: string | null; kind: string; title: string; inputs: Record<string, string>;
@@ -17,6 +19,7 @@ export default function ResultView({ item, spec, regenerating, onRegenerate, onE
   onRegenerate: () => void; onEditBrief: () => void; onBack: () => void; onDeleted: () => void;
 }) {
   const { payload } = item;
+  const projectId = useActiveProjectId();
   const [active, setActive] = React.useState(payload.variants[0]?.id ?? "");
   const [texts, setTexts] = React.useState<Record<string, string>>(() => {
     const t: Record<string, string> = {};
@@ -156,6 +159,9 @@ export default function ResultView({ item, spec, regenerating, onRegenerate, onE
           </div>
         </div>
       )}
+
+      {/* The same designed-page editor Today uses: choose the look, preview on phone and desktop, then publish. */}
+      {item.kind === "landing" && wholeDoc.trim() && <PublishPage draft={wholeDoc} task={payload.title} projectId={projectId} draftKey={item.id ? `work:${item.id}` : undefined} />}
 
       {msg && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{msg}</p>}
 

@@ -3,7 +3,7 @@
 import React from "react";
 import { pageFromDraft } from "@/lib/publishPage";
 import LandingDesignEditor from "@/components/today/LandingDesignEditor";
-import { emptyDesign, type PageDesign } from "@/lib/landing/design";
+import { cleanDesign, emptyDesign, type PageDesign } from "@/lib/landing/design";
 import { inferSources, SOURCE_LABELS, type LinkSource } from "@/lib/linkNudge";
 
 const CHOICES: LinkSource[] = ["tiktok", "x", "linkedin", "instagram", "youtube", "reddit", "whatsapp", "other"];
@@ -24,7 +24,9 @@ interface Made { source: LinkSource | null; url: string }
  * channel brought people. The page and the counting already exist (BuildMind's hosted interest page); this removes
  * the step where the founder had to find them and retype the copy.
  */
-export default function PublishPage({ draft, task, projectId }: { draft: string; task: string; projectId?: string | null }) {
+export default function PublishPage({ draft, task, projectId, draftKey }: { draft: string; task: string; projectId?: string | null; draftKey?: string }) {
+  // One saved design per Work draft, so it comes back after a refresh or on another device.
+  const key = draftKey ?? `${projectId ?? "none"}:${task}`.slice(0, 200);
   const suggested = React.useMemo(() => pageFromDraft(draft), [draft]);
   const [open, setOpen] = React.useState(false);
   const [headline, setHeadline] = React.useState("");
@@ -35,6 +37,29 @@ export default function PublishPage({ draft, task, projectId }: { draft: string;
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState("");
   const [made, setMade] = React.useState<Made[]>([]);
+
+  const [saved, setSaved] = React.useState<"" | "saving" | "saved" | "failed">("");
+  React.useEffect(() => {
+    let live = true;
+    fetch(`/api/work/landing-draft?key=${encodeURIComponent(key)}`).then((r) => r.json()).then((j) => {
+      const d = j?.draft as { headline?: string; pitch?: string; design?: unknown } | null;
+      if (!live || !d?.design) return;
+      const clean = cleanDesign(d.design);
+      if (!clean) return;
+      setDesign(clean); setHeadline(d.headline ?? ""); setPitch(d.pitch ?? ""); setEdited(true); setOpen(true); setSaved("saved");
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [key]);
+
+  async function saveDraft() {
+    setSaved("saving"); setMsg("");
+    try {
+      const r = await fetch("/api/work/landing-draft", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, projectId: projectId ?? undefined, headline, pitch, design }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { setSaved("failed"); setMsg(j.error ?? "Could not save the draft. Your edits are still here."); return; }
+      setSaved("saved"); setMsg("Draft saved. Nothing is public until you publish.");
+    } catch { setSaved("failed"); setMsg("Could not reach BuildMind. Your edits are still here. Try again."); }
+  }
 
   React.useEffect(() => {
     if (edited || !suggested) return;
@@ -67,8 +92,8 @@ export default function PublishPage({ draft, task, projectId }: { draft: string;
     <div style={{ display: "grid", gap: 8, borderTop: "1px solid var(--bm-border)", paddingTop: 10 }}>
       {!open ? (
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <button type="button" style={btn(true)} onClick={() => setOpen(true)}>Make this a live page</button>
-          <span style={muted}>Gives you a link people can sign up on. BuildMind counts the visits and signups for you.</span>
+          <button type="button" style={btn(true)} onClick={() => setOpen(true)}>Open page editor</button>
+          <span style={muted}>Design the page and preview it. Nothing is public until you publish it, and then people can sign up on its link.</span>
         </div>
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
@@ -84,8 +109,9 @@ export default function PublishPage({ draft, task, projectId }: { draft: string;
               return <button key={c} type="button" aria-pressed={on} style={btn(false, on)} onClick={() => setChannels(on ? channels.filter((x) => x !== c) : [...channels, c])}>{SOURCE_LABELS[c]}</button>;
             })}
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" style={btn(true)} disabled={busy || headline.trim().length < 5} onClick={create}>{busy ? "Making it..." : channels.length > 1 ? `Make ${channels.length} pages` : "Make the page"}</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" style={btn()} disabled={saved === "saving"} onClick={saveDraft}>{saved === "saving" ? "Saving..." : "Save draft"}</button>
+            <button type="button" style={btn(true)} disabled={busy || headline.trim().length < 5} onClick={create}>{busy ? "Publishing..." : channels.length > 1 ? `Publish ${channels.length} pages` : "Publish page"}</button>
             <button type="button" style={btn()} onClick={() => setOpen(false)}>Close</button>
           </div>
           {made.map((m) => (
