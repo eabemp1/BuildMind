@@ -30,6 +30,7 @@ import { createClient } from "@/lib/supabase/client";
 import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, queryKeys, useFounderScorecardQuery } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 import TodayCommandCenter from "@/components/today/TodayCommandCenter";
+import { statedMinutes } from "@/lib/today/minutes";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
 import { getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
@@ -2468,7 +2469,7 @@ function TodayContent() {
               whyNowHref={whyNowLink}
               onExecute={() => router.push(workHref)}
               actionTitle={actionData?.action ? sanitizeOutput(actionData.action) : null}
-              timeText={actionData?.time ?? null}
+              timeText={actionData?.action && statedMinutes(actionData.action) ? `${statedMinutes(actionData.action)} min` : (actionData?.time ?? null)}
               done={done}
               reflected={storage.get(`bm_reflect_done_${new Date().toISOString().slice(0, 10)}`) === "1"}
               streak={streak}
