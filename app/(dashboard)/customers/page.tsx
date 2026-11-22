@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 
 import { plainUrl } from "@/lib/leads/save";
 import { useEffect, useMemo, useState } from "react";
@@ -170,18 +171,29 @@ export default function CustomersPage() {
   const renderLead = (l: LeadRow) => (
           <li key={l.id ?? l.url}>
             <Card className="p-4 sm:p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="break-words text-[16px] font-semibold text-[var(--bm-text)]">{l.name}</h2>
-                <span className="rounded-full bg-[var(--bm-bg3)] px-2 py-0.5 text-[11px] text-[var(--bm-text3)]">{KIND_LABEL[l.kind] ?? l.kind}</span>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h2 className="break-words text-[16px] font-semibold text-[var(--bm-text)]">{l.name}</h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--bm-text3)]">
+                    <span className="rounded-full bg-[var(--bm-bg3)] px-2 py-0.5">{KIND_LABEL[l.kind] ?? l.kind}</span>
+                    {l.where && <span>{l.where}</span>}
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${l.status === "saved" ? "bg-[var(--bm-accent-dim)] text-[var(--bm-accent)]" : "bg-[var(--bm-bg3)] text-[var(--bm-text3)]"}`}>{STATUS_LABEL[l.status]}</span>
               </div>
-              {l.where && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">{l.where}</p>}
-              {l.location === "unconfirmed" && <p className="mt-1 text-[12px] text-[var(--bm-text3)]">Location not confirmed on the page. Check it is in your area before you reach out.</p>}
-              {l.why_fit && <p className="mt-3 text-[14px] leading-relaxed text-[var(--bm-text)]">{l.why_fit}</p>}
-              {l.fit_proof && <p className="mt-2 break-words border-l-2 border-[var(--bm-border2)] pl-3 text-[13px] leading-relaxed text-[var(--bm-text2)]"><span className="font-semibold">On their page:</span> {l.fit_proof}</p>}
-              {l.evidence && l.evidence !== l.fit_proof && <p className="mt-2 break-words border-l-2 border-[var(--bm-border2)] pl-3 text-[13px] leading-relaxed text-[var(--bm-text3)]">{l.evidence}</p>}
-              {l.already_has && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">Already offers:</strong> {l.already_has}</p>}
-              {l.distinct_reason && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">Why reach out:</strong> {l.distinct_reason}</p>}
-              {l.how_to_reach && <p className="mt-2 text-[13px] text-[var(--bm-text2)]"><strong className="font-semibold">How to reach them:</strong> {l.how_to_reach}</p>}
+              {l.location === "unconfirmed" && <p className="mt-2 rounded-[8px] px-2.5 py-1.5 text-[12px] text-[var(--bm-text2)]" style={{ background: "var(--bm-bg3)" }}>Location not confirmed on the page. Check it is in your area before you reach out.</p>}
+              {l.why_fit && <p className="mt-3 text-[14px] font-medium leading-relaxed text-[var(--bm-text)]">{l.why_fit}</p>}
+              {(l.fit_proof || l.already_has || l.distinct_reason || l.how_to_reach) && (
+                <dl className="mt-3 grid gap-x-4 gap-y-2.5 border-t border-[var(--bm-border)] pt-3 text-[13px] leading-relaxed sm:grid-cols-[120px_1fr]">
+                  {([["On their page", l.fit_proof], ["Already offers", l.already_has], ["Why reach out", l.distinct_reason], ["How to reach", l.how_to_reach]] as const).filter(([, v]) => v).map(([k, v]) => (
+                    <React.Fragment key={k}>
+                      <dt className="font-semibold text-[var(--bm-text3)]">{k}</dt>
+                      <dd className="m-0 break-words text-[var(--bm-text2)]">{v}</dd>
+                    </React.Fragment>
+                  ))}
+                </dl>
+              )}
+              {l.evidence && l.evidence !== l.fit_proof && <p className="mt-3 break-words border-l-2 border-[var(--bm-border2)] pl-3 text-[12.5px] leading-relaxed text-[var(--bm-text3)]">{l.evidence}</p>}
               <a href={l.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 text-[13px] text-[var(--bm-accent)] underline">
                 {l.tier === "referral" ? "Open the page" : "Open the source that backs this up"} <ExternalLink size={13} />
               </a>
@@ -196,7 +208,7 @@ export default function CustomersPage() {
                 </div>
               )}
 
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="mt-4 grid gap-2 border-t border-[var(--bm-border)] pt-3 sm:grid-cols-2">
                 <label className="text-[12px] text-[var(--bm-text3)]">What happened?
                   <select className={`${inputCls} mt-1`} value={l.status} onChange={(e) => void mark(l, e.target.value as Status)}>
                     {(Object.keys(STATUS_LABEL) as Status[]).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}

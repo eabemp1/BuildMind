@@ -145,15 +145,15 @@ export default function ResultView({ item, spec, regenerating, onRegenerate, onE
             <button type="button" className="wk-btn" onClick={() => void copy("all", wholeDoc)} style={{ ...btn(true), minHeight: 40, padding: "0 20px" }}>{copied === "all" ? "Copied" : "Copy all"}</button>
             <button type="button" className="wk-btn" onClick={() => download(wholeDoc)} style={small()}>Download</button>
           </div>
-          <div className="wk-list" style={{ background: "var(--bm-bg2)" }}>
+          <div style={{ display: "grid", gap: 10 }}>
             {payload.sections.map((s, i) => (
-              <section key={`${s.heading}-${i}`} style={{ padding: "14px 16px", borderTop: i ? "1px solid var(--bm-border2)" : 0, display: "grid", gap: 6 }}>
+              <section key={`${s.heading}-${i}`} className="wk-card">
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                   <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: 14.5, fontWeight: 700, color: "var(--bm-text)", margin: 0 }}>{s.heading}</h3>
                   <button type="button" className="wk-btn" onClick={() => void copy(`s${i}`, [s.heading, s.body ?? "", ...(s.bullets ?? []).map((b) => `- ${b}`)].filter(Boolean).join("\n"))} style={{ ...small(), border: 0, minHeight: 28, color: "var(--bm-text3)", flexShrink: 0 }}>{copied === `s${i}` ? "Copied" : "Copy"}</button>
                 </div>
                 {s.body && <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: "var(--bm-text2)", whiteSpace: "pre-wrap" }}>{s.body}</p>}
-                {s.bullets && <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.65, color: "var(--bm-text2)" }}>{s.bullets.map((b, j) => <li key={j}>{b}</li>)}</ul>}
+                {s.bullets && <ul style={{ fontSize: 14, lineHeight: 1.65, color: "var(--bm-text2)" }}>{s.bullets.map((b, j) => <li key={j}>{b}</li>)}</ul>}
               </section>
             ))}
           </div>

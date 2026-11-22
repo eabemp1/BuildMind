@@ -1,7 +1,14 @@
 "use client";
 import React from "react";
 import { GROUP_LABEL, GROUP_ORDER, searchCatalog, type CatalogEntry, type WorkGroup } from "@/lib/work/registry";
+import type { LucideIcon } from "lucide-react";
+import { MessageSquare, SearchCheck, Globe, Landmark, Hammer, FileText } from "lucide-react";
 import { input, muted } from "./ui";
+
+const GROUP_ICON: Record<WorkGroup, LucideIcon> = { reach: MessageSquare, validate: SearchCheck, publish: Globe, raise: Landmark, build: Hammer };
+const Tile = ({ Icon }: { Icon: LucideIcon }) => (
+  <span aria-hidden className="wk-tile"><Icon size={16} /></span>
+);
 
 export default function Catalog({ entries, recommended = [], recent, onPick, onOpenItem }: {
   entries: CatalogEntry[];
@@ -21,7 +28,8 @@ export default function Catalog({ entries, recommended = [], recent, onPick, onO
           <div className="wk-list">
             {recommended.map(({ entry, reason }) => (
               <button key={entry.id} type="button" className="wk-row" onClick={() => onPick(entry)}>
-                <span style={{ minWidth: 0 }}>
+                <Tile Icon={GROUP_ICON[entry.group]} />
+                <span style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: "var(--bm-text)" }}>{entry.label}</span>
                   <span style={{ display: "block", ...muted, marginTop: 2 }}>{reason}</span>
                 </span>
@@ -37,7 +45,8 @@ export default function Catalog({ entries, recommended = [], recent, onPick, onO
           <div className="wk-list">
             {recent.slice(0, 3).map((r) => (
               <button key={r.id} type="button" className="wk-row" onClick={() => onOpenItem(r.id)}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--bm-text)", overflowWrap: "anywhere" }}>{r.title}</span>
+                <Tile Icon={FileText} />
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "var(--bm-text)", overflowWrap: "anywhere" }}>{r.title}</span>
                 <span className="wk-go" aria-hidden>›</span>
               </button>
             ))}
@@ -50,11 +59,12 @@ export default function Catalog({ entries, recommended = [], recent, onPick, onO
         if (!list.length) return null;
         return (
           <section key={g} aria-label={GROUP_LABEL[g].label}>
-            <h2 style={heading}>{GROUP_LABEL[g].label}</h2>
+            <h2 style={heading}>{GROUP_LABEL[g].label} <span style={{ ...muted, display: "inline", fontFamily: "inherit", fontWeight: 400 }}>{GROUP_LABEL[g].blurb}</span></h2>
             <div className="wk-list">
               {list.map((e) => (
                 <button key={e.id} type="button" className="wk-row" onClick={() => onPick(e)}>
-                  <span style={{ minWidth: 0 }}>
+                  <Tile Icon={GROUP_ICON[g]} />
+                  <span style={{ minWidth: 0, flex: 1 }}>
                     <span style={{ display: "block", fontSize: 14.5, fontWeight: 600, color: "var(--bm-text)" }}>{e.label}</span>
                     <span style={{ display: "block", fontSize: 12.5, color: "var(--bm-text3)", marginTop: 2 }}>{e.blurb}</span>
                   </span>
