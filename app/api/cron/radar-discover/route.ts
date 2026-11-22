@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   for (const userId of due) {
     if (Date.now() - started > RUN_BUDGET_MS) break;
     try {
-      const r = await runDiscovery(admin, { userId, projectId: null, where: settings.get(userId)?.where_text ?? "" });
+      const r = await runDiscovery(admin, { userId, projectId: null, where: settings.get(userId)?.where_text ?? "", mode: "auto" });
       const now = new Date().toISOString();
       // The run is recorded even when it finds nothing, so a founder is not searched again for 2 days.
       await admin.from("radar_settings").upsert({
