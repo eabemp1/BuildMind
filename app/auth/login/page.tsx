@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BrandMark } from "@/components/layout/logo";
+import { TRIAL_DURATION_DAYS, PLAN_LIMITS } from "@/lib/plan";
 import { useTheme } from "@/components/layout/theme-provider";
 
 function AuthAestheticLayer() {
@@ -802,6 +803,11 @@ function LoginContent() {
             <p style={{ fontSize: 12.5, color: "var(--bm-text3, #44445A)", fontWeight: 500, lineHeight: 1.6 }}>
               {tab === "signin" ? "Sign in to your BuildMind workspace." : "Start building in under 60 seconds."}
             </p>
+            {tab === "signup" && (
+              <p style={{ fontSize: 12, color: "var(--bm-text3, #44445A)", lineHeight: 1.6, marginTop: 10 }}>
+                You start on Free and get {TRIAL_DURATION_DAYS} days of Builder to try everything. The trial needs a verified email. We do not ask for a card and nothing is charged unless you choose to upgrade. After {TRIAL_DURATION_DAYS} days you stay on Free: {PLAN_LIMITS.free.actionsPerWeek} daily tasks a week and {PLAN_LIMITS.free.maxProjects} project, and your data stays. Builder features such as the daily briefing every day and Find Customers pause until you upgrade.
+              </p>
+            )}
           </div>
 
           {/* Tabs */}

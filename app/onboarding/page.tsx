@@ -245,11 +245,11 @@ function IntegrationsScreen({ onComplete }: { onComplete: () => void }) {
         <motion.h2 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
           style={{ fontSize: "clamp(22px, 4vw, 30px)", fontWeight: 800, color: VIZ.text,
             letterSpacing: "-0.03em", lineHeight: 1.2, margin: "0 0 10px", textAlign: "center" }}>
-          Connect your tools
+          Connect your tools (optional)
         </motion.h2>
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
           style={{ fontSize: 14, color: VIZ.text2, lineHeight: 1.6, textAlign: "center", margin: "0 0 32px" }}>
-          Your daily action comes from real tasks in your backlog — not invented ones.
+          Optional. If you connect Notion or Linear, your daily action comes from your real backlog. If you do not, it comes from your project details and your stress-test results instead. You can connect later in Settings.
         </motion.p>
 
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
@@ -278,7 +278,7 @@ function IntegrationsScreen({ onComplete }: { onComplete: () => void }) {
             background: "none", border: "none", color: VIZ.text3,
             fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: "4px 0",
           }}>
-            Skip — I&apos;ll connect later in Settings
+            Skip for now. I&apos;ll connect later in Settings
           </button>
         </motion.div>
       </div>

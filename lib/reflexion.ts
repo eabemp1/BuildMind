@@ -29,6 +29,7 @@ import { logError } from "@/lib/server/logger";
 import { getBenchmarkInsights, buildBenchmarkPrompt } from "@/lib/benchmarks";
 import { formatRegionalContextBlock } from "@/lib/regionalContext";
 import type { CofounderJudgment } from "@/lib/cofounderJudgment";
+import { winFrom } from "@/lib/briefingWin";
 
 interface GroqMessage { role: "system" | "user" | "assistant"; content: string; }
 
@@ -1389,10 +1390,9 @@ export async function generateMorningBriefing(
     ? `IMPORTANT: At least one critical gap was detected (see GAPS DETECTED below). The "risk" field MUST address the most serious gap, not a generic startup risk. Ask the uncomfortable question directly.`
     : "";
 
-  const prompt = `You are BuildMind's morning briefing engine. Generate a 3-line morning briefing for a solo founder.
+  const prompt = `You are BuildMind's morning briefing engine. Generate a 2-line morning briefing for a solo founder. Do not write a win: wins come only from what the founder reported finishing.
 
 Rules:
-- win: One SPECIFIC win referencing what they actually tried recently — not generic praise
 - risk: The single biggest risk TODAY — if gaps detected below, use those directly, not generic startup advice
 - action: One concrete action that takes 30 minutes or less — specific to their current blocker or next step
 Each line: max 20 words. No emojis. No fluff. Must reference their actual situation, not a template.
@@ -1415,7 +1415,8 @@ ${context.completedYesterday !== undefined ? `Completed yesterday: ${context.com
     : "The biggest risk today is not starting. A small start beats waiting for a perfect plan.";
 
   return {
-    win: parsed.win ?? "You are still working on this, and that counts.",
+    // Only a task the founder saved as completed is a win. Never the model's guess, never the product description.
+    win: winFrom(context.yesterdayTask, context.completedYesterday),
     risk: parsed.risk ?? fallbackRisk,
     action: parsed.action ?? "Open today's task in BuildMind and do its first step.",
     gaps,
