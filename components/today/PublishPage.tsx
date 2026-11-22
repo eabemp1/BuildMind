@@ -2,6 +2,8 @@
 
 import React from "react";
 import { pageFromDraft } from "@/lib/publishPage";
+import LandingDesignEditor from "@/components/today/LandingDesignEditor";
+import { emptyDesign, type PageDesign } from "@/lib/landing/design";
 import { inferSources, SOURCE_LABELS, type LinkSource } from "@/lib/linkNudge";
 
 const CHOICES: LinkSource[] = ["tiktok", "x", "linkedin", "instagram", "youtube", "reddit", "whatsapp", "other"];
@@ -29,6 +31,7 @@ export default function PublishPage({ draft, task, projectId }: { draft: string;
   const [pitch, setPitch] = React.useState("");
   const [edited, setEdited] = React.useState(false);
   const [channels, setChannels] = React.useState<LinkSource[]>(() => inferSources(task));
+  const [design, setDesign] = React.useState<PageDesign>(() => emptyDesign());
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState("");
   const [made, setMade] = React.useState<Made[]>([]);
@@ -44,7 +47,7 @@ export default function PublishPage({ draft, task, projectId }: { draft: string;
     const out: Made[] = [];
     for (const source of targets) {
       try {
-        const r = await fetch("/api/signal-links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "interest", headline, pitch: pitch || undefined, source, projectId: projectId ?? undefined, label: source ? `${SOURCE_LABELS[source]} page` : undefined }) });
+        const r = await fetch("/api/signal-links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "interest", design, headline, pitch: pitch || undefined, source, projectId: projectId ?? undefined, label: source ? `${SOURCE_LABELS[source]} page` : undefined }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j.ok) { setMsg(j.error ?? "Could not make the page."); break; }
         out.push({ source: source ?? null, url: `${window.location.origin}${j.path}` });
@@ -73,6 +76,7 @@ export default function PublishPage({ draft, task, projectId }: { draft: string;
           <input id="pp-head" style={field} value={headline} maxLength={120} onChange={(e) => { setHeadline(e.target.value); setEdited(true); }} />
           <label style={{ ...muted, fontWeight: 700 }} htmlFor="pp-pitch">One line under it (optional)</label>
           <input id="pp-pitch" style={field} value={pitch} maxLength={300} onChange={(e) => { setPitch(e.target.value); setEdited(true); }} />
+          <LandingDesignEditor headline={headline} pitch={pitch} design={design} onChange={setDesign} draft={draft} projectId={projectId} />
           <div style={{ ...muted, fontWeight: 700 }}>Where will you share it? One link per channel shows which one works.</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {CHOICES.map((c) => {

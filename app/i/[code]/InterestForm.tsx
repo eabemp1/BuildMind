@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 
-export function InterestForm({ code }: { code: string }) {
+export function InterestForm({ code, preview = false, label = "Join the early list" }: { code: string; preview?: boolean; label?: string }) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (state === "sending") return;
+    if (state === "sending" || preview) return;
     setState("sending");
     try {
       const website = (e.currentTarget.elements.namedItem("website") as HTMLInputElement | null)?.value ?? "";
@@ -28,10 +28,10 @@ export function InterestForm({ code }: { code: string }) {
       <input
         type="email" required inputMode="email" autoComplete="email" placeholder="you@example.com" aria-label="Your email"
         value={email} onChange={(e) => setEmail(e.target.value)}
-        style={{ minHeight: 46, padding: "0 14px", borderRadius: 10, border: "1px solid var(--bm-border, #2a2a2e)", background: "var(--bm-bg2, #17171a)", color: "inherit", fontSize: 16 }}
+        style={{ minHeight: 46, padding: "0 14px", borderRadius: 10, border: "1px solid var(--bm-border, #2a2a2e)", background: "#fff", color: "#10231C", fontSize: 16 }}
       />
-      <button type="submit" disabled={state === "sending"} style={{ minHeight: 46, borderRadius: 10, border: "none", background: "var(--bm-accent, #d9a441)", color: "#151109", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-        {state === "sending" ? "Joining..." : "Join the early list"}
+      <button type="submit" disabled={state === "sending"} style={{ minHeight: 46, borderRadius: 10, border: "none", background: "var(--on, #151109)", color: "var(--accent, #d9a441)", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+        {state === "sending" ? "Joining..." : label}
       </button>
       {state === "error" && <p role="alert" style={{ fontSize: 13, color: "var(--bm-text2, #b4b4b8)", margin: 0 }}>{msg}</p>}
     </form>
