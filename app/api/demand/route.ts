@@ -44,8 +44,10 @@ async function postInner(req: NextRequest) {
   };
 
   const since = new Date(Date.now() - 6 * 60_000).toISOString();
-  const { data: live } = await admin.from("demand_runs").select("id").eq("user_id", auth.userId).eq("status", "running").gte("created_at", since).limit(1).maybeSingle();
-  if (live?.id) return NextResponse.json({ ok: true, runId: live.id });
+  const { data: live } = await admin.from("demand_runs").select("id,project_id").eq("user_id", auth.userId).eq("status", "running").gte("created_at", since).limit(1).maybeSingle();
+  // A check already running for this project is joined; one running for another project is named, never shown as this project's.
+  if (live?.id && (live.project_id ?? null) === (body.projectId ?? null)) return NextResponse.json({ ok: true, runId: live.id });
+  if (live?.id) return NextResponse.json({ ok: false, error: "A demand check is already running for another project. Wait for it to finish (a few minutes), then check this one." }, { status: 409 });
 
   const admit = await admitHeavyRun(auth.userId);
   if (!admit.allowed) return NextResponse.json({ ok: false, error: admit.reason, retryAfterMinutes: admit.retryAfterMinutes }, { status: 429 });
