@@ -4,6 +4,7 @@
  * model extracts leads ONLY from that material → validate (real URL, evidence, not generic) → one retry
  * with narrower queries if the first pass was thin.
  */
+import { leadBudget } from "@/lib/leads/budget";
 import { callModelJSON } from "@/lib/ai-providers";
 import { webSearch, discussionSearch, type SearchResult } from "@/lib/search";
 import { readPage, readPageWithLinks, isAllowedUrl, type PageLink } from "@/lib/leads/pageReader";
@@ -20,7 +21,7 @@ export interface LeadRun {
   /** Why it came back thin, in plain words (null when it did not). */
   reason: string | null;
   queries: string[];
-  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number; proposed: number; dropped: number; modelFailed: number; followed: number; modelError?: string };
+  stats: { searches: number; resultsFound: number; pagesRead: number; places: number; rounds: number; proposed: number; dropped: number; modelFailed: number; followed: number; modelError?: string; searchFailed?: number };
 }
 
 const MAX_PAGES = 10;
@@ -61,15 +62,18 @@ Rules: every query must name the city or country. Aim at the customers themselve
 
 export type Page = SearchResult & { text: string; links: PageLink[] };
 
-async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Set<string>, maxPages: number) {
+async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Set<string>, maxPages: number, discussion = 2) {
+  const webCount = discussion > 0 ? 5 : queries.length;
   const searches = await Promise.allSettled([
-    ...queries.slice(0, 5).map((q) => webSearch(q, 6)),
-    ...queries.slice(5, 7).map((q) => discussionSearch(q, 6)),
+    ...queries.slice(0, webCount).map((q) => webSearch(q, 6)),
+    ...(discussion > 0 ? queries.slice(5, 5 + discussion).map((q) => discussionSearch(q, 6)) : []),
   ]);
   const results: SearchResult[] = [];
+  let failed = 0;
   for (const s of searches) {
     // AI-made "results" are guesses, not evidence: never use them to find people.
     if (s.status === "fulfilled" && s.value.provider !== "ai_synthesised" && s.value.provider !== "none") results.push(...s.value.results);
+    else failed++;
   }
   const chosen = pickPages(results.filter((r) => !seen.has(r.url)), maxPages, targetsFounders(i.customer));
   const [read, places] = await Promise.all([
@@ -77,7 +81,7 @@ async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Se
     findPlaces(i.city, i.country, osmTags),
   ]);
   const pages: Page[] = chosen.map((r, n) => ({ ...r, text: read[n].text || r.snippet || "", links: read[n].links })).filter((p) => p.text.length > 40);
-  return { pages, places, searches: queries.length, snippets: results, resultsFound: results.length };
+  return { pages, places, searches: searches.length, searchFailed: failed, snippets: results, resultsFound: results.length };
 }
 
 /** From the model's picks, keep only links that were really on the pages, unseen, safe and spread over domains. Pure. */
@@ -211,7 +215,9 @@ export function buildLeadMaterial(
   ].filter(Boolean).join("\n\n");
 }
 
-export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; dropped?: number; modelFailed?: number; modelError?: string }): string {
+export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; dropped?: number; modelFailed?: number; modelError?: string; searches?: number; searchFailed?: number }): string {
+  // A search service that failed is not the same as customers that do not exist.
+  if ((st.searchFailed ?? 0) > 0 && (st.searchFailed ?? 0) >= (st.searches ?? 0) && st.resultsFound === 0 && st.places === 0) return "The search services did not answer (every search failed), so this says nothing about whether customers exist. Nothing was found because nothing could be searched. Try again in a few minutes.";
   if ((st.modelFailed ?? 0) > 0 && found === 0) return `I found pages to read, but the AI step failed twice, so nothing could be turned into leads.${st.modelError ? ` Reason: ${st.modelError}` : ""} This is usually a model quota or outage. Try again in a few minutes.`;
   if (st.resultsFound === 0 && st.places === 0) return "The search services returned nothing, so there was nothing to read. This usually means a search key is missing or out of quota, or the place name was not recognised.";
   if (st.pagesRead === 0 && st.places === 0) return "Searches found pages, but none of them could be opened and read.";
@@ -252,34 +258,43 @@ export function fromSaved(m: SavedMaterial): { pages: Page[]; snippets: SearchRe
 
 export async function findLeads(input: Partial<LeadInput>, deadline = Date.now() + 240_000, light = false, sink?: LeadSink, known: string[] = [], tried: string[] = []): Promise<LeadRun> {
   const i = cleanInput(input);
-  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, dropped: 0, modelFailed: 0, followed: 0, modelError: undefined as string | undefined };
+  const b = leadBudget(light);
+  // The run's own work budget can only shorten the caller's deadline, never extend it.
+  const stopAt = Math.min(deadline, Date.now() + b.workMs);
+  const stats = { searches: 0, resultsFound: 0, pagesRead: 0, places: 0, rounds: 0, proposed: 0, dropped: 0, modelFailed: 0, followed: 0, searchFailed: 0, modelError: undefined as string | undefined };
   const maxRounds = light ? 1 : 3;
-  const maxPages = light ? 6 : MAX_PAGES;
   const allQueries: string[] = [];
   // Pages the founder already has from earlier searches: skipped, so "find more" finds new ones.
   const seen = new Set<string>(known);
   let leads: Lead[] = [];
   for (let round = 1; round <= maxRounds; round++) {
-    if (round > 1 && Date.now() > deadline - 80_000) break; // not enough time left for a whole round
-    const plan = await planSearch(i, allQueries, leads.map((l) => l.name));
-    allQueries.push(...plan.queries);
-    const got = await pass(i, plan.queries, plan.osm, seen, maxPages);
+    if (round > 1 && Date.now() > stopAt - b.roundReserveMs) break; // not enough time left for a whole round
+    const queriesLeft = b.queries + b.discussion - allQueries.length;
+    const pagesLeft = b.pages - stats.pagesRead;
+    if (queriesLeft <= 0 || pagesLeft <= 0) break;
+    // Queries the founder already tried are passed on so new ones are different; only as many as the budget allows are run.
+    const plan = await planSearch(i, [...tried, ...allQueries], leads.map((l) => l.name));
+    const queries = plan.queries.filter((q) => !tried.includes(q) && !allQueries.includes(q)).slice(0, queriesLeft);
+    if (!queries.length) break;
+    allQueries.push(...queries);
+    const got = await pass(i, queries, plan.osm, seen, pagesLeft, b.discussion);
     got.pages.forEach((p) => seen.add(p.url));
-    // Second hop: open the most promising links found on those pages (directories, member lists, events, contact pages).
-    const followed = light ? [] : await followLinks(i, got.pages, seen);
+    // Second hop: open the most promising links found on those pages, if any page budget is left.
+    const followedLeft = pagesLeft - got.pages.length;
+    const followed = b.follow && followedLeft > 0 ? (await followLinks(i, got.pages, seen)).slice(0, followedLeft) : [];
     followed.forEach((p) => seen.add(p.url));
     const pages = [...got.pages, ...followed];
-    stats.searches += got.searches; stats.resultsFound += got.resultsFound; stats.pagesRead += pages.length; stats.places += got.places.length; stats.followed += followed.length; stats.rounds = round;
+    stats.searches += got.searches; stats.searchFailed += got.searchFailed; stats.resultsFound += got.resultsFound; stats.pagesRead += pages.length; stats.places += got.places.length; stats.followed += followed.length; stats.rounds = round;
     // Keep what was read before the model is asked to write, so a refusal or a timeout does not throw the search away.
     if (sink) sink.material = toSaved([...(sink.material ? fromSaved(sink.material).pages : []), ...pages].filter((p, n, all) => all.findIndex((q) => q.url === p.url) === n), [...got.snippets], got.places);
     const { leads: found, proposed, failed, error, dropped } = await extractLeads(i, pages, got.places, got.snippets);
     stats.proposed += proposed; stats.dropped += dropped ?? 0; stats.modelFailed += failed ? 1 : 0; if (error) stats.modelError = error;
-    console.log(`[leads] round=${round} light=${light} results=${got.resultsFound} pages=${got.pages.length} followed=${followed.length} places=${got.places.length} proposed=${proposed} kept=${found.length} modelFailed=${failed}`);
+    console.log(`[leads] round=${round} light=${light} results=${got.resultsFound} searchFailed=${got.searchFailed} pages=${got.pages.length} followed=${followed.length} places=${got.places.length} proposed=${proposed} kept=${found.length} modelFailed=${failed} budget=${b.queries}q/${b.pages}p/${Number.isFinite(b.workMs) ? b.workMs : "inf"}ms`);
     const have = new Set(leads.map((l) => l.url));
     const haveName = new Set(leads.map((l) => l.name.toLowerCase()));
-    leads = [...leads, ...found.filter((l) => !have.has(l.url) && !haveName.has(l.name.toLowerCase()))].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 12);
+    leads = [...leads, ...found.filter((l) => !have.has(l.url) && !haveName.has(l.name.toLowerCase()))].sort((a, b2) => (b2.score ?? 0) - (a.score ?? 0)).slice(0, 12);
     if (sink) { sink.leads = leads; sink.stats = { ...stats } as LeadRun["stats"]; sink.queries = [...allQueries]; }
-    if (directLeads(leads).length >= 8) break;
+    if (directLeads(leads).length >= b.stopAtDirect) break;
   }
   const direct = directLeads(leads).length;
   const thin = direct < 3;
