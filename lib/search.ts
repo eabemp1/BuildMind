@@ -39,7 +39,7 @@ export interface SearchResult {
 
 export interface SearchResponse {
   results:  SearchResult[];
-  provider: "brave" | "tavily" | "ddg" | "serper" | "ai_synthesised" | "none";
+  provider: "brave" | "tavily" | "ddg" | "serper" | "openai" | "ai_synthesised" | "none";
   scraped:  boolean;        // false when AI-synthesised
   query:    string;
 }
@@ -272,6 +272,63 @@ async function synthesiseWithAI(query: string): Promise<SearchResponse> {
   }
 }
 
+// ── 4. OpenAI web search (paid fallback) ──────────────────────────────────────
+
+let openaiDay = ""; let openaiCalls = 0;
+/** Daily cap on paid OpenAI searches (OPENAI_SEARCH_DAILY, default 300; 0 or OPENAI_SEARCH=off disables). Counted per server instance, so it is a guard, not an exact meter. */
+export function openaiSearchAllowed(env: Record<string, string | undefined> = process.env, now = new Date()): boolean {
+  if (!env.OPENAI_API_KEY || (env.OPENAI_SEARCH ?? "on").toLowerCase() === "off") return false;
+  const cap = Number(env.OPENAI_SEARCH_DAILY ?? 300);
+  if (!(cap > 0)) return false;
+  const day = now.toISOString().slice(0, 10);
+  if (day !== openaiDay) { openaiDay = day; openaiCalls = 0; }
+  if (openaiCalls >= cap) return false;
+  openaiCalls++;
+  return true;
+}
+
+/** Only the sources the answer cites count as results. The written answer itself is never used as evidence. */
+export function parseOpenAISearch(data: unknown, query: string, max: number): SearchResponse | null {
+  const out = (data as { output?: Array<{ type?: string; content?: Array<{ text?: string; annotations?: Array<{ type?: string; url?: string; title?: string; start_index?: number; end_index?: number }> }> }> })?.output ?? [];
+  const seen = new Set<string>();
+  const results: SearchResult[] = [];
+  for (const item of out) {
+    if (item.type !== "message") continue;
+    for (const c of item.content ?? []) {
+      const text = c.text ?? "";
+      for (const a of c.annotations ?? []) {
+        if (a.type !== "url_citation" || !a.url || !/^https?:\/\//.test(a.url)) continue;
+        let url = a.url;
+        try { const u = new URL(url); u.searchParams.delete("utm_source"); url = u.toString(); } catch { continue; }
+        if (seen.has(url)) continue;
+        seen.add(url);
+        const cited = typeof a.start_index === "number" && typeof a.end_index === "number" ? text.slice(a.start_index, a.end_index) : "";
+        results.push({ title: (a.title || new URL(url).hostname).slice(0, 160), url, snippet: cited.replace(/\s+/g, " ").trim().slice(0, 300), source_type: "web" });
+        if (results.length >= max) return { results, provider: "openai", scraped: true, query };
+      }
+    }
+  }
+  return results.length ? { results, provider: "openai", scraped: true, query } : null;
+}
+
+async function searchOpenAI(query: string, maxResults = 8): Promise<SearchResponse | null> {
+  if (!openaiSearchAllowed()) return null;
+  const res = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: JSON.stringify({
+      model: process.env.OPENAI_SEARCH_MODEL || "gpt-4o-mini",
+      tools: [{ type: "web_search" }],
+      tool_choice: "required",
+      max_output_tokens: 700,
+      input: `Search the web for: ${query}\nList up to ${maxResults} different relevant pages, one short factual line each, citing the page for each line. Do not invent pages.`,
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) return null;
+  return parseOpenAISearch(await res.json(), query, maxResults);
+}
+
 // ── Waterfall orchestrators ───────────────────────────────────────────────────
 
 /**
@@ -284,6 +341,7 @@ async function runProviders(
   kind: string, query: string, limit: number,
   attempts: Array<() => Promise<SearchResponse | null>>,
   ddg: () => Promise<SearchResponse | null>,
+  paid?: () => Promise<SearchResponse | null>,
 ): Promise<SearchResponse | null> {
   const ck = `${kind}:${query}:${limit}`;
   const hit = cacheGet<SearchResponse>(ck, 10 * 60 * 1000);
@@ -291,6 +349,8 @@ async function runProviders(
   const safe = (fn: () => Promise<SearchResponse | null>) => fn().catch(() => fn().catch(() => null));
   const settled = await Promise.all(attempts.map(safe));
   let ok = settled.filter((r): r is SearchResponse => Boolean(r && r.results.length));
+  // Paid fallback: only when the keyed providers returned nothing (for example Tavily is out of quota).
+  if (!ok.length && paid) { const o = await paid().catch(() => null); if (o?.results.length) ok = [o]; }
   if (!ok.length) { const d = await safe(ddg); if (d?.results.length) ok = [d]; }
   if (!ok.length) return null;
   const merged: SearchResponse = {
@@ -303,14 +363,14 @@ async function runProviders(
 
 /**
  * webSearch — general web search.
- * Priority: Tavily → Brave → Serper → DDG (last resort) → AI synthesis
+ * Priority: Tavily → Brave → Serper → OpenAI web search (paid, capped, only if those return nothing) → DDG → AI synthesis
  */
 export async function webSearch(query: string, count = 10): Promise<SearchResponse> {
   const r = await runProviders("web", query, count, [
     () => searchTavily(query, "basic", count),
     () => searchBrave(query, "web", count),
     () => searchSerper(query, "search", count),
-  ], () => searchDDG(query));
+  ], () => searchDDG(query), () => searchOpenAI(query, count));
   return r ?? synthesiseWithAI(query);
 }
 
@@ -325,7 +385,7 @@ export async function discussionSearch(query: string, count = 10): Promise<Searc
     () => searchTavily(`${query} reddit forum community discussion`, "basic", count),
     () => searchBrave(query, "discussions", count),
     () => searchSerper(redditQuery, "search", count),
-  ], () => searchDDG(redditQuery));
+  ], () => searchDDG(redditQuery), () => searchOpenAI(`${query} discussions on reddit or forums`, count));
   return r ?? synthesiseWithAI(`${query} user pain points community complaints`);
 }
 
