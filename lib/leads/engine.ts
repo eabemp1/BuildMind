@@ -226,7 +226,14 @@ export function buildLeadMaterial(
   ].filter(Boolean).join("\n\n");
 }
 
-export function thinReason(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; dropped?: number; modelFailed?: number; modelError?: string; searches?: number; searchFailed?: number }): string {
+export function thinReason(found: number, st: Parameters<typeof thinReasonBase>[1]): string {
+  const base = thinReasonBase(found, st);
+  const f = st.searchFailed ?? 0;
+  // Some searches failed or ran out of time: say the check is incomplete, so a thin result is not read as "no customers".
+  return f > 0 && f < (st.searches ?? 0) ? `${base} ${f} of ${st.searches} searches did not answer in time, so this check is incomplete.` : base;
+}
+
+function thinReasonBase(found: number, st: { resultsFound: number; pagesRead: number; places: number; proposed?: number; dropped?: number; modelFailed?: number; modelError?: string; searches?: number; searchFailed?: number }): string {
   // A search service that failed is not the same as customers that do not exist.
   if ((st.searchFailed ?? 0) > 0 && (st.searchFailed ?? 0) >= (st.searches ?? 0) && st.resultsFound === 0 && st.places === 0) return "The search services did not answer (every search failed), so this says nothing about whether customers exist. Nothing was found because nothing could be searched. Try again in a few minutes.";
   if ((st.modelFailed ?? 0) > 0 && found === 0) return `I found pages to read, but the AI step failed twice, so nothing could be turned into leads.${st.modelError ? ` Reason: ${st.modelError}` : ""} This is usually a model quota or outage. Try again in a few minutes.`;
