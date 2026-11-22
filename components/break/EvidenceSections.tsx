@@ -10,6 +10,7 @@
  * recorded in one tab updates the track record shown in another.
  */
 
+import { dropTodayActionCache } from "@/lib/todayCache";
 import { useState } from "react";
 import type { EvidenceLayer, ClaimKind } from "@/lib/breakEvidence";
 import type { TrackRecord, TestStatus } from "@/lib/breakCalibration";
@@ -85,7 +86,10 @@ function WorkOnThis({ predictionId, testId }: { predictionId: string; testId: st
         body: JSON.stringify({ predictionId, testId }),
       });
       const json = await res.json().catch(() => null);
-      setState(res.ok && json?.success ? "done" : "error");
+      const ok = res.ok && json?.success;
+      // Today reuses the action it saved in this browser. Drop it, or the earlier action A keeps showing after B is chosen.
+      if (ok) { try { dropTodayActionCache(window.localStorage); } catch { /* storage unavailable */ } }
+      setState(ok ? "done" : "error");
     } catch { setState("error"); }
   }
   if (state === "done") {
