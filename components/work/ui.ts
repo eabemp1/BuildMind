@@ -17,7 +17,8 @@ export const WORK_CSS = `
 .wk-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;box-sizing:border-box;padding:13px 16px;background:transparent;border:0;border-top:1px solid var(--bm-border2);text-align:left;cursor:pointer;font-family:inherit;color:inherit;text-decoration:none;min-height:52px}
 .wk-row:first-child{border-top:0}
 .wk-row:hover{background:var(--bm-bg3)}
-.wk-row:hover .wk-go{color:var(--bm-text);transform:translateX(2px)}
+.wk-row:hover .wk-tile{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:var(--bm-accent-dim);color:var(--bm-accent);flex-shrink:0}
+.wk-go{color:var(--bm-text);transform:translateX(2px)}
 .wk-go{color:var(--bm-text3);font-size:18px;line-height:1;transition:transform .15s,color .15s;flex-shrink:0}
 .wk-row:focus-visible,.wk-btn:focus-visible,.wk-tab:focus-visible,.wk-hero:focus-visible{outline:2px solid var(--bm-accent);outline-offset:-2px}
 .wk-hero{display:block;text-decoration:none;position:relative;padding:18px;border:1px solid var(--bm-border2);border-radius:14px;background:var(--bm-bg2)}
@@ -26,6 +27,10 @@ export const WORK_CSS = `
 .wk-tab{border:0;background:transparent;color:var(--bm-text2);font-family:inherit;font-size:13px;font-weight:600;padding:7px 16px;border-radius:8px;cursor:pointer}
 .wk-tab[aria-selected="true"]{background:var(--bm-bg2);color:var(--bm-text);box-shadow:0 0 0 1px var(--bm-border2)}
 .wk-search:focus{outline:2px solid var(--bm-accent);outline-offset:1px}
+.wk-card{border:1px solid var(--bm-border2);border-radius:14px;background:var(--bm-bg2);padding:14px 16px;display:grid;gap:8px}
+.wk-card ul{list-style:none;padding:0;margin:0;display:grid;gap:6px}
+.wk-card li{position:relative;padding-left:16px}
+.wk-card li::before{content:"";position:absolute;left:2px;top:.7em;width:6px;height:6px;border-radius:99px;background:var(--bm-accent)}
 .wk-fade{animation:wkIn .22s ease-out}
 @keyframes wkIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.wk-fade{animation:none}.wk-go{transition:none}.wk-row:hover .wk-go{transform:none}}
