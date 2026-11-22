@@ -12,7 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { findLeads, type LeadSink } from "@/lib/leads/engine";
 import { cleanBrief, type ProductBrief } from "@/lib/leads/plan";
 import { directLeads } from "@/lib/leads/rank";
-import { generationFailure, hasMaterial, sameProduct, saveLeads } from "@/lib/leads/save";
+import { generationFailure, hasMaterial, plainUrl, sameProduct, saveLeads } from "@/lib/leads/save";
 import { sanitizePromptInput } from "@/lib/agents";
 import { admitHeavyRun } from "@/lib/server/heavyRuns";
 
@@ -121,7 +121,7 @@ async function postInner(req: NextRequest) {
         let hq = admin.from("lead_results").select("lead_url,payload").eq("user_id", userId).limit(400);
         hq = projectId ? hq.eq("project_id", projectId) : hq.is("project_id", null);
         const { data: have } = await hq;
-        known = (have ?? []).filter((r) => projectId || sameProduct((r.payload as { brief?: { name?: string } } | null)?.brief?.name, product?.name)).map((r) => String((r as { lead_url?: string }).lead_url ?? "")).filter(Boolean);
+        known = (have ?? []).filter((r) => projectId || sameProduct((r.payload as { brief?: { name?: string } } | null)?.brief?.name, product?.name)).map((r) => plainUrl(String((r as { lead_url?: string }).lead_url ?? ""))).filter(Boolean);
         // Resume: also skip the searches the last run already tried.
         let pq = admin.from("lead_runs").select("stats,input").eq("user_id", userId).neq("id", row.id).order("created_at", { ascending: false }).limit(10);
         pq = projectId ? pq.eq("project_id", projectId) : pq.is("project_id", null);

@@ -1,5 +1,6 @@
 "use client";
 
+import { plainUrl } from "@/lib/leads/save";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useProjectSummariesQuery } from "@/lib/queries";
@@ -76,7 +77,7 @@ export default function CustomersPage() {
     setRun(r.run ?? null);
     if (replace || !leads.length) {
       setLeads((r.leads ?? []).map((l: { id: string; lead_name: string; lead_kind: string; lead_url: string; payload: Partial<LeadRow>; status: Status; channel: Channel | null; country?: string; city?: string; created_at?: string }) => ({
-        id: l.id, country: l.country, city: l.city, created_at: l.created_at, name: l.lead_name, kind: l.lead_kind, url: l.lead_url, status: l.status, channel: l.channel,
+        id: l.id, country: l.country, city: l.city, created_at: l.created_at, name: l.lead_name, kind: l.lead_kind, url: plainUrl(l.lead_url), status: l.status, channel: l.channel,
         where: l.payload?.where ?? "", location: l.payload?.location, why_fit: l.payload?.why_fit ?? "", evidence: l.payload?.evidence ?? "",
         how_to_reach: l.payload?.how_to_reach ?? "", first_message: l.payload?.first_message ?? "",
         tier: l.payload?.tier, fit_proof: l.payload?.fit_proof ?? "", already_has: l.payload?.already_has ?? "", distinct_reason: l.payload?.distinct_reason ?? "", score: l.payload?.score,
