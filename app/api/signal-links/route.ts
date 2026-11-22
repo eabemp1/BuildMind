@@ -11,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { makeCode, validateTarget } from "@/lib/signalLinks";
 import { isLinkSource, SOURCES } from "@/lib/linkNudge";
 import { countSignups } from "@/lib/signupGuard";
+import { cleanDesign } from "@/lib/landing/design";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ const Body = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("inbound"), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
   z.object({ kind: z.literal("link"), targetUrl: z.string().max(2000), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
   z.object({ kind: z.literal("confirm"), claim: z.enum(["reply", "conversation", "call"]), source: src, label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
-  z.object({ kind: z.literal("interest"), headline: z.string().trim().min(5).max(120), source: src, pitch: z.string().trim().max(300).optional(), label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
+  z.object({ kind: z.literal("interest"), headline: z.string().trim().min(5).max(120), source: src, pitch: z.string().trim().max(300).optional(), design: z.unknown().optional(), label: z.string().trim().max(60).optional(), projectId: z.string().uuid().optional() }),
 ]);
 
 export async function POST(req: Request) {
@@ -43,6 +44,10 @@ export async function POST(req: Request) {
     target = v.url;
   }
 
+  // The page look is cleaned here, not trusted from the browser. Looks like a login or payment page: refused.
+  const design = b.kind === "interest" && b.design ? cleanDesign(b.design) : null;
+  if (b.kind === "interest" && b.design && !design) return NextResponse.json({ ok: false, error: "Remove wording about logins, passwords, card numbers or verification." }, { status: 400 });
+
   const admin = createAdminClient();
   const { count } = await admin.from("signal_links").select("id", { count: "exact", head: true }).eq("user_id", user.id);
   if ((count ?? 0) >= MAX_LINKS) return NextResponse.json({ ok: false, error: `You have ${MAX_LINKS} tracked links already. Reuse one.` }, { status: 429 });
@@ -60,9 +65,13 @@ export async function POST(req: Request) {
       target_url: target,
       headline: b.kind === "interest" ? b.headline : null,
       pitch: b.kind === "interest" ? b.pitch || null : null,
+      ...(design ? { design } : {}),
     });
     if (!error) return NextResponse.json({ ok: true, code, path: pathFor(b.kind, code), address: addressFor(b.kind, code) });
-    if ((error as { code?: string }).code !== "23505") return NextResponse.json({ ok: false, error: "Could not create the link." }, { status: 500 });
+    if ((error as { code?: string }).code !== "23505") {
+      const missing = design && /design/i.test(error.message ?? "");
+      return NextResponse.json({ ok: false, error: missing ? "The page design column is not set up yet. Apply the latest database migration." : "Could not create the link." }, { status: 500 });
+    }
   }
   return NextResponse.json({ ok: false, error: "Could not create the link. Try again." }, { status: 500 });
 }
