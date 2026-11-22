@@ -19,6 +19,8 @@
  */
 "use client";
 
+import React from "react";
+import { NO_WIN } from "@/lib/briefingWin";
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
@@ -30,9 +32,11 @@ interface Props {
   briefing: MorningBriefing | null;
   isPaywalled: boolean;
   onDismiss: () => void;
+  /** Today's saved first action. When given, NOW shows exactly this and the Start button opens it, so the two never differ. */
+  now?: { text: string; time?: string; href: string };
 }
 
-export default function MorningBriefingModal({ briefing, isPaywalled, onDismiss }: Props) {
+export default function MorningBriefingModal({ briefing, isPaywalled, onDismiss, now }: Props) {
   // Close on Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -142,7 +146,7 @@ export default function MorningBriefingModal({ briefing, isPaywalled, onDismiss 
           {isPaywalled || !briefing ? (
             <PaywalledContent win={briefing?.win} />
           ) : (
-            <FullContent briefing={briefing} />
+            <FullContent briefing={briefing} now={now} onStart={onDismiss} />
           )}
 
           {/* Real numbers for every plan — deterministic, no AI cost. */}
@@ -222,12 +226,17 @@ function PaywalledContent({ win }: { win?: string }) {
   );
 }
 
-function FullContent({ briefing }: { briefing: MorningBriefing }) {
+function FullContent({ briefing, now, onStart }: { briefing: MorningBriefing; now?: Props["now"]; onStart: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <Row label="WIN"  color="var(--bm-green)"          text={briefing.win}    />
+      <Row label="WIN"  color={briefing.win ? "var(--bm-green)" : "var(--bm-text4)"} text={briefing.win || NO_WIN} />
       <Row label="RISK" color="var(--bm-amber)"          text={briefing.risk}   />
-      <Row label="NOW"  color="var(--bm-accent)"         text={briefing.action} bold />
+      <Row label="NOW"  color="var(--bm-accent)"         text={now ? `${now.text}${now.time ? ` (${now.time})` : ""}` : briefing.action} bold />
+      {now && (
+        <a href={now.href} onClick={onStart} style={{ alignSelf: "flex-start", background: "var(--bm-accent)", color: "#09090A", fontWeight: 700, fontSize: 14, borderRadius: 10, padding: "10px 18px", textDecoration: "none" }}>
+          Start
+        </a>
+      )}
 
       {briefing.gaps && briefing.gaps.length > 0 && (
         <div

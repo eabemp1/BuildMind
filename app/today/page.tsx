@@ -3087,6 +3087,7 @@ function TodayContent() {
         <MorningBriefingModal
           briefing={morningBriefing}
           isPaywalled={!planLoading && plan === "free"}
+          now={actionData?.action ? { text: actionData.action, time: actionData.time, href: workHref } : undefined}
           onDismiss={() => {
             setShowBriefingModal(false);
             const today = new Date().toISOString().slice(0, 10);
