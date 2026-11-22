@@ -443,6 +443,7 @@ function TodayContent() {
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [doneInfo, setDoneInfo] = useState<{ outcome: Outcome | null; first: boolean }>({ outcome: null, first: false });
   const [streak, setStreak] = useState(0);
   // Ref guard — prevents iOS double-tap from firing handleCheckIn twice
@@ -1578,34 +1579,19 @@ function TodayContent() {
     }).catch(() => {});
   }
 
-  async function handleCheckIn(selectedOutcome: Outcome) {
+  async function handleCheckIn(selectedOutcome: Outcome, onSaved?: () => void) {
     // Ref guard: prevents iOS double-tap from firing this twice before state updates
     if (checkInFired.current) return;
     checkInFired.current = true;
     setSubmitting(true);
+    setSaveError("");
     try {
-      // A finished Radar task moves the item forward, so it stops taking over tomorrow.
-      const rid = aiAction?.radarItemId;
-      const ritem = radar.signal.item;
-      if (rid && ritem?.id === rid && selectedOutcome === "completed") {
-        const patch: Record<string, unknown> = ritem.type === "program" ? { status: "applied" }
-          : ritem.type === "person" ? { last_contacted_at: new Date().toISOString(), next_follow_up_at: null }
-          : { status: "attending" };
-        void fetch("/api/radar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: rid, ...patch }) }).catch(() => {});
-      }
-      recordTaskCompletion();
-      if (!storage.get("bm_first_task_completed_tracked")) {
-        trackFunnelStep("first_task_completed");
-        storage.set("bm_first_task_completed_tracked", "1");
-      }
-      const todayKey = `bm_task_done_${localDayKey()}`;
-      storage.set(todayKey, "1");
-      storage.set(`bm_task_outcome_${localDayKey()}`, selectedOutcome);
-
+      // Save first. Nothing is shown as done, counted, or stored as finished until the server confirms it.
       let serverStreak: number | null = null;
       let firstFinished = false;
+      let tcRes: Response | null = null;
       try {
-        const tcRes = await fetch("/api/founder-context/task-complete", {
+        tcRes = await fetch("/api/founder-context/task-complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1623,8 +1609,38 @@ function TodayContent() {
             dayKey: localDayKey(),
           }),
         });
-        if (tcRes.ok) {
-          const tcData = await tcRes.json();
+      } catch { tcRes = null; }
+      if (!tcRes || !tcRes.ok) {
+        setSaveError("That did not save, so nothing was counted. Your answer is still here. Check your connection and try again.");
+        return;
+      }
+      const tcData = await tcRes.json().catch(() => ({}));
+
+      // Confirmed. Only a finished task counts as a completion; blocked and skipped are recorded but not counted.
+      if (selectedOutcome === "completed") {
+        recordTaskCompletion();
+        if (!storage.get("bm_first_task_completed_tracked")) {
+          trackFunnelStep("first_task_completed");
+          storage.set("bm_first_task_completed_tracked", "1");
+        }
+      }
+      const todayKey = `bm_task_done_${localDayKey()}`;
+      storage.set(todayKey, "1");
+      storage.set(`bm_task_outcome_${localDayKey()}`, selectedOutcome);
+      onSaved?.();
+
+      // A finished Radar task moves the item forward, so it stops taking over tomorrow.
+      const rid = aiAction?.radarItemId;
+      const ritem = radar.signal.item;
+      if (rid && ritem?.id === rid && selectedOutcome === "completed") {
+        const patch: Record<string, unknown> = ritem.type === "program" ? { status: "applied" }
+          : ritem.type === "person" ? { last_contacted_at: new Date().toISOString(), next_follow_up_at: null }
+          : { status: "attending" };
+        void fetch("/api/radar", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: rid, ...patch }) }).catch(() => {});
+      }
+
+      {
+        {
           if (tcData.tasksCompletedTotal != null) {
             const localTotal = parseInt(storage.get("bm_tasks_completed_total") ?? "0", 10) || 0;
             const resolved = Math.max(tcData.tasksCompletedTotal, localTotal);
@@ -1647,14 +1663,16 @@ function TodayContent() {
           // full reload, so it disagreed with this page right after a check-in.
           try { window.dispatchEvent(new CustomEvent("bm:pulse-refresh")); } catch { /* non-fatal */ }
         }
-      } catch {}
+      }
 
-      const stats = getAchievementStats();
-      updateAchievementStats({
-        ...stats,
-        checkInsDone: (stats.checkInsDone ?? 0) + 1,
-      });
-      checkAndUnlockAchievements();
+      if (selectedOutcome === "completed") {
+        const stats = getAchievementStats();
+        updateAchievementStats({
+          ...stats,
+          checkInsDone: (stats.checkInsDone ?? 0) + 1,
+        });
+        checkAndUnlockAchievements();
+      }
       notifyReflectPending();
 
       const todayDate = localDayKey();
@@ -2344,6 +2362,7 @@ function TodayContent() {
           <div role="group" aria-label="Confirm today's task is done" style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 13, color: "var(--bm-text)", fontWeight: 600, marginBottom: 4 }}>Did you finish today&apos;s task?</div>
             <div style={{ fontSize: 12, color: "var(--bm-text3)", lineHeight: 1.45, marginBottom: 10, overflowWrap: "anywhere" }}>{actionData.action}</div>
+            {saveError && <p role="alert" style={{ fontSize: 12, color: "var(--bm-red, #E5484D)", lineHeight: 1.45, margin: "0 0 10px" }}>{saveError}</p>}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
@@ -2743,6 +2762,7 @@ function TodayContent() {
         <div style={{ fontSize: 14, color: "var(--bm-text2)", marginBottom: 16, lineHeight: 1.5 }}>
           Tapping one records that outcome now and opens the reflection page, where you add one line and can pick a different outcome. It takes about 20 seconds, and tomorrow's task is built from it.
         </div>
+        {saveError && <p role="alert" style={{ fontSize: 13, color: "var(--bm-red, #E5484D)", lineHeight: 1.45, margin: "0 0 12px" }}>{saveError}</p>}
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 }}>
           {OUTCOME_CHIPS.map((chip, i) => (
             <button
@@ -2751,30 +2771,21 @@ function TodayContent() {
               onClick={() => {
                 if (submitting) return;
                 setSubmitting(true);
-                // Previously this awaited handleCheckIn's ENTIRE promise
-                // chain before navigating — 4 sequential network round-trips
-                // (task-complete fetch, persistBehaviorState, a direct
-                // Supabase score update, a founder-context PATCH) all had to
-                // resolve first. None of that is needed to render /reflect —
-                // it only needs the outcome (URL param) and this local
-                // snapshot, which handleCheckIn used to write mid-chain,
-                // after the first awaited call. Writing it here, synchronously,
-                // before navigating, and letting the rest of handleCheckIn's
-                // server-side bookkeeping run in the background is what
-                // actually cuts the wait — the bookkeeping doesn't block
-                // anything /reflect renders.
-                storage.setJSON("bm_today_action", {
-                  action: actionData?.action ?? "",
-                  outcome: chip.id,
-                  note: "",
-                  confidence: 3,
-                  recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
-                  date: localDayKey(),
-                });
-                void handleCheckIn(chip.id).catch(() => {
+                // The server confirms the save first, then this opens the reflection (the slower bookkeeping carries on
+                // in the background). If the save fails, the page stays here with the message and the answer intact.
+                void handleCheckIn(chip.id, () => {
+                  storage.setJSON("bm_today_action", {
+                    action: actionData?.action ?? "",
+                    outcome: chip.id,
+                    note: "",
+                    confidence: 3,
+                    recommendation_id: actionData?.intelligence?.recommendation_id ?? null,
+                    date: localDayKey(),
+                  });
+                  router.push(`/reflect?outcome=${chip.id}${project?.id ? `&project=${project.id}` : ""}`);
+                }).catch(() => {
                   setSubmitting(false);
                 });
-                router.push(`/reflect?outcome=${chip.id}`);
               }}
               style={{
                 display: "flex",
