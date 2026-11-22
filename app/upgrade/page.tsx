@@ -45,15 +45,16 @@ const BUILDER_FEATURES = [
 
 export default function UpgradePage() {
   const router = useRouter();
-  const { plan, isLoading: planLoading } = usePlan();
+  const { plan, isLoading: planLoading, trialActive, trialDaysRemaining } = usePlan();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!planLoading && plan === "builder") {
+    // Builder access during the free trial is not a paid plan: those founders must still be able to pay.
+    if (!planLoading && plan === "builder" && !trialActive) {
       router.replace("/overview");
     }
-  }, [plan, planLoading, router]);
+  }, [plan, planLoading, trialActive, router]);
 
   async function handleUpgrade() {
     setLoading(true);
@@ -193,9 +194,14 @@ export default function UpgradePage() {
             gap: 6, marginTop: 10 }}>
             <Shield size={11} color="var(--bm-text4)" />
             <span style={{ fontSize: 11, color: "var(--bm-text4)" }}>
-              Secured by Paystack · 14-day free trial
+              Secure checkout: Paystack in Ghana, Polar elsewhere. You are charged when you complete checkout.
             </span>
           </div>
+          {trialActive && (
+            <p style={{ fontSize: 12, color: "var(--bm-text3)", textAlign: "center", marginTop: 8 }}>
+              Your free trial has {trialDaysRemaining} day{trialDaysRemaining === 1 ? "" : "s"} left. Upgrading keeps Builder after it ends.
+            </p>
+          )}
         </div>
 
         {/* Feature list */}
