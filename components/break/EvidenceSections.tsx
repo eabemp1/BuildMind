@@ -333,12 +333,12 @@ export function ProofSections({ layer, rec, investigate }: { layer: EvidenceLaye
 }
 
 /** Competitor evidence quality, keyed by lower-cased name, for the market tab. */
-export function competitorQuality(layer: EvidenceLayer | undefined): Record<string, { label: string; color: string; note: string }> {
-  const out: Record<string, { label: string; color: string; note: string }> = {};
+export function competitorQuality(layer: EvidenceLayer | undefined): Record<string, { label: string; color: string; note: string; url?: string }> {
+  const out: Record<string, { label: string; color: string; note: string; url?: string }> = {};
   for (const co of layer?.competitors ?? []) {
     // "Verified" means their own page was read. A search hit alone, or a run saved before this was tracked, is only "Found in search".
     const q = co.quality === "verified" && !co.siteRead ? { label: "Found in search", color: "var(--bm-amber)" } : QUALITY[co.quality];
-    out[co.name.toLowerCase()] = { ...q, note: co.quality === "verified" && !co.siteRead ? `${co.note} Their page was not read.` : co.note };
+    out[co.name.toLowerCase()] = { ...q, url: co.url, note: co.quality === "verified" && !co.siteRead ? `${co.note} Their page was not read.` : co.note };
   }
   return out;
 }
