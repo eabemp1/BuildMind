@@ -191,12 +191,12 @@ export default function ReflectPage() {
         if (user) {
           setUserId(user.id);
           const [summariesRes, reflectionsRes, founderCtxRes] = await Promise.allSettled([
-            supabase
-              .from("project_summaries")
-              .select("id, startup_stage")
-              .eq("user_id", user.id)
-              .order("updated_at", { ascending: false })
-              .limit(1),
+            // The project the task was for (passed from Today), not whichever was edited most recently.
+            (() => {
+              const q = supabase.from("project_summaries").select("id, startup_stage").eq("user_id", user.id);
+              const pid = new URLSearchParams(window.location.search).get("project");
+              return (pid && /^[0-9a-f-]{36}$/i.test(pid) ? q.eq("id", pid) : q).order("updated_at", { ascending: false }).limit(1);
+            })(),
             supabase
               .from("reflections")
               .select("id, outcome, note, confidence, today_action, created_at")
