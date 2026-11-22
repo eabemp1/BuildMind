@@ -63,9 +63,15 @@ async function postInner(req: NextRequest) {
       const HARD_LIMIT_MS = (maxDuration - 20) * 1000;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const run = await Promise.race([
-        checkDemand(input),
+        checkDemand(input, admit.light),
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The check took too long and was stopped. Try again.")), HARD_LIMIT_MS); }),
       ]).finally(() => clearTimeout(timer));
+      // A check that could not finish is not a finished check with zero demand: mark it failed, keep what it found, give the request back.
+      if (run.incomplete) {
+        await refundAIUsage(auth.userId, "general");
+        await admin.from("demand_runs").update({ status: "failed", error: run.incomplete.slice(0, 300), result: run, signal_count: 0, finished_at: new Date().toISOString() }).eq("id", row.id);
+        return;
+      }
       await admin.from("demand_runs").update({ status: "done", result: run, signal_count: run.signals.length, finished_at: new Date().toISOString() }).eq("id", row.id);
     } catch (e) {
       await refundAIUsage(auth.userId, "general"); // the check failed on our side: give the request back

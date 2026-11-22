@@ -14,21 +14,26 @@ export interface DemandRun {
   signals: Signal[];
   themes: Theme[];
   headline: string;
+  /** Set when the check could not finish (searches or the AI step failed). Such a run is not complete and not 'no demand'. */
+  incomplete?: string;
   stats: { searches: number; resultsFound: number; pagesRead: number; proposed: number; modelFailed: boolean; modelError?: string };
 }
 
-export async function checkDemand(input: Partial<LeadInput>): Promise<DemandRun> {
+export async function checkDemand(input: Partial<LeadInput>, light = false): Promise<DemandRun> {
   const i = cleanInput(input);
-  const queries = demandQueries(i);
+  // Busy system: fewer searches, fewer pages, one smaller model attempt.
+  const queries = demandQueries(i).slice(0, light ? 3 : 99);
   const settled = await Promise.allSettled([
     ...queries.slice(0, 3).map((q) => discussionSearch(q, 8)),
     ...queries.slice(3).map((q) => webSearch(q, 8)),
   ]);
   const results: SearchResult[] = [];
+  let searchesFailed = 0;
   for (const s of settled) {
     if (s.status === "fulfilled" && s.value.provider !== "ai_synthesised" && s.value.provider !== "none") results.push(...s.value.results);
+    else searchesFailed++;
   }
-  const chosen = pickPages(results, 14, true); // discussions on big forums are exactly where demand shows up
+  const chosen = pickPages(results, light ? 6 : 14, true); // discussions on big forums are exactly where demand shows up
   const texts = await Promise.all(chosen.map((r) => readPage(r.url, 5000)));
   const textByUrl = new Map<string, string>();
   chosen.forEach((r, n) => { const t = texts[n] || r.snippet || ""; if (t.length > 40) textByUrl.set(r.url, t); });
@@ -37,6 +42,8 @@ export async function checkDemand(input: Partial<LeadInput>): Promise<DemandRun>
 
   const stats = { searches: queries.length, resultsFound: results.length, pagesRead: chosen.filter((r) => (texts[chosen.indexOf(r)] ?? "").length > 40).length, proposed: 0, modelFailed: false, modelError: undefined as string | undefined };
   const place = [i.city, i.country].filter(Boolean).join(", ");
+  // Every search failing says nothing about demand: it is a failed check, not an empty one.
+  if (searchesFailed > 0 && searchesFailed === settled.length) return { signals: [], themes: [], headline: "The search services did not answer, so nothing could be checked. This says nothing about demand. Try again in a few minutes.", incomplete: "The search services did not answer.", stats };
   if (!textByUrl.size) return { signals: [], themes: [], headline: demandHeadline(0, place), stats };
 
   const system = `You count real public demand. From the SOURCES only, find posts or comments where a real person in or about ${place || "the place"} asks for, complains about, works around, or wishes for something related to the need below. Return JSON: {"signals": [up to 30 of {"quote","url","kind","theme","place"}]}.
@@ -52,10 +59,12 @@ Rules:
 
   // First try a moderate amount of text. Too much text in one request is the usual reason a model call is refused
   // (token limits on the free tiers), so if it fails, retry once with far less before giving up.
-  const attempts: Array<{ sources: number; chars: number; role: "reasoning" | "fast" }> = [
-    { sources: 24, chars: 1600, role: "reasoning" },
-    { sources: 10, chars: 1000, role: "fast" },
-  ];
+  const attempts: Array<{ sources: number; chars: number; role: "reasoning" | "fast" }> = light
+    ? [{ sources: 10, chars: 1000, role: "fast" }]
+    : [
+      { sources: 24, chars: 1600, role: "reasoning" },
+      { sources: 10, chars: 1000, role: "fast" },
+    ];
   for (const [n, att] of attempts.entries()) {
     try {
       const out = await callModelJSON<{ signals?: unknown }>([
@@ -72,7 +81,7 @@ Rules:
       console.error(`[demand] attempt=${n + 1} failed:`, stats.modelError);
     }
   }
-  return { signals: [], themes: [], headline: "The AI step failed twice, so nothing was counted. The reason is shown below; it is usually a model quota or outage. Try again in a few minutes.", stats };
+  return { signals: [], themes: [], headline: "The AI step failed, so nothing was counted. The reason is shown below; it is usually a model quota or outage. Try again in a few minutes.", incomplete: "The AI step failed.", stats };
 }
 
 /** The text sent to the model: a capped number of sources, each cut short. Pure. */
