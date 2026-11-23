@@ -35,6 +35,8 @@ export interface SearchResult {
   snippet:     string;
   age?:        string;   // "2 days ago", "Jan 2025" etc. when available
   source_type: "web" | "discussion" | "news";
+  /** Found by a model's web search and not read by BuildMind: the page is a lead to open, never a quote or proof. */
+  unread?: boolean;
 }
 
 export interface SearchResponse {
@@ -287,7 +289,7 @@ export function openaiSearchAllowed(env: Record<string, string | undefined> = pr
   return true;
 }
 
-/** Only the sources the answer cites count as results. The written answer itself is never used as evidence. */
+/** Only the sources the answer cites count as results, as bare links marked unread. The written answer is never used as evidence or quoted. */
 export function parseOpenAISearch(data: unknown, query: string, max: number): SearchResponse | null {
   const out = (data as { output?: Array<{ type?: string; content?: Array<{ text?: string; annotations?: Array<{ type?: string; url?: string; title?: string; start_index?: number; end_index?: number }> }> }> })?.output ?? [];
   const seen = new Set<string>();
@@ -295,15 +297,14 @@ export function parseOpenAISearch(data: unknown, query: string, max: number): Se
   for (const item of out) {
     if (item.type !== "message") continue;
     for (const c of item.content ?? []) {
-      const text = c.text ?? "";
       for (const a of c.annotations ?? []) {
         if (a.type !== "url_citation" || !a.url || !/^https?:\/\//.test(a.url)) continue;
         let url = a.url;
         try { const u = new URL(url); u.searchParams.delete("utm_source"); url = u.toString(); } catch { continue; }
         if (seen.has(url)) continue;
         seen.add(url);
-        const cited = typeof a.start_index === "number" && typeof a.end_index === "number" ? text.slice(a.start_index, a.end_index) : "";
-        results.push({ title: (a.title || new URL(url).hostname).slice(0, 160), url, snippet: cited.replace(/\s+/g, " ").trim().slice(0, 300), source_type: "web" });
+        // The model's wording about the page is a paraphrase, not the page, so no snippet is kept: downstream code must read the page itself.
+        results.push({ title: (a.title || new URL(url).hostname).slice(0, 160), url, snippet: "", source_type: "web", unread: true });
         if (results.length >= max) return { results, provider: "openai", scraped: true, query };
       }
     }

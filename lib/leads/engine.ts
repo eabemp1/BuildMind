@@ -81,7 +81,7 @@ async function pass(i: LeadInput, queries: string[], osmTags: OsmTag[], seen: Se
     findPlaces(i.city, i.country, osmTags),
   ]);
   const pages: Page[] = chosen.map((r, n) => ({ ...r, text: read[n].text || r.snippet || "", links: read[n].links })).filter((p) => p.text.length > 40);
-  return { pages, places, searches: searches.length, searchFailed: failed, snippets: results, resultsFound: results.length };
+  return { pages, places, searches: searches.length, searchFailed: failed, snippets: results.filter((r) => !r.unread), resultsFound: results.length };
 }
 
 /** From the model's picks, keep only links that were really on the pages, unseen, safe and spread over domains. Pure. */

@@ -9,11 +9,12 @@ const data = { output: [{ type: "web_search_call" }, { type: "message", content:
 ] }] }] };
 
 describe("OpenAI web search", () => {
-  it("keeps only cited, safe, unique sources and drops tracking params", () => {
+  it("keeps only cited, safe, unique sources as unread links and drops tracking params", () => {
     const r = parseOpenAISearch(data, "pos accra", 8)!;
     expect(r.provider).toBe("openai");
     expect(r.results.map((x) => x.url)).toEqual(["https://acme.com/pos", "https://bolt.eu/"]);
-    expect(r.results[0].snippet).toBe("Acme sells POS in Accra.");
+    // The model's sentence is never kept as a quote: results are unread links.
+    expect(r.results.every((x) => x.snippet === "" && x.unread === true)).toBe(true);
   });
   it("returns null with no citations", () => {
     expect(parseOpenAISearch({ output: [{ type: "message", content: [{ text: "x", annotations: [] }] }] }, "q", 5)).toBeNull();
