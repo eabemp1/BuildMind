@@ -31,6 +31,7 @@ import { selectActiveProject, useActiveProjectId, useProjectSummariesQuery, quer
 import { useQueryClient } from "@tanstack/react-query";
 import TodayCommandCenter from "@/components/today/TodayCommandCenter";
 import { statedMinutes } from "@/lib/today/minutes";
+import TaskAudience from "@/components/today/TaskAudience";
 import { computeStartupScore } from "@/lib/buildmind";
 import { computeScoreDelta, applyScoreDelta, getXP, recordScore } from "@/lib/scoring";
 import { getStoredStreak, recordTaskCompletion, syncStreakFromServer } from "@/lib/plan";
@@ -2436,6 +2437,9 @@ function TodayContent() {
             </span>
           </div>
 
+          {project?.id && (
+            <TaskAudience projectId={project.id} projectName={productName || "your project"} targetUsers={targetUsers} onChanged={() => { storage.remove(`bm_today_action_cache_${userId}`); setForceActionRefresh((n) => n + 1); }} />
+          )}
           <div
             id="today-action"
             style={{

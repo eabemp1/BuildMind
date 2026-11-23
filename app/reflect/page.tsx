@@ -28,6 +28,7 @@ import { SignalPicker, type SignalValue } from "./components/SignalPicker";
 import { ReflectionCompletion } from "./components/ReflectionCompletion";
 import { effectiveStreak } from "@/lib/streak";
 import { withinUndoWindow } from "@/lib/reflectionUndo";
+import { getActiveProjectId } from "@/lib/api";
 
 type Outcome = ReflectionOutcome;
 type ReflectionHistoryEntry = {
@@ -194,7 +195,8 @@ export default function ReflectPage() {
             // The project the task was for (passed from Today), not whichever was edited most recently.
             (() => {
               const q = supabase.from("project_summaries").select("id, startup_stage").eq("user_id", user.id);
-              const pid = new URLSearchParams(window.location.search).get("project");
+              // No link parameter (a notification, the Reflect tab): the project the founder has open, not the last one edited.
+              const pid = new URLSearchParams(window.location.search).get("project") ?? getActiveProjectId();
               return (pid && /^[0-9a-f-]{36}$/i.test(pid) ? q.eq("id", pid) : q).order("updated_at", { ascending: false }).limit(1);
             })(),
             supabase
