@@ -6,7 +6,7 @@ vi.mock("@/app/api/ai/_utils", () => ({ hasAdminEnv: () => true }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({ from: () => ({
     upsert: async (row: unknown) => { upserts.push(row); return { error: null }; },
-    select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { content: { headline: "H", pitch: "P", design: { brand: "QueuePilot" } } }, error: null }) }) }) }),
+    select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { project_id: "11111111-1111-1111-1111-111111111111", content: { headline: "H", pitch: "P", design: { brand: "QueuePilot" } } }, error: null }) }) }) }),
   }) }),
 }));
 
@@ -23,6 +23,10 @@ describe("saving a landing page draft", () => {
     expect(row.content.design.brand).toBe("QueuePilot");
     expect(row.content.design.accent).toBe("#0e7c66");
     expect(row.content.design.benefits[0].text).not.toContain("@");
+  });
+  it("ties a Library item's draft to the item's own project, not the open one", async () => {
+    await put({ key: "work:22222222-2222-2222-2222-222222222222", projectId: "33333333-3333-3333-3333-333333333333", design: {} });
+    expect((upserts[upserts.length - 1] as { project_id: string }).project_id).toBe("11111111-1111-1111-1111-111111111111");
   });
   it("refuses login-like wording and a missing key", async () => {
     expect((await put({ key: "k", design: { finalTitle: "Verify your account with your password" } })).status).toBe(400);

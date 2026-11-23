@@ -35,7 +35,14 @@ export async function PUT(request: Request) {
   if (!design) return NextResponse.json({ ok: false, error: "Remove wording about logins, passwords, card numbers or verification." }, { status: 400 });
   if (!hasAdminEnv()) return NextResponse.json({ ok: false, error: "Saving is unavailable right now." }, { status: 503 });
   const content = { headline: typeof b.headline === "string" ? b.headline.slice(0, 120) : "", pitch: typeof b.pitch === "string" ? b.pitch.slice(0, 300) : "", design };
-  const projectId = typeof b.projectId === "string" && UUID.test(b.projectId) ? b.projectId : null;
+  let projectId = typeof b.projectId === "string" && UUID.test(b.projectId) ? b.projectId : null;
+  // A draft of a Library item belongs to that item's own project, whichever project is open now.
+  const m = /^work:([0-9a-f-]{36})$/i.exec(k);
+  if (m) {
+    const { data: it } = await createAdminClient().from("work_items").select("project_id").eq("id", m[1]).eq("user_id", user.userId).maybeSingle();
+    if (!it) return NextResponse.json({ ok: false, error: "That item is not in your library." }, { status: 404 });
+    projectId = (it as { project_id?: string | null }).project_id ?? projectId;
+  }
   const { error } = await createAdminClient().from("landing_drafts").upsert({ user_id: user.userId, item_key: k, project_id: projectId, content, updated_at: new Date().toISOString() }, { onConflict: "user_id,item_key" });
   if (error) return NextResponse.json({ ok: false, error: /landing_drafts/.test(error.message) ? "The landing_drafts table is not set up yet. Apply the latest database migration." : "Could not save." }, { status: 500 });
   return NextResponse.json({ ok: true });

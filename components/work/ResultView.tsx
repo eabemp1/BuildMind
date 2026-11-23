@@ -9,6 +9,7 @@ import { useActiveProjectId } from "@/lib/queries";
 
 export interface WorkItem {
   id: string | null; kind: string; title: string; inputs: Record<string, string>;
+  project_id?: string | null;
   payload: WorkResult; edits: Record<string, string>; status: "draft" | "used" | "sent"; note: string | null;
 }
 
@@ -161,7 +162,7 @@ export default function ResultView({ item, spec, regenerating, onRegenerate, onE
       )}
 
       {/* The same designed-page editor Today uses: choose the look, preview on phone and desktop, then publish. */}
-      {item.kind === "landing" && wholeDoc.trim() && <PublishPage draft={wholeDoc} task={payload.title} projectId={projectId} draftKey={item.id ? `work:${item.id}` : undefined} />}
+      {item.kind === "landing" && wholeDoc.trim() && <PublishPage draft={wholeDoc} task={payload.title} projectId={item.project_id ?? projectId} draftKey={item.id ? `work:${item.id}` : undefined} />}
 
       {msg && <p role="alert" style={{ ...muted, color: "var(--bm-red)" }}>{msg}</p>}
 

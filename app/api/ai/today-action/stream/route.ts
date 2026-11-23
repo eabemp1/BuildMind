@@ -97,13 +97,8 @@ function inferTopic(action: string, explicit: string, title: string): string {
 
 function inferProjectAudience(targetUsers: string, title: string, description = "", problem = ""): string {
   if (targetUsers?.trim()) return targetUsers.trim();
-  const haystack = `${title} ${description} ${problem}`.toLowerCase();
-  if (/(consent|privacy|gdpr|compliance|audit)/.test(haystack)) return "data privacy officers or compliance managers";
-  if (/(fintech|payment|bank|invoice|accounting|finance)/.test(haystack)) return "finance operators or fintech founders";
-  if (/(health|clinic|patient|medical)/.test(haystack)) return "healthcare operators";
-  if (/(school|student|teacher|course|learning)/.test(haystack)) return "education operators";
-  if (/(shop|commerce|store|retail)/.test(haystack)) return "e-commerce operators";
-  return title?.trim() ? `${title.trim()} target users` : "people in your target segment";
+  // No keyword guessing: a bike repair "shop" is not an e-commerce operator. Without a stated customer, stay general.
+  return "the people who have this problem";
 }
 
 
