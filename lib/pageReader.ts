@@ -16,6 +16,8 @@ export interface PageDigest {
   text: string;          // readable body, capped
   prices: string[];      // e.g. "$29/mo"
   hasPricingPage: boolean;
+  /** The page's own publication time from its markup (YYYY-MM-DD), when it states one. Never the day it was read. */
+  publishedAt?: string;
   status?: number;
 }
 
@@ -49,6 +51,20 @@ function meta(html: string, name: string): string {
   return decode((html.match(re)?.[1] ?? html.match(re2)?.[1] ?? "").trim());
 }
 
+/** The page's own publication date: JSON-LD datePublished, article:published_time, or a <time datetime> in the article. */
+export function publishedAtFrom(html: string): string | undefined {
+  const cands = [
+    html.match(/"datePublished"\s*:\s*"([^"]+)"/i)?.[1],
+    meta(html, "article:published_time"),
+    meta(html, "og:article:published_time"),
+    meta(html, "datePublished"),
+    meta(html, "date"),
+    html.match(/<time[^>]+datetime=["']([^"']+)["']/i)?.[1],
+  ];
+  for (const c of cands) { const m = c?.trim().match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`; }
+  return undefined;
+}
+
 /** Pure: HTML -> digest. Exported for tests. */
 export function digestHtml(url: string, html: string): PageDigest {
   const title = strip(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") || meta(html, "og:title");
@@ -69,7 +85,7 @@ export function digestHtml(url: string, html: string): PageDigest {
     if (priceSet.size >= 6) break;
   }
   const hasPricingPage = /href=["'][^"']*pricing[^"']*["']/i.test(html);
-  return { url, ok: true, title, description, headings, text, prices: [...priceSet], hasPricingPage };
+  return { url, ok: true, title, description, headings, text, prices: [...priceSet], hasPricingPage, publishedAt: publishedAtFrom(html) };
 }
 
 export async function readPage(url: string): Promise<PageDigest> {

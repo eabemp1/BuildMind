@@ -7,11 +7,21 @@
  */
 
 export interface WatchedCompetitor { name: string; url: string; ok: boolean; title: string; price: string | null }
-export interface WatchedThread { url: string; title: string; about: string }
+import type { ExcludeReason, Freshness } from "@/lib/marketWatch/freshness";
+
+/**
+ * A source BuildMind found. `publishedAt` is the page's own date; `checkedAt` is the day BuildMind read it.
+ * Snapshots saved before freshness checks have no `status`, and are treated as unverified.
+ */
+export interface WatchedThread {
+  url: string; title: string; about: string;
+  publisher?: string; publishedAt?: string; checkedAt?: string;
+  status?: Freshness; reason?: ExcludeReason; primary?: boolean;
+}
 export interface MarketSnapshot { weekStart: string; competitors: WatchedCompetitor[]; threads: WatchedThread[] }
 
 export type ChangeKind = "price" | "headline" | "new_competitor" | "page_down" | "page_back" | "new_thread";
-export interface MarketChange { kind: ChangeKind; text: string; url?: string }
+export interface MarketChange { kind: ChangeKind; text: string; url?: string; publisher?: string; publishedAt?: string; checkedAt?: string }
 
 const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -49,7 +59,11 @@ export function diffSnapshots(prev: MarketSnapshot | null, cur: MarketSnapshot):
     if (p.ok && c.ok && p.title && c.title && key(p.title) !== key(c.title)) changes.push({ kind: "headline", text: `${c.name} changed its page title to "${c.title.slice(0, 90)}".`, url: c.url });
   }
   const seen = new Set(prev.threads.map((t) => t.url));
-  for (const t of cur.threads) if (!seen.has(t.url)) changes.push({ kind: "new_thread", text: `New discussion about ${t.about}: ${t.title.slice(0, 100)}`, url: t.url });
+  // A new link is only a change when the page itself says it was published this week. Older or undated pages are background at most.
+  for (const t of cur.threads) {
+    if (seen.has(t.url) || t.status !== "this_week") continue;
+    changes.push({ kind: "new_thread", text: `New this week about ${t.about}: ${t.title.slice(0, 100)}`, url: t.url, publisher: t.publisher, publishedAt: t.publishedAt, checkedAt: t.checkedAt });
+  }
   return { baseline: false, changes };
 }
 
