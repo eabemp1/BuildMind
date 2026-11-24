@@ -59,8 +59,15 @@ export default function WorkApp() {
       const task = (p.get("task") ?? "").slice(0, 400);
       if (task) setView({ name: "existing", kind: "", task, missionKind: p.get("mk") || null, firstStep: p.get("step")?.slice(0, 400) || undefined, fromToday: true });
       // A link such as /work?open=visual:market opens that drawn view straight away.
-      const open = VISUALS.find((v) => v.id === p.get("open"));
+      const openId = p.get("open") ?? "";
+      const open = VISUALS.find((v) => v.id === openId);
       if (open && !task) setView({ name: "visual", kind: open.kind });
+      // The command palette links to any catalog entry: /work?open=<id>
+      const other = !open && !task ? catalog().find((c) => c.id === openId) : undefined;
+      if (other) pickRef.current(other);
+      // /work?item=<id> opens one saved item (used by the command palette).
+      const itemId = p.get("item") ?? "";
+      if (/^[0-9a-f-]{36}$/i.test(itemId) && !task && !open && !other) void openRef.current(itemId);
       // /work?kind=prospects opens that tool's brief straight away.
       const kind = p.get("kind") ?? "";
       if (kind && !task && !open && SPEC_BY_ID[kind]) setView({ name: "brief", specId: kind });
@@ -74,6 +81,8 @@ export default function WorkApp() {
   }, [projectId]);
   React.useEffect(() => { void load(); }, [load]);
 
+  const pickRef = React.useRef<(e: CatalogEntry) => void>(() => {});
+  const openRef = React.useRef<(id: string) => Promise<void>>(async () => {});
   function pick(e: CatalogEntry) {
     setError("");
     if (e.source === "tool") {
@@ -88,6 +97,8 @@ export default function WorkApp() {
       if (x) setView({ name: "existing", kind, task: x.task });
     } else setView({ name: "brief", specId: e.id });
   }
+  pickRef.current = pick;
+  openRef.current = (id) => openItem(id);
   async function openItem(id: string, row?: LibraryRow) {
     if (row?.source === "prep" && row.task) { setTab("new"); setView({ name: "existing", kind: row.kind, task: row.task }); return; }
     const r = await api<{ item: WorkItem }>(`/api/work/items?id=${id}`);
