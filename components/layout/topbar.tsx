@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, PanelLeft, Search, Sparkles } from "lucide-react";
+import { Menu, PanelLeft, Search, Sparkles, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
@@ -66,6 +66,11 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Phones: the search field opens as a full-width row over the bar (there is no room for it beside the icons).
+  const [mobileSearch, setMobileSearch] = useState(false);
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [briefCount, setBriefCount] = useState<number | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const initials = useMemo(() => (email ? email.slice(0, 1).toUpperCase() : "BM"), [email]);
@@ -139,7 +144,8 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
     return () => window.clearTimeout(handle);
   }, [searchQuery]);
 
-  useEffect(() => { setOpen(false); setSearchOpen(false); }, [pathname]);
+  useEffect(() => { setOpen(false); setSearchOpen(false); setMobileSearch(false); }, [pathname]);
+  useEffect(() => { if (mobileSearch) searchInputRef.current?.focus(); }, [mobileSearch]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -164,7 +170,7 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
 
   return (
     <div
-      className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-6"
+      className="relative flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-6"
       style={{
         background: "color-mix(in srgb, var(--bm-bg) 92%, transparent)",
         backdropFilter: "blur(20px)",
@@ -192,8 +198,14 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
       </button>
 
       {/* Search */}
-      <div className="relative hidden min-[440px]:block min-w-0 flex-1" ref={searchRef}>
-        <div style={{ position: "relative", maxWidth: 460 }}>
+      <div
+        className={mobileSearch
+          ? "absolute inset-0 z-50 flex items-center gap-2 px-3 md:static md:z-auto md:block md:flex-1 md:bg-transparent md:p-0"
+          : "relative hidden min-w-0 flex-1 md:block"}
+        style={mobileSearch ? { background: "var(--bm-bg)" } : undefined}
+        ref={searchRef}
+      >
+        <div style={{ position: "relative", maxWidth: mobileSearch ? "none" : 460, flex: mobileSearch ? 1 : undefined }}>
           <Search
             size={13}
             style={{
@@ -203,15 +215,17 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
             }}
           />
           <input
+            ref={searchInputRef}
+            aria-label="Search"
             placeholder="Search projects, milestones, tasks…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             onFocus={() => { if (searchQuery.trim()) setSearchOpen(true); }}
             onKeyDown={e => {
-              if (e.key === "Escape") { setSearchOpen(false); setSearchQuery(""); setSearchError(null); }
+              if (e.key === "Escape") { setSearchOpen(false); setSearchQuery(""); setSearchError(null); setMobileSearch(false); }
             }}
             style={{
-              width: "100%", height: 32, paddingLeft: 32, paddingRight: 12,
+              width: "100%", height: mobileSearch ? 40 : 32, paddingLeft: 32, paddingRight: 12,
               background: "var(--bm-bg2)",
               border: "1px solid var(--bm-border2)",
               borderRadius: "var(--r-sm)", fontSize: 13,
@@ -279,19 +293,29 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
             </motion.div>
           )}
         </div>
+        {mobileSearch && (
+          <button type="button" className="md:hidden" onClick={() => { setMobileSearch(false); setSearchQuery(""); setSearchOpen(false); }}
+            aria-label="Close search" style={{ display: "grid", placeItems: "center", width: 40, height: 40, borderRadius: 8, border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer", flexShrink: 0 }}>
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {/* Right controls */}
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        <button type="button" className="md:hidden" onClick={() => setMobileSearch(true)} aria-label="Search"
+          style={{ display: "grid", placeItems: "center", width: 40, height: 40, borderRadius: 8, border: "1px solid var(--bm-border2)", background: "transparent", color: "var(--bm-text3)", cursor: "pointer" }}>
+          <Search size={15} />
+        </button>
         <button type="button" onClick={() => (pane?.kind === "coach" ? closePane() : openPane({ kind: "coach" }))}
           title="Ask your coach beside this page (Ctrl+J)" aria-label="Coach" aria-pressed={pane?.kind === "coach"}
-          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, height: 40, minWidth: 40, padding: "0 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600,
+          className="hidden md:inline-flex" style={{ alignItems: "center", justifyContent: "center", gap: 6, height: 40, minWidth: 40, padding: "0 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600,
             border: `1px solid ${pane?.kind === "coach" ? "var(--bm-accent-bd)" : "var(--bm-border2)"}`,
             background: pane?.kind === "coach" ? "var(--bm-accent-dim)" : "transparent",
             color: pane?.kind === "coach" ? "var(--bm-accent)" : "var(--bm-text3)" }}>
           <Sparkles size={14} /><span className="hidden sm:inline">Coach</span>
         </button>
-        <CompanionButton />
+        <CompanionButton hideTrigger open={briefOpen} onOpenChange={setBriefOpen} onCount={setBriefCount} />
         <NotificationBell />
 
         {/* Avatar menu */}
@@ -315,6 +339,7 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
               : initials
             }
           </button>
+          {!!briefCount && <span aria-hidden style={{ position: "absolute", top: -3, right: -3, width: 10, height: 10, borderRadius: 5, background: "var(--bm-accent)", border: "2px solid var(--bm-bg)", pointerEvents: "none" }} />}
 
           {open && (
             <motion.div
@@ -323,13 +348,26 @@ export default function Topbar({ onToggleSidebar, navOpen = true }: TopbarProps)
               transition={{ duration: 0.12 }}
               style={{
                 position: "absolute", right: 0, marginTop: 6,
-                width: 180, zIndex: 70,
+                width: 200, zIndex: 70,
                 background: "var(--bm-bg2)",
                 border: "1px solid var(--bm-border2)",
                 borderRadius: 10, padding: 5,
                 boxShadow: "0 16px 48px rgba(0,0,0,0.4)",
               }}
             >
+              <button type="button" className="md:hidden" onClick={() => { setOpen(false); pane?.kind === "coach" ? closePane() : openPane({ kind: "coach" }); }} style={{ ...dropBtn, color: "var(--bm-text)", display: "flex", alignItems: "center", gap: 8 }}
+                onMouseEnter={e => e.currentTarget.style.background = "var(--bm-bg3)"}
+                onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                <Sparkles size={14} /> Ask your coach
+              </button>
+              {briefCount !== null && (
+                <button type="button" onClick={() => { setOpen(false); setBriefOpen(true); }} style={{ ...dropBtn, color: "var(--bm-text)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}
+                  onMouseEnter={e => e.currentTarget.style.background = "var(--bm-bg3)"}
+                  onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                  <span>Daily brief</span>
+                  {briefCount > 0 && <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: "var(--bm-accent)", color: "#15130a", fontSize: 10.5, fontWeight: 700, display: "grid", placeItems: "center", padding: "0 5px" }}>{briefCount}</span>}
+                </button>
+              )}
               <button type="button" onClick={() => { setOpen(false); router.push("/settings"); }} style={{ ...dropBtn, color: "var(--bm-text)" }}
                 onMouseEnter={e => e.currentTarget.style.background = "var(--bm-bg3)"}
                 onMouseLeave={e => e.currentTarget.style.background = "none"}>

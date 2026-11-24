@@ -80,7 +80,7 @@ export default function CoachPane({ req }: { req: CoachReq }) {
         ? String(data.reply ?? data.actionResult.summary ?? "Done. Open the full Coach page to see the result.")
         : String(data.reply ?? data.answer ?? "I'm having trouble responding right now. Please try again.");
       if (data.kind !== "action") storage.recordCoachMessage();
-      setMessages((p) => p.map((m) => (m.id === pendingId ? { ...m, content: reply, pending: false, actionResult } : m)));
+      setMessages((p) => p.map((m) => (m.id === pendingId ? { ...m, content: reply, pending: false, actionResult, sources: Array.isArray(data.sources) ? data.sources : undefined } : m)));
     } catch (e) {
       const message = e instanceof Error ? e.message : "Something went wrong. Try again.";
       if (message.toLowerCase().includes("limit")) showLimitModal("aiCoach");
@@ -133,6 +133,14 @@ export default function CoachPane({ req }: { req: CoachReq }) {
                 {m.pending || m.phase === "thinking" ? <span style={{ fontSize: 13, color: "var(--bm-text3)" }}>Thinking…</span>
                   : m.error ? <span style={{ fontSize: 13, color: "var(--bm-red)" }}>{m.content}</span>
                   : <Markdown textSize={13.5}>{sanitizeMarkdown(parsed.text)}</Markdown>}
+                {m.sources && m.sources.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12, color: "var(--bm-text3)" }}>
+                    <span>Sources:</span>
+                    {m.sources.map((src) => (
+                      <a key={src.n} href={src.url} target="_blank" rel="noopener noreferrer" title={src.title} style={{ color: "var(--bm-text2)", textDecoration: "underline", overflowWrap: "anywhere" }}>{src.n}. {src.host || src.title}{src.read ? "" : " (not read)"}</a>
+                    ))}
+                  </div>
+                )}
                 {m.actionResult && <CoachActionResultCard result={m.actionResult} />}
                 {m.proposal && <button type="button" onClick={() => router.push("/ai-coach")} style={{ alignSelf: "flex-start", fontSize: 12.5, textDecoration: "underline", color: "var(--bm-text)", minHeight: 32 }}>Open Coach to confirm this change</button>}
                 {parsed.links.length > 0 && (

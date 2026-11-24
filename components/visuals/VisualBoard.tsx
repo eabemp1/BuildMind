@@ -230,6 +230,14 @@ function Signals({ p }: { p: Extract<VisualPanel, { type: "signals" }> }) {
   );
 }
 
+/** A source link beside a line: the site's name, opens the page it came from. */
+function SourceLink({ url }: { url?: string }) {
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  let host = "source";
+  try { host = new URL(url).hostname.replace(/^www\./, ""); } catch { return null; }
+  return <> · <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: C.text2, textDecoration: "underline", overflowWrap: "anywhere" }} aria-label={`Source: ${host}`}>{host}</a></>;
+}
+
 function Tree({ p }: { p: Extract<VisualPanel, { type: "tree" }> }) {
   return (
     <div className="vb-p vb-w">
@@ -240,11 +248,11 @@ function Tree({ p }: { p: Extract<VisualPanel, { type: "tree" }> }) {
           <div className="vb-tb" key={b.label + i}>
             <span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: 3, background: TONE[b.tone ?? "accent"], marginRight: 7 }} />
             <span style={{ fontWeight: 600, overflowWrap: "anywhere" }}>{b.label}</span>
-            {b.note && <span style={{ color: C.text3 }}> · {b.note}</span>}
+            {b.note && <span style={{ color: C.text3 }}> · {b.note}</span>}<SourceLink url={b.url} />
             {b.children && b.children.length > 0 && (
               <div className="vb-t" style={{ marginTop: 6 }}>
                 {b.children.map((c, j) => (
-                  <div className="vb-tb" key={c.label + j} style={{ color: C.text2 }}>{c.label}{c.note && <span style={{ color: C.text3 }}> · {c.note}</span>}</div>
+                  <div className="vb-tb" key={c.label + j} style={{ color: C.text2 }}>{c.label}{c.note && <span style={{ color: C.text3 }}> · {c.note}</span>}<SourceLink url={c.url} /></div>
                 ))}
               </div>
             )}
