@@ -633,8 +633,9 @@ function SettingsContent() {
   // If redirected from OAuth callback, default to integrations tab
   const initialIntegrationStatus = searchParams.get("integration");
   const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window !== "undefined" && searchParams.get("tab") === "integrations") return "integrations";
-    if (searchParams.get("tab") === "billing") return "billing";
+    const asked = searchParams.get("tab");
+    const known = TABS.find((t) => t.id === asked);
+    if (known) return known.id;
     if (initialIntegrationStatus) return "integrations";
     return "profile";
   });
