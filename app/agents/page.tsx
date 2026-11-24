@@ -157,6 +157,15 @@ function FindingCard({
           <div style={{ fontSize: 12, color: "var(--bm-text2)", lineHeight: 1.6, marginBottom: 6 }}>
             {finding.evidence}
           </div>
+          {(finding.sources ?? []).filter((u) => /^https?:\/\//i.test(u)).length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 10px", fontSize: 11, color: "var(--bm-text3)", marginBottom: 6 }}>
+              <span>Sources:</span>
+              {(finding.sources ?? []).filter((u) => /^https?:\/\//i.test(u)).slice(0, 4).map((u) => {
+                let host = u; try { host = new URL(u).hostname.replace(/^www\./, ""); } catch { /* keep the raw text */ }
+                return <a key={u} href={u} target="_blank" rel="noopener noreferrer" style={{ color: "var(--bm-text2)", textDecoration: "underline", overflowWrap: "anywhere" }}>{host}</a>;
+              })}
+            </div>
+          )}
           {cls.caveat && (
             <div style={{ fontSize: 11, color: "var(--bm-amber)", marginBottom: 6 }}>{cls.caveat}</div>
           )}

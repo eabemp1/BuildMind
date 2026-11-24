@@ -89,7 +89,7 @@ export async function runMarketWatch(admin: SupabaseClient, input: { userId: str
   }
 }
 
-export interface StoredWatch { weekStart: string; baseline: boolean; changes: MarketChange[]; competitors: WatchedCompetitor[] }
+export interface StoredWatch { weekStart: string; baseline: boolean; changes: MarketChange[]; competitors: WatchedCompetitor[]; threads: WatchedThread[] }
 
 /** The latest saved scan, with no network calls. */
 export async function loadLatestWatch(admin: SupabaseClient, userId: string, projectId: string | null): Promise<StoredWatch | null> {
@@ -99,6 +99,6 @@ export async function loadLatestWatch(admin: SupabaseClient, userId: string, pro
     const { data } = await q.maybeSingle();
     const row = data as { payload?: MarketSnapshot & { changes?: MarketChange[]; baseline?: boolean }; week_start?: string } | null;
     if (!row?.payload) return null;
-    return { weekStart: row.week_start ?? row.payload.weekStart, baseline: Boolean(row.payload.baseline), changes: row.payload.changes ?? [], competitors: row.payload.competitors ?? [] };
+    return { weekStart: row.week_start ?? row.payload.weekStart, baseline: Boolean(row.payload.baseline), changes: row.payload.changes ?? [], competitors: row.payload.competitors ?? [], threads: row.payload.threads ?? [] };
   } catch { return null; }
 }

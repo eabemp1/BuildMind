@@ -19,11 +19,21 @@ const MODE: Record<string, PulseMode> = {
  * has something to say, and opens today's brief and settings from any page.
  * Builder plan only (same gate the old sidebar card used).
  */
-export default function CompanionButton() {
+export default function CompanionButton({ hideTrigger = false, open: openProp, onOpenChange, onCount }: {
+  /** The brief opens from the account menu instead of its own avatar button. */
+  hideTrigger?: boolean; open?: boolean; onOpenChange?: (o: boolean) => void; onCount?: (n: number | null) => void;
+} = {}) {
   const { plan } = usePlan();
   const projectId = useActiveProjectId();
   const { data, dismiss, acted, saveSettings } = useCompanion(projectId);
-  const [open, setOpen] = React.useState(false);
+  const [openState, setOpenState] = React.useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (v: boolean | ((o: boolean) => boolean)) => {
+    const next = typeof v === "function" ? v(open) : v;
+    setOpenState(next); onOpenChange?.(next);
+  };
+  const countNow = plan === "builder" && data ? data.moments.length : null;
+  React.useEffect(() => { onCount?.(countNow); }, [countNow]); // eslint-disable-line react-hooks/exhaustive-deps
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -42,8 +52,8 @@ export default function CompanionButton() {
   const mode: PulseMode = top ? MODE[top.kind] ?? "insight" : "observing";
 
   return (
-    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      <button
+    <div ref={ref} style={hideTrigger ? { display: "contents" } : { position: "relative", flexShrink: 0 }}>
+      {!hideTrigger && <button
         type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Daily brief"
         title={top ? `Daily brief: ${top.headline}` : "Daily brief"}
         style={{ position: "relative", display: "grid", placeItems: "center", width: 32, height: 32, borderRadius: 6, border: "1px solid var(--bm-border2)", background: "transparent", cursor: "pointer", padding: 0 }}
@@ -54,7 +64,7 @@ export default function CompanionButton() {
             {data.moments.length}
           </span>
         )}
-      </button>
+      </button>}
 
       {open && (
         <div

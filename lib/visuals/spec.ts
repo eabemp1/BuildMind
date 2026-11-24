@@ -17,7 +17,7 @@ export type VisualPanel =
   | { type: "radar"; title: string; caption?: string; axes: Array<{ label: string; value: number; max?: number }> }
   | { type: "heat"; title: string; caption?: string; columns?: number; cells: Array<{ label: string; value: number; note?: string }> }
   | { type: "signals"; title: string; caption?: string; items: Array<{ label: string; severity: "low" | "medium" | "high" | "critical"; confidence?: number; note?: string }> }
-  | { type: "tree"; title: string; caption?: string; root: string; branches: Array<{ label: string; tone?: VisualTone; note?: string; children?: Array<{ label: string; note?: string }> }> }
+  | { type: "tree"; title: string; caption?: string; root: string; branches: Array<{ label: string; tone?: VisualTone; note?: string; /** Where the line comes from; shown as a source link. */ url?: string; children?: Array<{ label: string; note?: string; url?: string }> }> }
   | { type: "callout"; title?: string; text: string; tone?: VisualTone };
 
 export interface VisualSpec {
