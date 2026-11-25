@@ -189,11 +189,14 @@ function sanitizeActionData(data: ActionData): ActionData | null {
   const message = sanitizeVisibleText(data.message);
   const why = sanitizeVisibleText(data.why);
   if (!action || !message || !why) return null;
+  // One time for the task: if the sentence states minutes, every surface shows that number.
+  const stated = statedMinutes(action);
   return {
     ...data,
     action,
     message,
     why,
+    time: stated ? `${stated} min` : data.time,
     reflexion: data.reflexion
       ? { ...data.reflexion, rationale: sanitizeVisibleText(data.reflexion.rationale) || why }
       : data.reflexion,

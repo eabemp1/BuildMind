@@ -4,7 +4,7 @@ import React from "react";
 import { SPEC_BY_ID, EXISTING } from "@/lib/work/registry";
 import { muted } from "./ui";
 
-export interface LibraryRow { id: string; kind: string; title: string; status: string; updated_at: string; source?: "prep"; task?: string; project?: string | null; outcome?: string | null }
+export interface LibraryRow { id: string; kind: string; title: string; status: string; updated_at: string; source?: "prep"; task?: string; project?: string | null; project_id?: string | null; outcome?: string | null }
 
 const when = (iso: string) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000); return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; };
 const STATUS: Record<string, string> = { draft: "Draft", used: "Used", sent: "Sent" };

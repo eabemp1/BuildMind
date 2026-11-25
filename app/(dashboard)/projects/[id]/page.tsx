@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, useAnimation, AnimatePresence } from "framer-motion";
 import {
   type BuildMindMilestone, type BuildMindTask,
@@ -179,8 +179,9 @@ function TaskCheckbox({ checked, onChange, size=16 }: { checked:boolean; onChang
 }
 
 // ─── Milestone card ─────────────────────────────────────────────────────────
-function MilestoneCard({ milestone, tasks, index, onToggleTask, onUpdateEstimate }: { milestone:BuildMindMilestone; tasks:BuildMindTask[]; index:number; onToggleTask:(t:BuildMindTask)=>void; onUpdateEstimate:(difficulty:number|null, estimated_days:number|null)=>void }) {
+function MilestoneCard({ milestone, tasks, index, onToggleTask, onUpdateEstimate, focused }: { focused?:boolean; milestone:BuildMindMilestone; tasks:BuildMindTask[]; index:number; onToggleTask:(t:BuildMindTask)=>void; onUpdateEstimate:(difficulty:number|null, estimated_days:number|null)=>void }) {
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => { if (focused) setExpanded(true); }, [focused]); // a search result opens the milestone it names
   const [editingEstimate, setEditingEstimate] = useState(false);
   const [difficultyDraft, setDifficultyDraft] = useState(milestone.difficulty ?? 3);
   const [estimatedDaysDraft, setEstimatedDaysDraft] = useState(milestone.estimated_days ?? 7);
@@ -197,8 +198,8 @@ function MilestoneCard({ milestone, tasks, index, onToggleTask, onUpdateEstimate
   const isOverEstimate = !isComplete && daysOpen != null && milestone.estimated_days != null && daysOpen > milestone.estimated_days;
 
   return (
-    <motion.div initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} transition={{ delay:index*0.06 }}
-      style={{ background:isComplete?"rgba(74,222,128,0.03)":VIZ.panel, border:`1px solid ${isComplete?"rgba(74,222,128,0.2)":VIZ.border}`, borderRadius:12, overflow:"hidden", transition:"border-color 0.3s" }}>
+    <motion.div id={`focus-${milestone.id}`} initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }} transition={{ delay:index*0.06 }}
+      style={{ outline:focused?"2px solid var(--bm-accent)":undefined, outlineOffset:2, background:isComplete?"rgba(74,222,128,0.03)":VIZ.panel, border:`1px solid ${isComplete?"rgba(74,222,128,0.2)":VIZ.border}`, borderRadius:12, overflow:"hidden", transition:"border-color 0.3s" }}>
       <div style={{ padding:"14px 16px",cursor:"pointer" }} onClick={()=>setExpanded(!expanded)}>
         <div style={{ display:"flex",alignItems:"flex-start",gap:12 }}>
           <div style={{ width:20,height:20,borderRadius:"50%",flexShrink:0,marginTop:1,background:isComplete?"var(--bm-green)":"transparent",border:isComplete?"none":"1.5px solid var(--bm-border2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
@@ -515,6 +516,15 @@ export default function ProjectDetailPage() {
   const { project, milestones = [], tasks = [] } = data ?? {};
 
   const [tab, setTab] = useState<Tab>("milestones");
+  // /projects/<id>?focus=<task or milestone id>: open the tab that holds it and bring it into view.
+  const focusId = useSearchParams().get("focus");
+  useEffect(() => {
+    if (!focusId || !data) return;
+    const isTask = (data.tasks ?? []).some((t) => t.id === focusId);
+    setTab(isTask ? "tasks" : "milestones");
+    const t = window.setTimeout(() => document.getElementById(`focus-${focusId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+    return () => window.clearTimeout(t);
+  }, [focusId, data]);
   const [newNoteDraft, setNewNoteDraft] = useState<Record<string, string>>({});
   const [regenerating, setRegenerating] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -1455,7 +1465,7 @@ export default function ProjectDetailPage() {
             </>
           )}
           {milestones.map((m, mi) => (
-            <MilestoneCard key={m.id} milestone={m} tasks={tasks.filter(t => t.milestone_id === m.id)} index={mi} onToggleTask={toggleTask}
+            <MilestoneCard key={m.id} focused={focusId === m.id} milestone={m} tasks={tasks.filter(t => t.milestone_id === m.id)} index={mi} onToggleTask={toggleTask}
               onUpdateEstimate={(difficulty, estimated_days) => milestoneMutation.mutate({ id: m.id, difficulty, estimated_days })} />
           ))}
         </div>
@@ -1469,8 +1479,8 @@ export default function ProjectDetailPage() {
             const milestone = milestones.find(m => m.id === task.milestone_id);
             const notes = splitNotes(task.notes);
             return (
-              <motion.div key={task.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: ti * 0.04 }}
-                style={{ background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "13px 16px" }}>
+              <motion.div key={task.id} id={`focus-${task.id}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: ti * 0.04 }}
+                style={{ outline: focusId === task.id ? "2px solid var(--bm-accent)" : undefined, outlineOffset: 2, background: "var(--bm-bg2)", border: "1px solid var(--bm-border)", borderRadius: 12, padding: "13px 16px" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                   <div style={{ paddingTop: 2 }}><TaskCheckbox checked={task.is_completed} onChange={() => toggleTask(task)} size={15} /></div>
                   <div style={{ flex: 1 }}>
