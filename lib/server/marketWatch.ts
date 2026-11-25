@@ -85,7 +85,7 @@ export async function runMarketWatch(admin: SupabaseClient, input: { userId: str
       return { url: c.url, title: c.title, about: c.about, publisher: hostOf(c.url), publishedAt: v.publishedAt, checkedAt, status: v.status, reason: v.reason, primary: c.primary };
     });
 
-    const cur: MarketSnapshot = { weekStart, competitors, threads };
+    const cur: MarketSnapshot = { weekStart, scannedAt: checkedAt, competitors, threads };
     let pq = admin.from("market_watch_snapshots").select("payload,week_start").eq("user_id", input.userId).lt("week_start", weekStart).order("week_start", { ascending: false }).limit(1);
     pq = input.projectId ? pq.eq("project_id", input.projectId) : pq.is("project_id", null);
     const { data: prevRow } = await pq.maybeSingle();
@@ -106,14 +106,26 @@ export async function runMarketWatch(admin: SupabaseClient, input: { userId: str
 
 export interface StoredWatch { weekStart: string; baseline: boolean; changes: MarketChange[]; competitors: WatchedCompetitor[]; threads: WatchedThread[] }
 
-/** The latest saved scan, with no network calls. */
+/**
+ * The latest saved scan, with no network calls. Changes are worked out again from the two latest saved
+ * snapshots every time, so a report saved before the freshness and price rules still shows only what
+ * those rules would count today. Today, notifications and the Market Watch view all read this.
+ */
 export async function loadLatestWatch(admin: SupabaseClient, userId: string, projectId: string | null): Promise<StoredWatch | null> {
   try {
-    let q = admin.from("market_watch_snapshots").select("payload,week_start").eq("user_id", userId).order("week_start", { ascending: false }).limit(1);
+    let q = admin.from("market_watch_snapshots").select("payload,week_start").eq("user_id", userId).order("week_start", { ascending: false }).limit(2);
     q = projectId ? q.eq("project_id", projectId) : q.is("project_id", null);
-    const { data } = await q.maybeSingle();
-    const row = data as { payload?: MarketSnapshot & { changes?: MarketChange[]; baseline?: boolean }; week_start?: string } | null;
-    if (!row?.payload) return null;
-    return { weekStart: row.week_start ?? row.payload.weekStart, baseline: Boolean(row.payload.baseline), changes: row.payload.changes ?? [], competitors: row.payload.competitors ?? [], threads: row.payload.threads ?? [] };
+    const { data } = await q;
+    return watchFromRows((data ?? []) as Array<{ payload?: MarketSnapshot; week_start?: string }>);
   } catch { return null; }
+}
+
+/** Pure: newest-first snapshot rows -> the watch to show. Exported for tests. */
+export function watchFromRows(rows: Array<{ payload?: MarketSnapshot; week_start?: string }>): StoredWatch | null {
+  const row = rows[0];
+  if (!row?.payload) return null;
+  const cur: MarketSnapshot = { ...row.payload, weekStart: row.week_start ?? row.payload.weekStart, competitors: row.payload.competitors ?? [], threads: row.payload.threads ?? [] };
+  const prev = rows[1]?.payload ? { ...rows[1].payload, competitors: rows[1].payload.competitors ?? [], threads: rows[1].payload.threads ?? [] } : null;
+  const { baseline, changes } = diffSnapshots(prev, cur);
+  return { weekStart: cur.weekStart, baseline, changes: sortChanges(changes), competitors: cur.competitors, threads: cur.threads };
 }
