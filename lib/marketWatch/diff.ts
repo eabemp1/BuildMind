@@ -18,7 +18,7 @@ export interface WatchedThread {
   publisher?: string; publishedAt?: string; checkedAt?: string;
   status?: Freshness; reason?: ExcludeReason; primary?: boolean;
 }
-export interface MarketSnapshot { weekStart: string; competitors: WatchedCompetitor[]; threads: WatchedThread[] }
+export interface MarketSnapshot { weekStart: string; scannedAt?: string; competitors: WatchedCompetitor[]; threads: WatchedThread[] }
 
 export type ChangeKind = "price" | "headline" | "new_competitor" | "page_down" | "page_back" | "new_thread";
 export interface MarketChange { kind: ChangeKind; text: string; url?: string; publisher?: string; publishedAt?: string; checkedAt?: string }
@@ -62,8 +62,11 @@ export function diffSnapshots(prev: MarketSnapshot | null, cur: MarketSnapshot):
   // A new link is only a change when the page itself says it was published this week. Older or undated pages are background at most.
   for (const t of cur.threads) {
     if (seen.has(t.url) || t.status !== "this_week") continue;
-    changes.push({ kind: "new_thread", text: `New this week about ${t.about}: ${t.title.slice(0, 100)}`, url: t.url, publisher: t.publisher, publishedAt: t.publishedAt, checkedAt: t.checkedAt });
+    const from = [t.publisher, t.publishedAt ? `published ${t.publishedAt}` : null].filter(Boolean).join(", ");
+    changes.push({ kind: "new_thread", text: `New this week about ${t.about}: ${t.title.slice(0, 100)}${from ? ` (${from})` : ""}`, url: t.url, publisher: t.publisher, publishedAt: t.publishedAt, checkedAt: t.checkedAt });
   }
+  // Every change says when BuildMind last looked. For a price or title that is when it was seen; only a dated page carries a publication date.
+  if (cur.scannedAt) for (const c of changes) c.checkedAt ??= cur.scannedAt;
   return { baseline: false, changes };
 }
 
