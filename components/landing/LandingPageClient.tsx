@@ -2653,6 +2653,24 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           <a href="/execution-memory" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Execution Memory</a>
           <a href="/startup-cognitive-load" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Startup Cognitive Load</a>
         </div>
+        <nav aria-label="BuildMind social media" className="mb-3 flex flex-wrap items-center justify-center gap-x-2">
+          {[
+            ["TikTok", "https://www.tiktok.com/@buildmind_gh"],
+            ["YouTube", "https://www.youtube.com/channel/UCWgwlSZPiwr3nNHRaJDTyNw"],
+            ["LinkedIn", "https://www.linkedin.com/company/buildmind-live/"],
+            ["X", "https://x.com/BuildMind_gh"],
+          ].map(([label, href]) => (
+            <a
+              key={label}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-11 items-center rounded-md px-3 font-semibold text-[var(--bm-text2)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bm-text2)]"
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
         © {new Date().getFullYear()} BuildMind. Built for founders who ship.
       </footer>
 
