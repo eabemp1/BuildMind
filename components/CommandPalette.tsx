@@ -14,7 +14,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Lock, Search, X, FolderKanban, Flag, ListChecks, FileText, CornerDownLeft, type LucideIcon } from "lucide-react";
 import { buildCommands, type Command, type CommandGroup } from "@/lib/commandIndex";
 import { rank, pushRecent, scoreMatch } from "@/lib/commandSearch";
-import { searchGlobal, clearStoredToken, type SearchResultsData } from "@/lib/api";
+import { searchGlobal, clearStoredToken, setActiveProjectId, type SearchResultsData } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { usePlan } from "@/lib/usePlan";
 import { getTasksCompleted } from "@/lib/nav-config";
@@ -45,7 +45,7 @@ export default function CommandPalette() {
   const [active, setActive] = useState(0);
   const [recent, setRecent] = useState<string[]>([]);
   const [data, setData] = useState<SearchResultsData | null>(null);
-  const [work, setWork] = useState<Array<{ id: string; title: string; kind: string; project?: string | null; source?: string }>>([]);
+  const [work, setWork] = useState<Array<{ id: string; title: string; kind: string; project?: string | null; project_id?: string | null; task?: string; source?: string }>>([]);
   const [dataBusy, setDataBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -109,9 +109,18 @@ export default function CommandPalette() {
     for (const f of found) for (const c of f.hits) out.push(toRow(c));
     const lq = q.toLowerCase();
     for (const p of (data?.projects ?? []).slice(0, 5)) out.push({ id: `p:${p.id}`, group: "Projects", label: p.title, hint: "Project", icon: FolderKanban, run: () => { close(); router.push(`/projects/${p.id}`); } });
-    for (const m of (data?.milestones ?? []).slice(0, 5)) out.push({ id: `m:${m.id}`, group: "Milestones", label: m.title, hint: "Milestone", icon: Flag, run: () => { close(); router.push(`/projects/${m.project_id}`); } });
-    for (const t of (data?.tasks ?? []).slice(0, 5)) out.push({ id: `t:${t.id}`, group: "Tasks", label: t.title, hint: "Task", icon: ListChecks, run: () => { close(); router.push(`/projects/${t.project_id}`); } });
-    for (const w of work.filter((x) => x.source !== "prep" && /^[0-9a-f-]{36}$/i.test(x.id) && `${x.title} ${x.kind}`.toLowerCase().includes(lq)).slice(0, 5)) out.push({ id: `w:${w.id}`, group: "Saved work", label: w.title, hint: w.project ? `Work · ${w.project}` : "Work", icon: FileText, run: () => { close(); router.push(`/work?item=${w.id}`); } });
+    for (const m of (data?.milestones ?? []).slice(0, 5)) out.push({ id: `m:${m.id}`, group: "Milestones", label: m.title, hint: "Milestone", icon: Flag, run: () => { close(); router.push(`/projects/${m.project_id}?focus=${m.id}`); } });
+    for (const t of (data?.tasks ?? []).slice(0, 5)) out.push({ id: `t:${t.id}`, group: "Tasks", label: t.title, hint: "Task", icon: ListChecks, run: () => { close(); router.push(`/projects/${t.project_id}?focus=${t.id}`); } });
+    // Saved drafts and the drafts Today prepared (an interview kit, say). Searched by title, kind and the task they were made for.
+    for (const w of work.filter((x) => (x.source === "prep" || /^[0-9a-f-]{36}$/i.test(x.id)) && `${x.title} ${x.kind} ${x.task ?? ""}`.toLowerCase().includes(lq)).slice(0, 5)) {
+      const prep = w.source === "prep" && w.task;
+      const href = prep ? `/work?task=${encodeURIComponent(w.task ?? "")}&mk=${encodeURIComponent(w.kind)}` : `/work?item=${w.id}`;
+      out.push({ id: `w:${w.id}`, group: "Saved work", label: w.title, hint: w.project ? `${prep ? "Prepared" : "Work"} · ${w.project}` : prep ? "Prepared draft" : "Work", icon: FileText, run: () => {
+        close();
+        if (w.project_id) setActiveProjectId(w.project_id); // the draft opens under its own project
+        router.push(href);
+      } });
+    }
     return out;
   }, [query, commands, recent, data, work, toRow, close, router]);
 

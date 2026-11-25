@@ -1,6 +1,8 @@
 "use client";
 import VoiceSample from "./VoiceSample";
 import React from "react";
+import { useSearchParams } from "next/navigation";
+import { setActiveProjectId, getActiveProjectId } from "@/lib/api";
 import { useActiveProjectId } from "@/lib/queries";
 import { catalog, SPEC_BY_ID, EXISTING, VISUALS, TOOLS, type CatalogEntry } from "@/lib/work/registry";
 import { LiveVisual } from "@/components/visuals/LiveVisual";
@@ -53,9 +55,11 @@ export default function WorkApp() {
   }), [todayTask, project?.stage, rows, entries]);
 
   // Arriving from Today with the day's task: open its prepared work straight away.
+  // router.push from the palette changes the query without remounting, so the effect runs on every change of it.
+  const query = useSearchParams().toString();
   React.useEffect(() => {
     try {
-      const p = new URLSearchParams(window.location.search);
+      const p = new URLSearchParams(query);
       const task = (p.get("task") ?? "").slice(0, 400);
       if (task) setView({ name: "existing", kind: "", task, missionKind: p.get("mk") || null, firstStep: p.get("step")?.slice(0, 400) || undefined, fromToday: true });
       // A link such as /work?open=visual:market opens that drawn view straight away.
@@ -72,7 +76,7 @@ export default function WorkApp() {
       const kind = p.get("kind") ?? "";
       if (kind && !task && !open && SPEC_BY_ID[kind]) setView({ name: "brief", specId: kind });
     } catch { /* no query string */ }
-  }, []);
+  }, [query]);
 
   const load = React.useCallback(async () => {
     const q = projectId ? `?projectId=${projectId}` : "";
@@ -100,6 +104,7 @@ export default function WorkApp() {
   pickRef.current = pick;
   openRef.current = (id) => openItem(id);
   async function openItem(id: string, row?: LibraryRow) {
+    if (row?.project_id && row.project_id !== getActiveProjectId()) setActiveProjectId(row.project_id);
     if (row?.source === "prep" && row.task) { setTab("new"); setView({ name: "existing", kind: row.kind, task: row.task }); return; }
     const r = await api<{ item: WorkItem }>(`/api/work/items?id=${id}`);
     if (!r.ok || !r.data?.item) { setError(r.error ?? "Could not open that."); return; }
