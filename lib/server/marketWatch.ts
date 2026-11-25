@@ -7,9 +7,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { readPages } from "@/lib/pageReader";
 import { MAX_COMPETITORS, mergeSources, type WatchSource } from "@/lib/marketWatch/sources";
 import { discussionSearch } from "@/lib/search";
+import { classifySource } from "@/lib/marketWatch/freshness";
 import { diffSnapshots, sortChanges, weekStartOf, type MarketChange, type MarketSnapshot, type WatchedCompetitor, type WatchedThread } from "@/lib/marketWatch/diff";
 
 const MAX_THREAD_QUERIES = 3;
+const MAX_THREAD_READS = 8;
+
+const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 
 export type WatchedSource = WatchSource;
 
@@ -55,7 +59,11 @@ export async function runMarketWatch(admin: SupabaseClient, input: { userId: str
       return { name: s.name, url: s.url, ok: Boolean(d?.ok), title: d?.ok ? (d.title ?? "").slice(0, 160) : "", price: d?.ok && d.prices?.length ? d.prices[0] : null };
     });
 
-    const threads: WatchedThread[] = [];
+    const weekStart = weekStartOf(now);
+    const checkedAt = now.toISOString().slice(0, 10);
+
+    // Candidates first, then read each page: a link is not evidence until its own date and text say so.
+    const cands: Array<{ url: string; title: string; about: string; primary: boolean }> = [];
     const seenUrl = new Set<string>();
     for (const s of sources.slice(0, MAX_THREAD_QUERIES)) {
       try {
@@ -64,12 +72,19 @@ export async function runMarketWatch(admin: SupabaseClient, input: { userId: str
         for (const t of r.results.slice(0, 5)) {
           if (!t.url || seenUrl.has(t.url)) continue;
           seenUrl.add(t.url);
-          threads.push({ url: t.url, title: t.title, about: s.name });
+          cands.push({ url: t.url, title: t.title, about: s.name, primary: hostOf(t.url) === hostOf(s.url) });
         }
       } catch { /* one failed search does not stop the scan */ }
     }
+    cands.sort((a, b) => Number(b.primary) - Number(a.primary)); // the competitor's own announcements first
+    const toRead = cands.slice(0, MAX_THREAD_READS);
+    const pages = toRead.length ? await readPages(toRead.map((c) => c.url)) : [];
+    const threads: WatchedThread[] = toRead.map((c, i) => {
+      const d = pages[i];
+      const v = classifySource({ publishedAt: d?.publishedAt, readable: Boolean(d?.ok), title: d?.title || c.title, text: d?.text ?? "", competitor: c.about, weekStart, now });
+      return { url: c.url, title: c.title, about: c.about, publisher: hostOf(c.url), publishedAt: v.publishedAt, checkedAt, status: v.status, reason: v.reason, primary: c.primary };
+    });
 
-    const weekStart = weekStartOf(now);
     const cur: MarketSnapshot = { weekStart, competitors, threads };
     let pq = admin.from("market_watch_snapshots").select("payload,week_start").eq("user_id", input.userId).lt("week_start", weekStart).order("week_start", { ascending: false }).limit(1);
     pq = input.projectId ? pq.eq("project_id", input.projectId) : pq.is("project_id", null);

@@ -23,7 +23,7 @@ describe("market watch diff", () => {
   it("flags pages that stop loading and new competitors and new threads", () => {
     const cur = snap({
       competitors: [{ name: "Acme", url: "https://acme.com", ok: false, title: "", price: null }, { name: "Newco", url: "https://new.co", ok: true, title: "Newco", price: null }],
-      threads: [{ url: "https://reddit.com/x", title: "Acme vs others", about: "Acme" }],
+      threads: [{ url: "https://reddit.com/x", title: "Acme vs others", about: "Acme", status: "this_week" as const }],
     });
     const kinds = diffSnapshots(snap(), cur).changes.map((c) => c.kind).sort();
     expect(kinds).toEqual(["new_competitor", "new_thread", "page_down"]);
