@@ -12,6 +12,7 @@
  *   upgrade_seen → upgrade_converted
  */
 
+import { isQaBrowser } from "@/lib/funnel/source";
 import { storage } from "@/lib/storage";
 
 export type FunnelStep =
@@ -66,6 +67,7 @@ export function getFunnelEvents(): FunnelEvent[] {
 
 export function trackFunnelStep(step: FunnelStep, meta?: FunnelEvent["meta"]): void {
   if (typeof window === "undefined") return;
+  if (isQaBrowser()) return; // QA activity never counts
   const events = getFunnelEvents();
   if (events.find(e => e.step === step)) return;
   events.push({ step, ts: Date.now(), meta });

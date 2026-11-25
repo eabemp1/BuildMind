@@ -229,18 +229,9 @@ export async function GET() {
     funnelCountMap[r.step] = (r.count ?? 0);
   }
 
-  // Fallback: derive from users table if funnelRows is empty
-  if (!funnelRows?.length) {
-    funnelCountMap["landing"] = users.length + 20; // rough proxy
-    funnelCountMap["signup"] = users.length;
-    funnelCountMap["onboarding_complete"] = Math.round(users.length * 0.72);
-    funnelCountMap["first_today"] = Math.round(users.length * 0.6);
-    funnelCountMap["first_action_done"] = Math.round(users.length * 0.48);
-    funnelCountMap["upgrade_seen"] = Math.round(users.length * 0.3);
-    funnelCountMap["upgrade_converted"] = users.filter(u => u.plan === "builder").length;
-  }
-
-  const funnel = FUNNEL_STEPS.map((s, i, arr) => {
+  // No stored counts means no funnel here. This used to invent numbers (users x 0.72, landing = users + 20);
+  // the real funnel, with sources, is /api/admin/funnel.
+  const funnel = !funnelRows?.length ? [] : FUNNEL_STEPS.map((s, i, arr) => {
     const count = funnelCountMap[s.step] ?? 0;
     const prev = i > 0 ? (funnelCountMap[arr[i - 1].step] ?? 0) : 0;
     const drop_pct = prev > 0 ? Math.round(((prev - count) / prev) * 100) : null;

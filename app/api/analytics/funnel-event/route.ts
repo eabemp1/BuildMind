@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { BOT_UA } from "@/lib/funnel/source";
 import { getClientIp, rateLimitAsync } from "@/lib/server/rateLimit";
 
 // Allowlist of valid step names — prevents analytics pollution from arbitrary
@@ -12,20 +13,34 @@ const VALID_STEPS = new Set([
   "first_task_completed", "first_reflect", "landing_cta_click", "demo_play",
 ]);
 
+const clip = (v: unknown, n: number) => (typeof v === "string" && v ? v.slice(0, n) : null);
+
 export async function POST(req: NextRequest) {
   const limit = await rateLimitAsync(`funnel:${getClientIp(req)}`, 120, 60 * 1000);
   if (!limit.ok) return NextResponse.json({ ok: true });
 
-  const { step } = await req.json().catch(() => ({}));
+  const body = await req.json().catch(() => ({})) as Record<string, unknown>;
+  const step = body.step;
   // Silently ignore unknown steps — return 200 so clients don't retry
-  if (!step || !VALID_STEPS.has(step)) return NextResponse.json({ ok: true });
+  if (typeof step !== "string" || !VALID_STEPS.has(step)) return NextResponse.json({ ok: true });
+  // Crawlers, link previews and headless browsers are not visitors.
+  const ua = req.headers.get("user-agent") ?? "";
+  if (!ua || BOT_UA.test(ua)) return NextResponse.json({ ok: true });
 
   const admin = createAdminClient();
   try {
-    await admin.rpc("increment_funnel_step", { p_step: step });
+    // One row per event with the visitor id and where they came from, so visits can be split by source.
+    await admin.from("funnel_events").insert({
+      user_id: null,
+      step,
+      session_id: clip(body.vid, 40),
+      referrer: clip(body.referrer, 200),
+      user_agent: ua.slice(0, 200),
+      meta: { source: clip(body.source, 40) ?? "direct", medium: clip(body.medium, 30), campaign: clip(body.campaign, 40) },
+    });
   } catch (err) {
     // Silently fail — table may not exist yet
-    console.warn("[funnel-event] increment_funnel_step failed:", err);
+    console.warn("[funnel-event] insert failed:", err);
   }
   return NextResponse.json({ ok: true });
 }
