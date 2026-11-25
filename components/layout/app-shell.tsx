@@ -7,6 +7,7 @@ import Sidebar, { SidebarContent } from "@/components/layout/sidebar";
 import { RailContext } from "@/components/layout/sidebar-nav";
 import Topbar from "@/components/layout/topbar";
 import { trackPageView, trackFunnelStep } from "@/lib/onboarding-analytics";
+import { firstTouch } from "@/lib/funnel/source";
 import { createClient } from "@/lib/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { storage } from "@/lib/storage";
@@ -211,6 +212,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       trackPageView(pathname);
       const step = PATH_TO_FUNNEL[pathname];
       if (step) trackFunnelStep(step);
+      // The signup event carries the visitor's first-touch source, so signups can be split by where they came from.
+      // The report only credits it to accounts created within two days of it.
+      const t = firstTouch();
+      if (t) trackFunnelStep("signup", { source: t.source, vid: t.vid });
     } catch {}
   }, [pathname]);
 

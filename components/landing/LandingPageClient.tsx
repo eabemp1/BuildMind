@@ -17,6 +17,7 @@ import { useTheme } from "@/components/layout/theme-provider";
 import { sanitizeOutput } from "@/lib/sanitizeOutput";
 import { Price } from "@/components/Price";
 import { PLAN_LIMITS } from "@/lib/plan";
+import { firstTouch, isQaBrowser } from "@/lib/funnel/source";
 
 // ── "A Day With BuildMind" timeline data ──────────────────────────────────────
 const DAY_TIMELINE = [
@@ -2192,7 +2193,11 @@ function LandingAestheticLayer() {
 }
 
 function track(step: string) {
-  try { void fetch("/api/analytics/funnel-event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ step }), keepalive: true }).catch(() => {}); } catch { /* analytics must never break the page */ }
+  try {
+    if (isQaBrowser()) return; // QA visits never count
+    const t = firstTouch();
+    void fetch("/api/analytics/funnel-event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ step, vid: t?.vid, source: t?.source, medium: t?.medium, campaign: t?.campaign, referrer: document.referrer?.slice(0, 200) }), keepalive: true }).catch(() => {});
+  } catch { /* analytics must never break the page */ }
 }
 
 export default function LandingPageClient({ initialStats }: { initialStats?: PublicStats }) {
