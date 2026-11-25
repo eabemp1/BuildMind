@@ -2654,20 +2654,25 @@ export default function LandingPageClient({ initialStats }: { initialStats?: Pub
           <a href="/startup-cognitive-load" style={{ color: "var(--bm-text3)", textDecoration: "none" }}>Startup Cognitive Load</a>
         </div>
         <nav aria-label="BuildMind social media" className="mb-3 flex flex-wrap items-center justify-center gap-x-2">
+          {/* Brand icon paths: Font Awesome Free 7.3.1 by Fonticons, Inc. (https://fontawesome.com), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). */}
           {[
-            ["TikTok", "https://www.tiktok.com/@buildmind_gh"],
-            ["YouTube", "https://www.youtube.com/channel/UCWgwlSZPiwr3nNHRaJDTyNw"],
-            ["LinkedIn", "https://www.linkedin.com/company/buildmind-live/"],
-            ["X", "https://x.com/BuildMind_gh"],
-          ].map(([label, href]) => (
+            ["TikTok", "https://www.tiktok.com/@buildmind_gh", "0 0 448 512", "M448.5 209.9c-44 .1-87-13.6-122.8-39.2l0 178.7c0 33.1-10.1 65.4-29 92.6s-45.6 48-76.6 59.6-64.8 13.5-96.9 5.3-60.9-25.9-82.7-50.8-35.3-56-39-88.9 2.9-66.1 18.6-95.2 40-52.7 69.6-67.7 62.9-20.5 95.7-16l0 89.9c-15-4.7-31.1-4.6-46 .4s-27.9 14.6-37 27.3-14 28.1-13.9 43.9 5.2 31 14.5 43.7 22.4 22.1 37.4 26.9 31.1 4.8 46-.1 28-14.4 37.2-27.1 14.2-28.1 14.2-43.8l0-349.4 88 0c-.1 7.4 .6 14.9 1.9 22.2 3.1 16.3 9.4 31.9 18.7 45.7s21.3 25.6 35.2 34.6c19.9 13.1 43.2 20.1 67 20.1l0 87.4z"],
+            ["YouTube", "https://www.youtube.com/channel/UCWgwlSZPiwr3nNHRaJDTyNw", "0 0 576 512", "M549.7 124.1C543.5 100.4 524.9 81.8 501.4 75.5 458.9 64 288.1 64 288.1 64S117.3 64 74.7 75.5C51.2 81.8 32.7 100.4 26.4 124.1 15 167 15 256.4 15 256.4s0 89.4 11.4 132.3c6.3 23.6 24.8 41.5 48.3 47.8 42.6 11.5 213.4 11.5 213.4 11.5s170.8 0 213.4-11.5c23.5-6.3 42-24.2 48.3-47.8 11.4-42.9 11.4-132.3 11.4-132.3s0-89.4-11.4-132.3zM232.2 337.6l0-162.4 142.7 81.2-142.7 81.2z"],
+            ["LinkedIn", "https://www.linkedin.com/company/buildmind-live/", "0 0 448 512", "M416 32L31.9 32C14.3 32 0 46.5 0 64.3L0 447.7C0 465.5 14.3 480 31.9 480L416 480c17.6 0 32-14.5 32-32.3l0-383.4C448 46.5 433.6 32 416 32zM135.4 416l-66.4 0 0-213.8 66.5 0 0 213.8-.1 0zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77zM384.3 416l-66.4 0 0-104c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9l0 105.8-66.4 0 0-213.8 63.7 0 0 29.2 .9 0c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9l0 117.2z"],
+            ["X", "https://x.com/BuildMind_gh", "0 0 448 512", "M357.2 48L427.8 48 273.6 224.2 455 464 313 464 201.7 318.6 74.5 464 3.8 464 168.7 275.5-5.2 48 140.4 48 240.9 180.9 357.2 48zM332.4 421.8l39.1 0-252.4-333.8-42 0 255.3 333.8z"],
+          ].map(([label, href, viewBox, path]) => (
             <a
               key={label}
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-h-11 items-center rounded-md px-3 font-semibold text-[var(--bm-text2)] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bm-text2)]"
+              aria-label={label}
+              title={label}
+              className="inline-flex size-11 items-center justify-center rounded-md text-[var(--bm-text2)] hover:bg-[var(--bm-bg3)] hover:text-[var(--bm-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--bm-text2)]"
             >
-              {label}
+              <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox={viewBox} fill="currentColor">
+                <path d={path} />
+              </svg>
             </a>
           ))}
         </nav>
