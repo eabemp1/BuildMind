@@ -1331,12 +1331,12 @@ function TodayContent() {
   const [pinBusy, setPinBusy] = useState(false);
   useEffect(() => {
     let live = true;
-    fetch("/api/today/pinned", { cache: "no-store" })
+    fetch(`/api/today/pinned${activeProjectId ? `?project=${activeProjectId}` : ""}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (live) setPin(j?.pin ?? null); })
+      .then((j) => { if (live) setPin(j?.pin ?? null); }) // a project switch clears the old pin until the new answer arrives
       .catch(() => {});
     return () => { live = false; };
-  }, []);
+  }, [activeProjectId]);
   async function releasePin() {
     if (!pin || pinBusy) return;
     setPinBusy(true);
