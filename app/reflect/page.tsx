@@ -7,6 +7,7 @@ import { updateAchievementStats, checkAndUnlockAchievements, getAchievementStats
 import { incrementDailyStreak, getStoredStreak } from "@/lib/plan";
 import { notifyStreakMilestone } from "@/lib/notifications";
 import { trackFunnelStep } from "@/lib/onboarding-analytics";
+import ResolveTest from "@/components/reflect/ResolveTest";
 import { ChevronRight, Flame, Brain, ArrowRight, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { storage } from "@/lib/storage";
@@ -562,6 +563,8 @@ export default function ReflectPage() {
         if (!cfg) return null;
         return <ReflectionField key={field} label={cfg.label} required={cfg.required} placeholder={cfg.placeholder} value={cfg.value} onChange={cfg.set} />;
       })}
+
+      {outcome && outcome !== "blocked" && <ResolveTest projectId={activeProjectId} />}
 
       {outcome !== "blocked" && <SignalPicker value={signal} onChange={setSignal} />}
 
